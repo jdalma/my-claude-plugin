@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Agent Result",
+  "description": "에이전트가 자기 result.json에 기록하는 표준 형식 (v2 §6.4 request_for_lead 포함)",
+  "type": "object",
+  "required": ["task_id", "agent", "status", "summary"],
+  "properties": {
+    "task_id": {
+      "type": "string",
+      "pattern": "^task-\\d{3,}$"
+    },
+    "agent": {
+      "type": "string",
+      "enum": ["metis", "momus", "planner", "appdev", "backenddev", "designer", "critic", "verifier"]
+    },
+    "status": {
+      "type": "string",
+      "enum": ["DONE", "PARTIAL", "FAILED", "HARD_BLOCKED"],
+      "description": "DONE: 완료. PARTIAL: 일부 완료(가정 기반). FAILED: 재시도 가능 실패. HARD_BLOCKED: 사용자 결정 필요"
+    },
+    "summary": {
+      "type": "string",
+      "description": "한두 문장으로 작업 요약"
+    },
+    "artifacts": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "생성/수정한 파일 경로 목록"
+    },
+    "deliverables": {
+      "type": "object",
+      "description": "에이전트별 자유 형식 산출물 (planner의 requirements/features 등)"
+    },
+    "findings": {
+      "type": "array",
+      "description": "critic/verifier 등이 사용. severity/category/title 포함",
+      "items": { "type": "object" }
+    },
+    "verdict": {
+      "type": "string",
+      "enum": ["approved", "conditional", "rejected"],
+      "description": "Momus의 plan-review 결과 (Momus 전용 필드)"
+    },
+    "question_debts": {
+      "type": "array",
+      "items": { "$ref": "question-debt.schema.json#/$defs/debt" },
+      "description": "이 에이전트가 실행 중 발견한 신규 debt"
+    },
+    "request_for_lead": {
+      "type": "array",
+      "description": "Lead에게 위임 요청. v2 §6.4 (재귀 spawn 금지의 우회 채널)",
+      "items": {
+        "type": "object",
+        "required": ["kind", "reason"],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": ["delegate", "spawn_skill", "info"]
+          },
+          "to_agent": {
+            "type": "string",
+            "description": "kind=delegate인 경우 위임 대상 에이전트"
+          },
+          "skill_name": {
+            "type": "string",
+            "description": "kind=spawn_skill인 경우 .claude/skills/ 하위 스킬명"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "context": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "string",
+            "enum": ["low", "medium", "high"]
+          }
+        }
+      }
+    },
+    "failure_reason": {
+      "type": ["string", "null"],
+      "description": "status가 FAILED 또는 HARD_BLOCKED인 경우 사유"
+    }
+  }
+}

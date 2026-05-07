@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Run Status",
+  "description": "런 실시간 진행 상태 (v2 §4.4.1)",
+  "type": "object",
+  "required": ["run_id", "current_phase", "run_state", "tasks_summary"],
+  "properties": {
+    "run_id": {
+      "type": "string",
+      "pattern": "^run-\\d{8}-\\d{6}(-\\d+)?$"
+    },
+    "current_phase": {
+      "type": "string",
+      "enum": ["triage", "research", "synthesis", "plan-review", "implementation", "verification", "reporting"],
+      "description": "현재 실행 중인 Phase"
+    },
+    "phase_started_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "run_state": {
+      "type": "string",
+      "enum": ["NEW", "PLANNING", "EXECUTING", "PARTIAL_BLOCKED", "REVIEWING", "PUBLISHING", "WAITING_USER", "DONE"],
+      "description": "Run 상태 머신 (CLAUDE.md 정의 유지)"
+    },
+    "tasks_summary": {
+      "type": "object",
+      "required": ["total", "done", "running", "ready", "hard_blocked"],
+      "properties": {
+        "total": { "type": "integer", "minimum": 0 },
+        "done": { "type": "integer", "minimum": 0 },
+        "running": { "type": "integer", "minimum": 0 },
+        "ready": { "type": "integer", "minimum": 0 },
+        "new": { "type": "integer", "minimum": 0 },
+        "review": { "type": "integer", "minimum": 0 },
+        "hard_blocked": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "open_decisions": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "decisions.md의 status:open 항목 수"
+    },
+    "skipped_phases": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["plan-review"]
+      },
+      "description": "Skip된 Phase. Phase 0 Triage는 항상 수행되므로 skip 불가 (Q6 결정)"
+    },
+    "agents_version": {
+      "type": "string",
+      "description": "런 시작 시점의 knowledge/principles.md + agent-mapping.json git commit hash (v2 §7.6)"
+    },
+    "waiting_user_since": {
+      "type": ["string", "null"],
+      "format": "date-time",
+      "description": "WAITING_USER 진입 시각. TTL 30일 (v2 §6.5.4)"
+    },
+    "expired": {
+      "type": "boolean",
+      "default": false
+    },
+    "expired_at": {
+      "type": ["string", "null"],
+      "format": "date-time"
+    }
+  }
+}

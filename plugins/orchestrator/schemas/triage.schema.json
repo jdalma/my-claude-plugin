@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Triage Result",
+  "description": "Phase 0 Metis가 생성하는 사전 분류 결과 (v2 §2.2, §3.3)",
+  "type": "object",
+  "required": ["run_id", "scores", "classified_debts"],
+  "properties": {
+    "run_id": {
+      "type": "string",
+      "pattern": "^run-\\d{8}-\\d{6}$"
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Metis가 분류를 완료한 시각"
+    },
+    "scores": {
+      "type": "object",
+      "required": ["goal", "constraints", "criteria", "weighted_sum"],
+      "properties": {
+        "goal": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Goal 차원 모호성 점수. 0=명확, 1=완전 모호"
+        },
+        "constraints": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Constraints 차원 모호성 점수"
+        },
+        "criteria": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Criteria 차원 모호성 점수"
+        },
+        "weighted_sum": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "0.4·Goal + 0.3·Constraints + 0.3·Criteria"
+        }
+      }
+    },
+    "classified_debts": {
+      "type": "array",
+      "items": { "$ref": "question-debt.schema.json#/$defs/debt" },
+      "description": "Metis가 1차 분류한 Question Debt 목록"
+    },
+    "rationale": {
+      "type": "string",
+      "description": "분류 결정의 종합 설명"
+    }
+  }
+}

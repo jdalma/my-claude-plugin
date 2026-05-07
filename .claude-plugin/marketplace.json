@@ -9,6 +9,11 @@
       "name": "workflow",
       "description": "개인 워크플로우 스킬/커맨드 (도메인 정보 미포함)",
       "source": "./plugins/workflow"
+    },
+    {
+      "name": "orchestrator",
+      "description": "v2 6-Phase 멀티 에이전트 오케스트레이션 시스템 (Question Debt 기반)",
+      "source": "./plugins/orchestrator"
     }
   ]
 }
