@@ -247,6 +247,20 @@ features/<feature-name>/ 디렉토리가 있다면 slices.md, tdd-state.md, TODO
 - 엔드포인트 테스트는 fixture 재사용 가능성이 높음
 ```
 
+## 상태 갱신 책임 매트릭스 (4개 자산 공통)
+
+이 표는 plan / tdd / handoff / takeover 4개 자산이 모두 동일하게 따른다.
+
+| 파일 | 생성 | 갱신 | 읽기만 |
+|------|------|------|--------|
+| `slices.md` | plan | plan (재진입 시 overwrite/append/abort 선택) | tdd, **handoff**, takeover |
+| `tdd-state.md` | tdd (없으면 생성) | tdd (RED→GREEN 사이클마다) | **handoff**, takeover |
+| `TODO.md` | plan | **handoff (사용자 확인 후 일괄)**, tdd (슬라이스 완료 시 한 줄 제안 y/n) | takeover |
+| `pending-decisions.md` | tdd (필요 시) | tdd | plan, **handoff**, takeover |
+| `decisions.md` | 사용자/plan | plan, tdd | **handoff**, takeover |
+
+handoff는 `TODO.md`만 수정한다. `slices.md` / `tdd-state.md`는 Relevant Files에 포함만 하고 본문은 읽기 전용.
+
 ## features/ 통합 추가 규칙
 
 `features/<feature-name>/TODO.md`를 다룰 때:

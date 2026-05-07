@@ -186,6 +186,13 @@ for file in Relevant Files (최대 8개):
 - "Candidate Next Action"의 첫 항목(Open Work 3섹션 분리)은 코드에 이미 적용됨에도 TODO.md에는 미체크. 다음 /handoff 호출 시 동기화 후보.
 - tdd-state.md의 CURRENT behavior가 다음 작업 단위로 명확.
 
+### 다음 가능한 명시 호출 예시
+- `tdd로 슬라이스 #3 이어서` (또는 `RED→GREEN으로 슬라이스 #3 작업`)
+- `/plan` 재호출 (가정이 흔들렸거나 신규 슬라이스 분해 필요)
+- `/handoff` (지금까지 보고만 받고 종료)
+
+> 위 예시는 **참고용**이다. 사용자가 명시 지시 없이 takeover만 호출했다면 그대로 대기한다. 자동 진행 금지.
+
 **다음 작업 지시를 기다립니다.**
 ```
 
@@ -197,7 +204,8 @@ for file in Relevant Files (최대 8개):
 
 | 상황 | 행동 |
 |------|------|
-| `.claude/handoff/` 디렉토리 자체 없음 | "handoff 없음. 새 작업이면 그대로 시작하세요" |
+| `.claude/handoff/` 디렉토리 자체 없음 + features/ 슬롯도 없음 | "handoff·features/ 슬롯 모두 없음. 새 기능이면 `/plan`을 호출하세요. takeover로 할 일 없음." |
+| `.claude/handoff/` 없음 + `features/<name>/` 슬롯은 있음 | 슬롯 자체를 hypothesis로 검증 (Step 3.5만 수행). 보고에 *"handoff 누락 — 직전 세션이 handoff 없이 종료된 것으로 보임. features/ 슬롯이 stale일 가능성 높음"* 명시. 다음 명시 호출 예시는 `/plan` 재호출 또는 `tdd로 슬라이스 #N 이어서` |
 | handoff 파일 frontmatter 손상 | 손상 사실 보고하고 본문만 읽어 hypothesis로 사용 |
 | `head_commit` 필드 누락 (구버전 handoff or non-git) | git 기반 검증 건너뛰고 날짜 기반 약한 검증으로 fallback |
 | Relevant Files가 모두 삭제됨 | "이 handoff는 stale 가능성 매우 높음. 새 세션으로 시작 권장" |
@@ -205,11 +213,25 @@ for file in Relevant Files (최대 8개):
 | features/<feature-name>/ 디렉토리 자체 없음 | features/ 자산 상태 섹션 생략, "(연결된 features/ 슬롯 없음)" 명시 |
 | features/ 안의 일부 파일만 있음 (예: slices.md만) | 있는 것만 검증, 없는 건 생략 |
 
+## 상태 갱신 책임 매트릭스 (4개 자산 공통)
+
+이 표는 plan / tdd / handoff / takeover 4개 자산이 모두 동일하게 따른다.
+
+| 파일 | 생성 | 갱신 | 읽기만 |
+|------|------|------|--------|
+| `slices.md` | plan | plan (재진입 시 overwrite/append/abort 선택) | tdd, handoff, **takeover** |
+| `tdd-state.md` | tdd (없으면 생성) | tdd (RED→GREEN 사이클마다) | handoff, **takeover** |
+| `TODO.md` | plan | handoff (사용자 확인 후 일괄), tdd (슬라이스 완료 시 한 줄 제안 y/n) | **takeover** |
+| `pending-decisions.md` | tdd (필요 시) | tdd | plan, handoff, **takeover** |
+| `decisions.md` | 사용자/plan | plan, tdd | handoff, **takeover** |
+
+**takeover는 어느 파일도 수정하지 않는다.** 검증·보고만 한다.
+
 ## Done When
 
-- handoff 문서가 선택되고 Read됨
+- handoff 문서가 선택되고 Read됨 (또는 폴백 경로로 features/ 슬롯 검증)
 - frontmatter의 `head_commit` 기준으로 git stale 판정 수행됨 (git repo인 경우)
 - Relevant Files가 모두 Read되고 라인 번호 유효성 검증됨
 - features/<feature-name>/ 슬롯이 있으면 TODO.md, slices.md, tdd-state.md를 hypothesis로 검증됨
-- 구조화된 검증 결과가 사용자에게 보고됨
+- 구조화된 검증 결과 + **다음 가능한 명시 호출 예시 섹션**이 사용자에게 보고됨
 - **자동 진행 없이** 사용자 지시를 대기하는 상태로 종료

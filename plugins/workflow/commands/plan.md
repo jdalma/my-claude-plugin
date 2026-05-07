@@ -64,7 +64,21 @@ test -d features && echo "exists" || echo "missing"
 - `n` 응답 시 → 작업 중단, 사용자가 다른 위치를 지정하면 그에 따름
 - `y` 응답 시 → 다음 단계로
 
-### 4-2. publish
+### 4-2. 기존 slices.md 발견 시 분기 (재진입 케이스)
+
+```bash
+test -f features/<feature-name>/slices.md && echo "exists" || echo "new"
+```
+
+기존 파일이 있으면 사용자에게 다음 3옵션을 번호로 제시하고 선택받는다:
+
+1. **overwrite** — 기존 파일 백업 후 새로 작성. 이전 슬라이스 진행이 모두 폐기되어도 무방한 경우.
+2. **append** — 기존 슬라이스 뒤에 신규 슬라이스를 이어 붙인다. 새 요구사항 추가 케이스.
+3. **abort** — 작성 중단. 사용자가 직접 수정 후 다시 호출.
+
+선택 없이 자동 overwrite 금지.
+
+### 4-3. publish
 
 ```bash
 mkdir -p features/<feature-name>
@@ -73,9 +87,13 @@ mkdir -p features/<feature-name>
 `features/<feature-name>/slices.md` 작성. 템플릿:
 
 ```markdown
+---
+feature_name: <feature-name>
+generated: [날짜]
+plan_input: [원래 요청 한 줄 요약]
+---
+
 # Slices for: [기능 이름]
-Generated: [날짜]
-Plan input: [원래 요청]
 
 ## Open Questions (resolved)
 - [질문1] → [결정] (vault: [참조] 또는 grill 결과)
@@ -89,7 +107,9 @@ Plan input: [원래 요청]
        depends on: 1
 ```
 
-### 4-3. TODO.md 골격 생성
+frontmatter의 `feature_name`은 takeover/handoff가 슬롯 매칭에 사용한다. **반드시 포함**.
+
+### 4-4. TODO.md 골격 생성
 
 `features/<feature-name>/TODO.md`에 슬라이스별 1항목으로 초기 골격 생성 (handoff 스킬이 이후 동기화):
 
@@ -140,6 +160,20 @@ Plan input: [원래 요청]
 
 설치 안 되어 있으면: *"omc 플러그인 설치하세요: /oh-my-claudecode:setup"* 안내 후 중단.
 
+## 상태 갱신 책임 매트릭스 (4개 자산 공통)
+
+이 표는 plan / tdd / handoff / takeover 4개 자산이 모두 동일하게 따른다.
+
+| 파일 | 생성 | 갱신 | 읽기만 |
+|------|------|------|--------|
+| `slices.md` | **plan** | **plan** (재진입 시 overwrite/append/abort 선택) | tdd, handoff, takeover |
+| `tdd-state.md` | tdd (없으면 생성) | tdd (RED→GREEN 사이클마다) | handoff, takeover |
+| `TODO.md` | **plan** | handoff (사용자 확인 후 일괄), tdd (슬라이스 완료 시 한 줄 제안 y/n) | takeover |
+| `pending-decisions.md` | tdd (필요 시) | tdd | **plan**, handoff, takeover |
+| `decisions.md` | 사용자/**plan** | **plan**, tdd | handoff, takeover |
+
+이 매트릭스를 벗어난 수정은 금지. plan은 `tdd-state.md`를 만들지 않는다 (tdd가 첫 호출 시 생성).
+
 ## Anti-Patterns
 
 - ❌ 사용자에게 hard 4+ 질문을 직접 grill (deep-interview 위임 안 함)
@@ -150,3 +184,6 @@ Plan input: [원래 요청]
 - ❌ `features/` 디렉토리 무단 생성 (사용자 허락 없이)
 - ❌ feature-name을 사용자 확인 없이 결정
 - ❌ `.scratch/` 폴백 사용 (이 워크플로우는 `features/` 단일 경로)
+- ❌ 기존 `slices.md`를 사용자 선택 없이 overwrite
+- ❌ slices.md에 `feature_name` frontmatter 누락
+- ❌ `tdd-state.md` 생성 (그건 tdd의 역할)
