@@ -1,8 +1,10 @@
-# TODO.md 항목 크기 가이드
+# TODO 항목 크기 가이드 (task-index.md TODO 섹션)
 
 ## 핵심 명제
 
-**TODO.md 항목 1개의 크기 = handoff 1회로 깔끔하게 떨어지는 작업 단위.**
+**task-index.md TODO 섹션 항목 1개의 크기 = handoff 1회로 깔끔하게 떨어지는 작업 단위.**
+
+> 본 가이드는 task-index.md의 *TODO 섹션* — 슬라이스 외 작업·잡일·외부 의존 대기 — 에 적용된다. 슬라이스 자체의 분해 가이드는 `tdd/SKILL.md`의 분기 룰(트리 vs `/plan` 재진입)을 참조.
 
 이 등식이 깨지면(항목이 너무 크거나 작으면) 다음이 연쇄적으로 망가진다:
 
@@ -75,28 +77,24 @@
 5. **다른 항목과 쪼갤 수 있는 자연스러운 경계가 있는가?**
    - 있는데 안 쪼갠 상태라면 → 쪼갠다
 
-## 권장 TODO.md 구조
+## 권장 task-index.md 구조 (TODO 섹션 + 인접 섹션)
 
 ```markdown
-# Feature: Payment MSA 분리
+---
+feature_name: payment-msa
+---
 
-## 진행 중 (WIP)
-- [ ] (WIP) OAuth refresh를 TX 밖으로 이동
-  - 검증: TestPaymentRefresh.testRefresh 그린
-  - 현재: PaymentService.refresh 시그니처 분리 중
-  - Relevant: PaymentService.kt, TestPaymentRefresh.kt
+# Task Index — Payment MSA 분리
 
-## 다음 후보 (Next)
-- [ ] race condition 재현 테스트 작성
-- [ ] race condition 해결: lock vs CAS 결정 + 구현
-- [ ] outbox 구조 도입 (OMS 비동기 전파)
+## Slices (dependency order)
+- [x] 1. **TX 외부 호출 분리** ...
+- [~] 2. **race condition 재현 + 해결** ... (CURRENT, tdd-state/slice-2.md)
+- [ ] 3. **outbox 구조 도입** ...
 
-## 완료 (Done)
-- [x] 패턴 X·Y 프레임워크 결정 (ADR-0042)
-- [x] PaymentService 인터페이스 추출
-
-## Blocked / Waiting
-- ⏸ OMS 팀의 Kafka 토픽 명세 대기 (별도 PR #234)
+## TODO (slice 외 작업·잡일·외부 의존 대기)
+- [ ] PaymentService 통합 테스트 도커 fixture 정리
+- [ ] OMS 팀의 Kafka 토픽 명세 대기 (별도 PR #234)
+- [x] 패턴 X·Y 프레임워크 결정 인용 (ADR-0042)
 
 ## Decisions / Traps (수명 긴 메모)
 - 결정: Hazelcast 캐시 폐기 (cluster sync 비용)
@@ -105,13 +103,13 @@
 
 ### 섹션별 역할과 스킬 연계
 
-| 섹션 | 역할 | handoff/takeover와의 관계 |
-|------|------|------------------------|
-| 진행 중 (WIP) | 1개만 둠. 멀티 WIP 금지. | takeover가 첫 보고에 명시 |
-| 다음 후보 | 우선순위 순으로 나열 | handoff의 Candidate Next Action과 매칭 |
-| 완료 | 체크된 항목만 | handoff가 자동 체크 후보로 삼음 |
-| Blocked | 항목 아님 (의존 대기) | handoff의 Blocked By로 동기화 |
-| Decisions / Traps | 수명 긴 메모 | handoff의 Key Decisions / Traps가 여기로 승격 |
+| 섹션 | 역할 | 갱신 주체 | handoff/takeover와의 관계 |
+|------|------|-----------|------------------------|
+| Slices | slice 정의 + 진행 마커(`[ ]/[~]/[x]/[!]`) | plan(생성), tdd(마커 토글) | takeover가 수평 진행도 즉시 파악 |
+| TODO | slice 외 작업·외부 의존 대기·잡일 | handoff (사용자 y/n 후 일괄) | handoff의 Candidate Next Action과 매칭 |
+| Decisions / Traps | 수명 긴 메모 | plan, tdd | handoff의 Key Decisions / Traps가 여기로 승격 |
+
+> **WIP 단일 룰**: 한 시점에 `[~]` 마커는 1개만 (Slices 섹션). 멀티 WIP 금지. takeover가 첫 보고에 명시.
 
 ## 안티 패턴
 
@@ -125,11 +123,12 @@
 
 ## 분할이 필요한 신호 (handoff 시점에 발견)
 
-handoff를 작성하다가 다음 중 하나라도 발생하면 **TODO 항목 자체가 너무 컸다**는 신호다:
+handoff를 작성하다가 다음 중 하나라도 발생하면 **TODO 항목(또는 슬라이스) 자체가 너무 컸다**는 신호다:
 
 - handoff Key Decisions이 3개를 초과
 - Traps to Avoid가 5개를 초과
 - Relevant Files가 8개를 초과
 - 작업이 끝나기도 전에 컨텍스트가 답답해짐
+- tdd-state/slice-N.md의 트리 깊이가 5 초과 (슬라이스 자체가 너무 큰 신호)
 
-이런 신호가 반복되면 다음 사이클에서 TODO 항목을 더 작게 쪼개는 것이 본질적 해결이다. 컨텍스트 70% 같은 매직 넘버에 의존하지 않는다.
+이런 신호가 반복되면 다음 사이클에서 TODO 항목을 더 작게 쪼개거나, 슬라이스를 `/plan` 재호출로 분리하는 것이 본질적 해결이다. 컨텍스트 70% 같은 매직 넘버에 의존하지 않는다.

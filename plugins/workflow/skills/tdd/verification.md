@@ -64,7 +64,7 @@ NO COMPLETION CLAIMS WITHOUT FRESH VERIFICATION EVIDENCE
 2. 회귀 테스트 (다른 영역 깨짐) 확인
 3. 빌드/lint 실행 → exit 0
 4. (선택) `omc:verify` Skill 호출로 외부 검증 게이트 추가
-5. `.scratch/tdd-state.md`에 검증 timestamp 기록
+5. `features/<feature-name>/tdd-state/slice-N.md`의 *Cycle log*에 검증 timestamp 기록
 
 이후에만 슬라이스 *완료* 주장 가능.
 
