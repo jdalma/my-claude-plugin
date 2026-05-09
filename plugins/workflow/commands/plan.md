@@ -101,6 +101,11 @@ plan_input: [원래 요청 한 줄 요약]
 ## Slices (dependency order)
 - [ ] 1. **[tracer bullet]** [한 줄 설명]
        behaviors: [behavior 리스트]
+       scope-hint:
+         in: [어떤 layer/경계까지 real로 검증 — 후보]
+         out: [mock/stub 제안]
+         seam: [mocking 경계 제안]
+         non-goal: [이 슬라이스가 다루지 않는 것]
        AFK: yes/no
        depends on: -
 - [ ] 2. ...
@@ -108,6 +113,8 @@ plan_input: [원래 요청 한 줄 요약]
 ```
 
 frontmatter의 `feature_name`은 takeover/handoff가 슬롯 매칭에 사용한다. **반드시 포함**.
+
+`scope-hint`는 plan이 *제안하는 후보*다. 최종 scope 4항목 확정은 **tdd Step 0**에서 수행한다 (plan은 코드를 보지 않으므로 정확한 seam을 알 수 없음).
 
 ### 4-4. TODO.md 골격 생성
 
