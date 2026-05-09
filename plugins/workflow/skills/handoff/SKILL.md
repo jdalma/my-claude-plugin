@@ -269,6 +269,7 @@ handoff는 `TODO.md`만 수정한다. `slices.md` / `tdd-state.md`는 Relevant F
 - **항목 삭제 금지**: 폐기된 항목은 `~~취소선~~`으로 표시하고 이유 주석 추가, 실제 삭제는 사용자가 직접.
 - **상위 섹션 구조 보존**: TODO.md의 기존 헤더·구조·우선순위 표기를 그대로 둠. 신규 항목은 적절한 섹션에 배치.
 - **slices.md / tdd-state.md는 읽기만**: handoff는 TODO.md만 수정한다. slice 분해 변경은 `/plan` 재호출, behavior 진행은 tdd 스킬의 자동 갱신을 통해서만 일어난다.
+- **`tdd-state.md`의 트리 구조는 그대로 인용**: 평면이든 트리든 형식·들여쓰기를 변형하지 않고 Relevant Files 본문에 인용. 트리 깊이 5 초과 슬라이스는 *"plan 재진입 후보"* 로 Candidate Next Action에 포함.
 - **TODO.md가 git에 커밋된 파일이면 변경 후 staging 상태**로 두고 사용자에게 알림 (자동 commit 금지)
 
 ## Done When

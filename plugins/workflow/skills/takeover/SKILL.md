@@ -137,6 +137,8 @@ ls features/*/TODO.md 2>/dev/null
    - 어느 슬라이스가 완료/진행 중/미시작인지 확인
 3. **tdd-state.md Read** (있으면) — behavior 진행도 체크
    - 현재 슬라이스의 어느 behavior가 GREEN/RED 상태인지 확인
+   - 트리 형식이면 leaf 단위 진행도 + 깊이 추출 (깊이 5 초과 슬라이스는 *"plan 재진입 후보"* 로 보고에 포함)
+   - 부모 노드의 GREEN 상태가 자식 모두 GREEN과 일치하는지 sanity check (불일치 시 stale 의심 신호)
 
 이 정보는 Step 5 보고에 포함한다. **3개 파일 모두 자체를 수정하지 않는다** — 수정은 handoff/plan/tdd 스킬의 역할.
 
