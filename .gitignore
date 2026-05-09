@@ -1,2 +1,5 @@
 .DS_Store
 .omc/
+
+# orchestrator: 방향성 미확정 상태 — public 레포에서 임시 제외
+plugins/orchestrator/
