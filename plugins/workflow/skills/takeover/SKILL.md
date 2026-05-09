@@ -189,9 +189,16 @@ for file in Relevant Files (최대 8개):
 - "Candidate Next Action"의 첫 항목(Open Work 3섹션 분리)은 코드에 이미 적용됨에도 task-index.md TODO 섹션에는 미체크. 다음 /handoff 호출 시 동기화 후보.
 - tdd-state/slice-3.md의 CURRENT behavior가 다음 작업 단위로 명확.
 
+### 깊이 5 초과 슬라이스 (plan 재진입 후보)
+- 0개 (모두 정상 범위)
+또는:
+- 2개:
+  - Slice #3 — 깊이 6 (3 levels too deep) → `/plan` 재호출로 분리 권장
+  - Slice #5 — 깊이 7 (4 levels too deep) → `/plan` 재호출로 분리 권장
+
 ### 다음 가능한 명시 호출 예시
 - `tdd로 슬라이스 #3 이어서` (또는 `RED→GREEN으로 슬라이스 #3 작업`)
-- `/plan` 재호출 (가정이 흔들렸거나 신규 슬라이스 분해 필요)
+- `/plan` 재호출 (가정이 흔들렸거나 신규 슬라이스 분해 필요, 또는 깊이 5 초과 슬라이스 분리)
 - `/handoff` (지금까지 보고만 받고 종료)
 
 > 위 예시는 **참고용**이다. 사용자가 명시 지시 없이 takeover만 호출했다면 그대로 대기한다. 자동 진행 금지.
@@ -236,5 +243,6 @@ for file in Relevant Files (최대 8개):
 - frontmatter의 `head_commit` 기준으로 git stale 판정 수행됨 (git repo인 경우)
 - Relevant Files가 모두 Read되고 라인 번호 유효성 검증됨
 - features/<feature-name>/ 슬롯이 있으면 task-index.md와 CURRENT 슬라이스의 tdd-state/slice-N.md를 hypothesis로 검증됨
-- 구조화된 검증 결과 + **다음 가능한 명시 호출 예시 섹션**이 사용자에게 보고됨
+- 구조화된 검증 결과 + **`### 깊이 5 초과 슬라이스` 카운트 섹션** + **`### 다음 가능한 명시 호출 예시` 헤더가 반드시 존재**하는 형태로 사용자에게 보고됨
+- 두 섹션 모두 빠지면 보고 미완 — 추가 후 종료
 - **자동 진행 없이** 사용자 지시를 대기하는 상태로 종료

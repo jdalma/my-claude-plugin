@@ -1,19 +1,27 @@
 ---
 name: tdd
-description: TDD 구현 워크플로우 — behavior 리스트, tracer bullet, RED→GREEN 사이클, refactor, 검증. 활성 트리거 키워드는 'tdd', 'RED→GREEN', 'tracer bullet', 'features/<feature-name>/task-index.md 픽업'. 워크플로우만 제공하며 실행 방식은 사용자 선택.
+description: 사용자가 "/tdd" 슬래시 호출 또는 "tdd로 슬라이스 #N 시작", "RED→GREEN으로 슬라이스 #N 작업", "features/<feature-name>/task-index.md 픽업" 같이 plan에서 산출된 task-index.md의 특정 슬라이스를 픽업해 구현하겠다는 의도를 명시했을 때만 사용. plan을 거치지 않은 자유 텍스트 요구사항이거나 "테스트 작성해줘" 같은 일반 의도만 표현했다면 절대 자동 호출 금지. behavior 리스트, tracer bullet, RED→GREEN 사이클, refactor, 검증 워크플로우만 제공하며 실행 방식은 사용자 선택. 자동 호출·자동 제안·자동 escalate 금지.
+disable-model-invocation: true
 ---
 
 # TDD — Vertical Slice Implementation Skill
 
 OMC 의존만. 다른 플러그인 의존 X (필요한 원칙은 번들 .md로 흡수).
 
-## 활성 시점
+## ⛔ 호출 규칙 (가장 중요)
 
-- `/plan` 직후 슬라이스 픽업 시 자동
-- 키워드: "tdd", "RED→GREEN", "tracer bullet", "features/<feature-name>/task-index.md 픽업"
-- 슬라이스 1개를 implementation으로 가져온다는 의도가 컨텍스트에 명확할 때
+이 스킬은 **사용자가 명시 호출했을 때만** 동작한다.
 
-(description의 4개 키워드와 본문이 일치 — 광범위 키워드 false-positive 차단)
+활성 조건 — 다음 중 하나라도 만족해야 함:
+- 사용자가 `/tdd` 슬래시로 직접 호출
+- 사용자가 "tdd로 슬라이스 #N 시작" / "RED→GREEN으로 슬라이스 #N 작업" / "task-index.md 픽업" 같이 *특정 슬라이스 번호와 함께* 호출
+- `task-index.md`가 존재하고 사용자가 그 안의 슬라이스를 가리켜 구현 의도를 명시
+
+🚫 **자동 호출 차단** — 다음 케이스는 활성하지 않는다:
+- ❌ "테스트 작성해줘", "이거 구현해줘" 같은 일반 의도만 표현
+- ❌ task-index.md 없이 자유 텍스트 요구사항만 있을 때 → `/plan` 먼저 안내
+- ❌ 키워드("tdd")가 일상 대화에 포함됐다고 자동 활성
+- ❌ "tdd 스킬 쓸까요?" 식 선제 권유
 
 ## 진입 전 사전 조건
 

@@ -1,10 +1,20 @@
 ---
-description: 새 기능/이슈를 vertical slice로 분해하고 TDD 구현 준비. 모호함 해소 → 슬라이싱 → features/<feature-name>/ publish → tdd 안내까지 수행한다.
+name: plan
+description: 새 기능/이슈를 vertical slice로 분해하고 TDD 구현 준비. 사용자가 "/plan" 슬래시 호출 또는 "기능 슬라이싱", "새 기능 분해", "vertical slice", "task-index.md 만들어줘" 같이 명시 의도를 표현했을 때만 사용. 모호함 해소 → 슬라이싱 → features/<feature-name>/task-index.md publish → tdd 안내까지 수행한다. 자동 호출·자동 제안 금지.
+disable-model-invocation: true
 ---
 
 # /plan — Vertical Slice Planner
 
 OMC만 의존. 외부 플러그인 의존 X. 사용자 입력 받아 다음 4단계 진행.
+
+## ⛔ 호출 규칙
+
+이 스킬은 **사용자가 `/plan`을 슬래시로 호출했거나, "기능 슬라이싱"·"새 기능 분해"·"vertical slice" 같이 명시 의도를 표현했을 때만** 동작한다.
+
+- ❌ "이 작업 어떻게 할까" 같은 의도 표현만으로 자동 실행 금지
+- ❌ "/plan을 실행할까요?" 식 선제 권유 금지
+- ✅ 사용자 명시 호출·지명 시에만 실행
 
 ## Input
 사용자가 이 커맨드 뒤에 제공한 자유 텍스트 (기능 설명, 이슈 링크, 요구사항 등)
