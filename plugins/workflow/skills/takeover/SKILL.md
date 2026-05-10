@@ -28,12 +28,12 @@ disable-model-invocation: true
 ```
 features/<feature-name>/
 ├── task-index.md     ← /plan 산출물 (slice 정의 + 진행 마커 + TODO 섹션 + Decisions 섹션)
-├── tdd-state/
-│   ├── slice-1.md    ← tdd 슬라이스마다 진행 상태 (behavior 트리)
-│   └── slice-N.md
-├── pending-decisions.md  ← (선택) 미해결 결정
-└── decisions.md      ← (선택) 수명 긴 결정·트랩
+└── tdd-state/
+    ├── slice-1.md    ← tdd 슬라이스마다 진행 상태 (behavior 트리)
+    └── slice-N.md
 ```
+
+모든 결정·트랩은 `task-index.md`의 `## Decisions` 섹션 안에서 관리한다. 별도의 `decisions.md` / `pending-decisions.md` 파일은 사용하지 않는다.
 
 `/takeover` 호출 시 위 디렉토리의 모든 파일을 hypothesis로 읽어 stale 여부를 판정한다.
 
@@ -231,7 +231,7 @@ for file in Relevant Files (최대 8개):
 - **tdd-state/slice-3.md**: behavior 4개 중 2개 GREEN, 1개 CURRENT, 1개 미착수. 트리 깊이 2 (정상 범위).
 
 ### 문서가 모르는 새 변경
-- 새 파일: `features/handoff-skill/decisions.md` (1일 전 추가됨)
+- 새 파일: `features/handoff-skill/tdd-state/slice-4.md` (1일 전 추가됨)
 
 ### 종합
 - 전반적으로 유효. 단, `path/to/other.kt`의 라인 번호는 stale.
@@ -281,12 +281,12 @@ for file in Relevant Files (최대 8개):
 
 | 파일 | 생성 | 갱신 | 읽기만 |
 |------|------|------|--------|
-| `task-index.md` | plan | plan (재진입 시 overwrite/append/abort), tdd (슬라이스 진행 마커 토글 y/n), handoff (TODO 섹션 일괄 y/n) | **takeover** |
+| `task-index.md` | plan / handoff (Step 2.5 신규 슬롯 생성 시) | plan (재진입 시 overwrite/append/abort/fill), tdd (슬라이스 진행 마커 토글 y/n + Decisions 섹션 vault 인용 시), handoff (TODO 섹션 일괄 y/n) | **takeover** |
 | `tdd-state/slice-N.md` | tdd (슬라이스 시작 시) | tdd (RED→GREEN 사이클마다) | handoff, **takeover** |
-| `pending-decisions.md` | tdd (필요 시) | tdd | plan, handoff, **takeover** |
-| `decisions.md` | 사용자/plan | plan, tdd | handoff, **takeover** |
 
 **takeover는 어느 파일도 수정하지 않는다.** 검증·보고만 한다.
+
+**별도 파일 정책**: 모든 결정·트랩은 `task-index.md`의 `## Decisions` 섹션 안에서 관리한다. 별도의 `decisions.md` / `pending-decisions.md` 파일은 사용하지 않는다 (단일 source of truth 원칙). Decisions 섹션 항목은 `[resolved] / [pending] / [trap]` 표기로 구분한다 (plan Step 4-3 템플릿 참조).
 
 ## Done When
 
