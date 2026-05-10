@@ -286,7 +286,7 @@ for file in Relevant Files (최대 8개):
 
 **takeover는 어느 파일도 수정하지 않는다.** 검증·보고만 한다.
 
-**별도 파일 정책**: 모든 결정·트랩은 `task-index.md`의 `## Decisions` 섹션 안에서 관리한다. 별도의 `decisions.md` / `pending-decisions.md` 파일은 사용하지 않는다 (단일 source of truth 원칙). Decisions 섹션 항목은 `[resolved] / [pending] / [trap]` 표기로 구분한다 (plan Step 4-3 템플릿 참조).
+**별도 파일 정책**: 모든 결정·트랩은 `task-index.md`의 `## Decisions` 섹션 안에서 관리한다. 별도의 `decisions.md` / `pending-decisions.md` 파일은 사용하지 않는다 (단일 source of truth 원칙). Decisions 섹션 항목은 `[<상태>][<출처>]` 두 태그를 머리에 박는다 — 상태는 `[resolved] / [pending] / [trap]`, 출처는 `[plan] / [slice-N]` (plan Step 4-3 템플릿 참조).
 
 ## Done When
 
