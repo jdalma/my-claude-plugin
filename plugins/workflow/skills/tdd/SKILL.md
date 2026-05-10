@@ -192,6 +192,7 @@ NEXT:   다음 behavior로 (사이클 1회 = behavior 1개)
 `features/<feature-name>/tdd-state/slice-N.md` (슬라이스마다 별도 파일):
 ```markdown
 ---
+feature_name: <feature-name>     # task-index.md frontmatter에서 그대로 복사. takeover의 cross-branch 검증 키.
 slice: N
 tracer_bullet: [한 줄]
 started: <date>
@@ -264,37 +265,7 @@ Last cycle: <timestamp>
 
 평면을 쓰다가 도중에 트리로 전환 가능 (해당 behavior 아래 자식 추가). 자동 변환은 하지 않는다.
 
-### 트리 조작 규칙
-
-1. **leaf 추가 권한은 tdd만** — 사용자가 직접 추가하지 않는다 (워크플로우 일관성).
-2. **추가마다 사용자 y/n 확인 필수** — `[제안] B2 아래에 자식 노드 "guard throws InvalidStateException" 추가. (y/n)`. 자동 추가 금지.
-3. **부모 자동 GREEN** — 자식이 모두 `[x]`되면 부모도 즉시 `[x]`로 표시 (수동 체크 불필요).
-4. **leaf가 더 잘게 쪼개지면 부모로 변환** — 자식 추가 시 leaf 자체는 *논리 부모*가 됨. RED→GREEN 사이클은 새 leaf로 이동.
-5. **삭제 금지** — 부정확하게 추가한 노드는 `~~취소선~~` + 이유 주석. 실제 삭제는 사용자 직접.
-6. **깊이 5 초과 시 경고** — *"이 슬라이스가 plan 슬라이스로 분리될 만큼 큰 신호. `/plan` 재진입을 고려하시겠습니까?"* 경고 후 사용자 판단. 강제 차단은 아님.
-
-### 트리 구조 예시
-
-```markdown
-### Behaviors (트리)
-- [x] B1. user can cancel a PENDING order
-  - [x] cancel endpoint accepts orderId
-  - [x] state transitions PENDING → CANCELED
-    - [x] CancelService.cancel() returns updated order
-    - [x] OrderRepository.save persists CANCELED state
-  - [x] audit log written
-- [ ] B2. canceling a CANCELED order returns 409  ← CURRENT
-  - [ ] state guard checks current status
-    - [ ] guard throws InvalidStateException
-  - [ ] handler maps to 409
-  - [ ] no audit log on rejection
-```
-
-### RED→GREEN과의 관계
-
-- 트리에서는 **leaf 노드가 사이클 단위** (= "1 leaf = 1 cycle"; `red-green.md` 참조).
-- 중간 노드는 자식 모두 GREEN 시 자동 GREEN.
-- leaf가 도중에 부모로 승격되면, 새로 추가된 자식 leaf로 사이클 이동.
+> **트리 조작 규칙·예시·RED→GREEN 관계는 `tree-decomposition.md` 참조.** 트리 사용 시 6가지 조작 룰(leaf 추가 권한, y/n, 자동 GREEN, 깊이 5 초과 경고 등)이 거기 있다. 평면만 쓸 거면 이 문서를 읽지 않아도 된다.
 
 ## Dependencies
 
@@ -311,10 +282,23 @@ Last cycle: <timestamp>
 
 - `red-green.md` — RED-GREEN-REFACTOR 디시플린 (SP TDD 흡수)
 - `verification.md` — Gate Function (SP verification 흡수)
+- `tree-decomposition.md` — 트리 형식 태스크 분해 옵션 (조작 규칙 6개·예시·RED→GREEN 관계)
 - `slicing.md` — Vertical slice + tracer bullet 원칙
 - `behaviors.md` — Behavior 추출·식별 5원칙
 
-## 상태 갱신 책임 매트릭스 (4개 자산 공통)
+## Done When (슬라이스 단위)
+
+다음 모두 충족 시에만 슬라이스를 완료로 본다 (Step 5 verification 게이트 통과 = 이 체크리스트 통과).
+
+- Step 0 Scope 4항목(in / out / seam / non-goal)이 채워짐
+- Behaviors 트리의 모든 leaf가 GREEN
+- 부모 노드 GREEN이 자식 모두 GREEN으로 자동 도출됨 (수동 체크 없음)
+- Step 5의 5단계 게이트(빌드 / 단위 테스트 / 통합 테스트 / scope 일치 / 가정 흔들림 점검) 통과
+- 사용자 y/n 후 `task-index.md`의 슬라이스 진행 마커 `[~]` → `[x]` 토글
+- `tdd-state/slice-N.md`의 Cycle log·Cited decisions 갱신 완료
+- 신규 trap·pending 결정이 task-index.md `## Decisions` 섹션에 `[trap] / [pending]` 표기로 누적됨 (해당 시)
+
+
 
 이 표는 plan / tdd / handoff / takeover 4개 자산이 모두 동일하게 따른다.
 

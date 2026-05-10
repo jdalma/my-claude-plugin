@@ -132,6 +132,13 @@ plan_input: [원래 요청 한 줄 요약]
 ## TODO (slice 외 작업·잡일·외부 의존 대기)
 (handoff가 이번 세션 발견분을 누적, 사용자 y/n 후만)
 
+**항목 형식**: 마크다운 체크박스. `[ ]` 미완료 / `[x]` 완료. 폐기는 취소선(`~~text~~`) + 한 줄 사유.
+
+**예시**:
+- [ ] backend의 user-id migration 대기 (PR #234)
+- [x] race condition 재현 fixture 정리
+- ~~[ ] PaymentService 통합 테스트 도커 fixture~~ (사유: B-3 구조로 변경되어 무관)
+
 ## Decisions / Traps (수명 긴 메모)
 (plan/tdd 진행 중 누적. 모든 결정은 여기서 관리한다 — 별도 `decisions.md` / `pending-decisions.md` 파일을 만들지 않는다.)
 
