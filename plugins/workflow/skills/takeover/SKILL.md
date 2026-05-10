@@ -57,20 +57,53 @@ features/<feature-name>/
 
 ### Step 1: handoff 문서 선택
 
+handoff는 브랜치보다 feature 단위 인계가 더 자연스럽다 (브랜치는 자주 바뀌고 rebase되지만 feature는 오래 간다).
+검색 우선순위는 **feature_name 먼저, 브랜치는 fallback**.
+
 ```bash
-# 현재 브랜치 확인 (git repo인 경우)
+# 0. 현재 브랜치 확인 (git repo인 경우)
 git rev-parse --abbrev-ref HEAD 2>/dev/null
 
-# 매칭되는 handoff 검색 (가장 최근 우선)
+# 1. 현재 작업 디렉토리에서 feature_name 추론
+#    - 먼저 features/*/task-index.md 검색 후 가장 관련 있는 feature_name 선택
+#    - 후보 여러 개면 사용자에게 번호로 제시
+current_feature=$(ls features/*/task-index.md 2>/dev/null | head -1 | xargs -I {} grep -m1 "^feature_name:" {} | cut -d: -f2 | xargs)
+
+# 2. 1차 검색 — feature_name으로 frontmatter grep (cross-branch)
+if [ -n "$current_feature" ]; then
+  grep -l "^feature_name: ${current_feature}$" .claude/handoff/*.md 2>/dev/null | xargs ls -t 2>/dev/null
+fi
+
+# 3. 2차 fallback — 브랜치 슬러그 매칭
 ls -t .claude/handoff/*-<current-branch-slug>.md 2>/dev/null | head -5
 
-# 매칭 없으면 모든 handoff에서 최근 N개
+# 4. 3차 fallback — 모든 handoff에서 최근 N개
 ls -t .claude/handoff/*.md 2>/dev/null | head -5
 ```
 
 - 정확히 1개 매칭: 자동 선택 + 사용자에게 알림
-- 여러 개: 번호로 사용자에게 제시, 선택 받음
+- 여러 개: **feature 그룹핑 형태로 사용자에게 제시**, 선택 받음
 - 없음: "사용 가능한 handoff 없음" 보고하고 종료
+
+**다중 후보 제시 형식 (feature 그룹핑)**:
+
+```
+[feature: auth-bug-fix]
+  1. 2026-05-04-fix-auth-bug.md (최신)
+  2. 2026-05-03-fix-auth-bug.md
+  3. 2026-04-28-feature-auth-init.md (다른 브랜치, 같은 feature)
+
+[feature: payment]
+  4. 2026-05-04-feature-payment.md
+
+[feature 미지정 (legacy/ad-hoc, feature_name: (skipped) 또는 누락)]
+  5. 2026-04-15-fix-typo.md
+
+선택 (번호):
+```
+
+같은 feature_name을 가진 handoff끼리 묶고, 그룹 안에서는 시간 역순(최신 우선) 정렬.
+feature_name이 `(skipped)` 또는 누락된 handoff는 "feature 미지정" 그룹으로 별도 표시.
 
 ### Step 2: 문서 읽기 + 무결성 체크
 
@@ -132,8 +165,11 @@ ls features/*/task-index.md 2>/dev/null
 찾은 features/<feature-name>/ 디렉토리의 모든 파일에 대해:
 
 1. **task-index.md Read** — 전체 컨텍스트 로드 (인덱스 + TODO + Decisions)
-   - Slices 섹션 진행 마커 분포: `[ ]/[~]/[x]/[!]` 카운트로 수평 진행도 즉시 파악
-   - `[~]` 표시된 슬라이스가 CURRENT (1개여야 정상, 2개 이상이면 stale 의심)
+   - frontmatter `plan_status` 또는 `created_by` 확인:
+     - `plan_status: not_run` 또는 `created_by: handoff` 발견 시 → **handoff-initiated 슬롯**임을 인식. Slices 섹션이 비어있는 게 정상이며, stale 신호로 처리하지 않는다. 보고에 *"이 task-index.md는 handoff가 만든 간소형. /plan을 호출하면 4번째 옵션 'fill'로 Slices 섹션 채울 수 있음"* 힌트 표시.
+     - 위 필드 없으면 정상 plan 산출물로 간주
+   - Slices 섹션 진행 마커 분포: `[ ]/[~]/[x]/[!]` 카운트로 수평 진행도 즉시 파악 (handoff-initiated 슬롯이면 모두 0개일 수 있음 — 정상)
+   - `[~]` 표시된 슬라이스가 CURRENT (1개여야 정상, 2개 이상이면 stale 의심. handoff-initiated 슬롯이면 0개도 정상)
    - TODO 섹션의 `[x]` 중 의심스러운 것 (handoff에 언급 없음, 코드에 흔적 없음) 식별
    - Decisions / Traps 섹션 훑어 trap 인용 가능 여부 확인
 2. **tdd-state/slice-N.md Read** (CURRENT 슬라이스만 우선) — behavior 진행도 체크
@@ -159,9 +195,22 @@ for file in Relevant Files (최대 8개):
 ```markdown
 ## Takeover 검증 결과
 
-**Handoff 문서**: `.claude/handoff/2026-05-04-fix-skills-subskill-chaining.md`
+**Handoff 문서 (선택됨)**: `.claude/handoff/2026-05-04-fix-skills-subskill-chaining.md`
 **연결 features/**: `features/handoff-skill/`
 **작성 시점**: 2026-05-04 → 현재 1일 경과
+
+### Feature Timeline (handoff-skill)
+*frontmatter에 `feature_name`이 있으면 항상 표시. 같은 feature의 모든 handoff를 시간순으로 묶어 보여줘 사용자가 작업 흐름을 즉시 인식할 수 있게 한다.*
+
+| 날짜 | 브랜치 | 파일 | 상태 |
+|---|---|---|---|
+| 2026-04-28 | feature/handoff-init | 2026-04-28-feature-handoff-init.md | 과거 (검증 안 함) |
+| 2026-05-01 | feature/handoff-init | 2026-05-01-feature-handoff-init.md | 과거 (검증 안 함) |
+| 2026-05-04 | fix/skills-subskill-chaining | 2026-05-04-fix-skills-subskill-chaining.md | ⬅ CURRENT (Step 3·4 검증 대상) |
+
+- 표는 같은 `feature_name` 가진 handoff 모두를 cross-branch로 묶음
+- 과거 handoff는 *읽지 않음* (참조만). 검증은 CURRENT만.
+- `feature_name`이 `(skipped)` 또는 누락된 handoff는 이 표에 포함하지 않음 (feature 미지정 단발 dump로 처리)
 
 ### Git stale 판정
 - ✅ head_commit (403569c) 여전히 존재
@@ -223,6 +272,8 @@ for file in Relevant Files (최대 8개):
 | features/<feature-name>/ 디렉토리 자체 없음 | features/ 자산 상태 섹션 생략, "(연결된 features/ 슬롯 없음)" 명시 |
 | features/ 안의 일부 파일만 있음 (예: task-index.md만, tdd-state/ 부재) | 있는 것만 검증, 없는 건 생략. tdd-state/ 부재면 "tdd 미시작" 으로 추정 |
 | `[~]` 마커가 2개 이상 발견 (정상은 1개) | "복수 CURRENT 발견. 이전 세션이 슬라이스 전환 마커 토글을 누락한 것으로 보임" 경고 후 사용자에게 어느 게 CURRENT인지 확인 |
+| task-index.md frontmatter에 `created_by: handoff` 또는 `plan_status: not_run` | handoff-initiated 슬롯. Slices 빈 것은 정상. 보고에 *"/plan으로 4번째 옵션 'fill'을 선택하면 Slices/Decisions를 채워 정상 plan으로 승격 가능"* 힌트 표시. stale 신호로 처리하지 않음 |
+| feature_name이 `(skipped)` 또는 누락 | Feature Timeline 섹션 생략, "(feature 미지정 — 단발 dump 또는 legacy handoff)" 명시. 다른 handoff와 묶지 않음 |
 
 ## 상태 갱신 책임 매트릭스 (4개 자산 공통)
 

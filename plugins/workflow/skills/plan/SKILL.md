@@ -80,13 +80,19 @@ test -d features && echo "exists" || echo "missing"
 test -f features/<feature-name>/task-index.md && echo "exists" || echo "new"
 ```
 
-기존 파일이 있으면 사용자에게 다음 3옵션을 번호로 제시하고 선택받는다:
+기존 파일이 있으면 사용자에게 옵션을 번호로 제시하고 선택받는다.
+
+**기본 3옵션**:
 
 1. **overwrite** — 기존 파일 백업 후 새로 작성. 이전 슬라이스 진행이 모두 폐기되어도 무방한 경우.
 2. **append** — 기존 Slices 섹션 뒤에 신규 슬라이스를 이어 붙인다. TODO·Decisions 섹션·진행 마커는 보존. 새 요구사항 추가 케이스.
 3. **abort** — 작성 중단. 사용자가 직접 수정 후 다시 호출.
 
-선택 없이 자동 overwrite 금지.
+**4옵션 (조건부 노출)** — 기존 파일 frontmatter에 `created_by: handoff` 또는 `plan_status: not_run`이 있을 때만 추가로 제시:
+
+4. **fill** — handoff가 미리 만든 간소형 task-index.md를 정상 plan으로 승격. Slices 섹션과 Decisions 섹션을 새로 채우되, 기존 TODO 섹션과 frontmatter의 `feature_name`은 그대로 보존. `plan_status` 필드는 `not_run` → `complete`로 갱신, `created_by: handoff`는 제거.
+
+선택 없이 자동 overwrite 금지. 4옵션은 조건 미충족 시 표시 자체를 하지 않는다 (사용자 혼동 방지).
 
 ### 4-3. publish
 
