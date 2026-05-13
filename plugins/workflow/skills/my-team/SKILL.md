@@ -8,6 +8,20 @@ aliases: []
 
 Spawn coordinated CLI workers (claude / codex / gemini / cursor) across multiple project directories. Adapts the OMC `team` tmux pane mechanism, lifts its single-cwd constraint, and keeps mailbox-based worker-to-worker communication.
 
+## ⚠️ Prerequisite — CLI 설치 확인
+
+이 스킬은 `my-team` CLI 바이너리(`tools/my-team` npm 패키지)를 호출한다. PATH에 없으면 동작하지 않는다.
+
+```bash
+command -v my-team  # 없으면 → 사용자에게 안내
+```
+
+미설치 상태이면 작업 시작 전에 사용자에게 안내한다:
+
+> `my-team` CLI가 PATH에 없습니다. `/my-team-install`을 먼저 호출해서 설치한 뒤 다시 시도해주세요.
+
+자동으로 install을 호출하지 마라. 사용자가 명시적으로 `/my-team-install`을 실행한 뒤 본 스킬을 다시 호출하는 흐름.
+
 ## Usage
 
 ```bash
