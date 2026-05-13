@@ -1,0 +1,7 @@
+{
+  "name": "my-team",
+  "version": "0.1.0",
+  "description": "Multi-project worker orchestration. Spawn N CLI workers in tmux panes, each at its own project cwd, with shared mailbox communication.",
+  "license": "MIT",
+  "skills": "./skills/"
+}
