@@ -34,18 +34,26 @@ export function isUnixLikeOnWindows() {
     return process.platform === 'win32' && !!(process.env.MSYSTEM || process.env.MINGW_PREFIX);
 }
 
-export async function applyMainVerticalLayout(teamTarget) {
+/**
+ * Apply a grid (tiled) layout to the team window. tmux auto-arranges panes
+ * into roughly equal rows × cols (e.g. 4 panes → 2x2, 6 → 2x3 or 3x2).
+ *
+ * Also enables pane-border-status so each pane's title (set via
+ * `select-pane -T <name>`) is shown on the top border line.
+ */
+export async function applyTeamLayout(teamTarget) {
     try {
-        await tmuxExecAsync(['select-layout', '-t', teamTarget, 'main-vertical']);
+        await tmuxExecAsync(['select-layout', '-t', teamTarget, 'tiled']);
+    } catch { /* ignore */ }
+    // Show pane titles on the top border of every pane in this window.
+    try {
+        await tmuxExecAsync(['set-window-option', '-t', teamTarget, 'pane-border-status', 'top']);
     } catch { /* ignore */ }
     try {
-        const widthResult = await tmuxCmdAsync(['display-message', '-p', '-t', teamTarget, '#{window_width}']);
-        const width = parseInt(widthResult.stdout.trim(), 10);
-        if (Number.isFinite(width) && width >= 40) {
-            const half = String(Math.floor(width / 2));
-            await tmuxExecAsync(['set-window-option', '-t', teamTarget, 'main-pane-width', half]);
-            await tmuxExecAsync(['select-layout', '-t', teamTarget, 'main-vertical']);
-        }
+        await tmuxExecAsync([
+            'set-window-option', '-t', teamTarget,
+            'pane-border-format', ' #{pane_title} ',
+        ]);
     } catch { /* ignore */ }
 }
 
@@ -251,21 +259,36 @@ export async function createTeamSession(teamName, workers, options = {}) {
     }
 
     // === CORE CHANGE: per-worker cwd ===
+    // Split direction alternates h/v so tiled layout (applied below) has
+    // something to work with even before re-layout. Final geometry is
+    // determined by `select-layout tiled`.
     for (let i = 0; i < workers.length; i++) {
         const w = workers[i];
         if (!w?.cwd) throw new Error(`Worker '${w?.name}' missing cwd`);
         const splitTarget = i === 0 ? leaderPaneId : workerPanes[i - 1].paneId;
-        const splitType = i === 0 ? '-h' : '-v';
+        const splitType = i % 2 === 0 ? '-h' : '-v';
         const splitResult = await tmuxCmdAsync([
             'split-window', splitType, '-t', splitTarget,
             '-d', '-P', '-F', '#{pane_id}',
             '-c', w.cwd,                              // ← PER-WORKER CWD (the whole point)
         ]);
         const paneId = splitResult.stdout.split('\n')[0]?.trim();
-        if (paneId) workerPanes.push({ name: w.name, paneId });
+        if (paneId) {
+            workerPanes.push({ name: w.name, paneId });
+            // Set pane title so the border-status line shows the worker name.
+            // -T sets the per-pane title; pane-border-format renders it.
+            try {
+                await tmuxExecAsync(['select-pane', '-t', paneId, '-T', w.name]);
+            } catch { /* ignore — title is cosmetic */ }
+        }
     }
 
-    await applyMainVerticalLayout(teamTarget);
+    // Also label the leader pane so it's not blank in the grid.
+    try {
+        await tmuxExecAsync(['select-pane', '-t', leaderPaneId, '-T', 'leader']);
+    } catch { /* ignore */ }
+
+    await applyTeamLayout(teamTarget);
     try { await tmuxExecAsync(['set-option', '-t', resolvedSessionName, 'mouse', 'on']); } catch { /* ignore */ }
     if (sessionMode !== 'dedicated-window') {
         try { await tmuxExecAsync(['select-pane', '-t', leaderPaneId]); } catch { /* ignore */ }
