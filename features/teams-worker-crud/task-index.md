@@ -23,6 +23,7 @@ plan_status: not_run
 - [ ] `cli.js` 라우팅 추가 (~10줄): remove / add 두 명령 등록
 - [ ] README.md 갱신: remove/add 명령 사용법 + 결정 사항 명시
 - [ ] `tools/my-team/docs/architecture.md` 갱신: 통신 5종 매트릭스에 워커 교체가 미치는 영향 (mailbox/tasks orphan 처리 등)
+- [ ] **`worker-bootstrap.js`에서 leader-fixed 의존 표현 7곳 제거 (peer-to-peer 모델로 정합화)** — 아래 §leader-fixed 자취 참조
 
 ## Decisions / Traps (수명 긴 메모)
 
@@ -42,6 +43,21 @@ plan_status: not_run
   - (iii) 사용자에게 새 owner 묻기
 
 - [pending][plan] **(d) 워커 수 제한** — 현재 1~10. add로 11번째 시도 시 거부 vs 한도 늘리기.
+
+- [pending][plan] **(e) worker-bootstrap.js의 leader-fixed 의존 제거 정책** — OMC 차용 시 따라온 잔재로 워커 AGENTS.md에 "ACK·progress·blocker는 leader-fixed로 보내라"가 7곳에 박혀있다. 이전 세션에서 사용자가 정한 peer-to-peer 모델("리더 세션 불필요, 사용자가 페인 직접 관찰")과 정면 충돌. 다음 세션에서 결정할 정책:
+  - (i) 7곳 모두 제거 → 워커는 사용자에게 자기 페인에서 직접 prompt
+  - (ii) leader-fixed 채널 자체는 유지하되 "긴급 보고용"으로 제한, 평소 권한·결정은 페인 prompt
+  - (iii) config 워커별 토글 추가 (예: `peer_to_peer: true`로 leader 의존 끄기)
+
+### leader-fixed 자취 — worker-bootstrap.js 7곳 위치 (다음 세션 작업용)
+
+- `worker-bootstrap.js:66` "If a command fails, report the exact stderr to leader-fixed before retrying."
+- `worker-bootstrap.js:72` "Execute task work in small, verifiable increments and report each milestone to leader-fixed."
+- `worker-bootstrap.js:87` "Keep reasoning focused on assigned task IDs and send concise progress acks to leader-fixed."
+- `worker-bootstrap.js:88` "Before any risky command, send a blocker/proposal message to leader-fixed and wait for updated inbox instructions."
+- `worker-bootstrap.js:110` startup ACK 명령 자동 주입 (`team api send-message --to leader-fixed --body "ACK: ${workerName} initialized"`)
+- `worker-bootstrap.js:125, 181, 193` 워커 정체성 강제 ("You are NOT the leader", "Send ACK to the leader")
+- `worker-bootstrap.js:176` leader 보내는 명령 템플릿 자동 노출
 
 ### 사실 (이번 세션에서 확정)
 
