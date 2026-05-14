@@ -63,29 +63,29 @@ function agentTypeGuidance(agentType) {
             return [
                 '### Agent-Type Guidance (codex)',
                 `- Prefer short, explicit \`${teamApiCommand} ... --json\` commands and parse outputs before next step.`,
-                '- If a command fails, report the exact stderr to leader-fixed before retrying.',
+                '- If a command fails, surface the exact stderr to the user in this pane (normal codex confirmation/prompt flow) before retrying.',
                 `- You MUST run \`${claimTaskCommand}\` before starting work and \`${transitionTaskStatusCommand}\` when done.`,
             ].join('\n');
         case 'gemini':
             return [
                 '### Agent-Type Guidance (gemini)',
-                '- Execute task work in small, verifiable increments and report each milestone to leader-fixed.',
+                '- Execute task work in small, verifiable increments. The user observes this pane directly; surface milestones via your normal stdout (no separate channel needed).',
                 '- Keep commit-sized changes scoped to assigned files only; no broad refactors.',
                 `- CRITICAL: You MUST run \`${claimTaskCommand}\` before starting work and \`${transitionTaskStatusCommand}\` when done. Do not exit without transitioning the task status.`,
             ].join('\n');
         case 'cursor':
             return [
                 '### Agent-Type Guidance (cursor)',
-                '- You are an interactive REPL (cursor-agent), not a one-shot CLI. Stay in the session; the leader will continue to send prompts via mailbox.',
-                `- You MUST run \`${claimTaskCommand}\` before starting work and \`${transitionTaskStatusCommand}\` when done. Then keep waiting for the next mailbox message; do NOT type \`/exit\` unless the leader sends an explicit shutdown.`,
+                '- You are an interactive REPL (cursor-agent), not a one-shot CLI. Stay in the session; the user observes this pane and other workers reach you via mailbox.',
+                `- You MUST run \`${claimTaskCommand}\` before starting work and \`${transitionTaskStatusCommand}\` when done. Then keep waiting for the next mailbox message; do NOT type \`/exit\` unless the user types one in this pane.`,
                 '- Reviewer/critic/security-review roles are NOT supported for cursor workers — those require a verdict-file write-and-exit which the REPL does not perform. Take only executor-style tasks.',
             ].join('\n');
         case 'claude':
         default:
             return [
                 '### Agent-Type Guidance (claude)',
-                '- Keep reasoning focused on assigned task IDs and send concise progress acks to leader-fixed.',
-                '- Before any risky command, send a blocker/proposal message to leader-fixed and wait for updated inbox instructions.',
+                '- Keep reasoning focused on assigned task IDs. The user observes this pane directly; surface progress via your normal stdout.',
+                '- Before any risky command, ask the user in this pane via your normal Claude permission/confirmation prompt and wait for their answer.',
             ].join('\n');
     }
 }
@@ -107,7 +107,6 @@ export function generateWorkerOverlay(params) {
     const shutdownAckPath = buildTeamStateInstructionPath(teamName, instructionStateRoot, 'workers', workerName, 'shutdown-ack.json');
 
     const claimTaskCommand = formatOmcCliInvocation(`team api claim-task --input "{\\"team_name\\":\\"${teamName}\\",\\"task_id\\":\\"<id>\\",\\"worker\\":\\"${workerName}\\"}" --json`);
-    const sendAckCommand = formatOmcCliInvocation(`team api send-message --input "{\\"team_name\\":\\"${teamName}\\",\\"from_worker\\":\\"${workerName}\\",\\"to_worker\\":\\"leader-fixed\\",\\"body\\":\\"ACK: ${workerName} initialized\\"}" --json`);
     const completeTaskCommand = formatOmcCliInvocation(`team api transition-task-status --input "{\\"team_name\\":\\"${teamName}\\",\\"task_id\\":\\"<id>\\",\\"from\\":\\"in_progress\\",\\"to\\":\\"completed\\",\\"claim_token\\":\\"<claim_token>\\",\\"result\\":\\"Summary: <what changed>\\\\nVerification: <tests/checks run>\\"}" --json`);
     const failTaskCommand = formatOmcCliInvocation(`team api transition-task-status --input "{\\"team_name\\":\\"${teamName}\\",\\"task_id\\":\\"<id>\\",\\"from\\":\\"in_progress\\",\\"to\\":\\"failed\\",\\"claim_token\\":\\"<claim_token>\\"}" --json`);
     const readTaskCommand = formatOmcCliInvocation(`team api read-task --input "{\\"team_name\\":\\"${teamName}\\",\\"task_id\\":\\"<id>\\"}" --json`);
@@ -122,7 +121,9 @@ export function generateWorkerOverlay(params) {
 
     return `# Team Worker Protocol
 
-You are a **team worker**, not the team leader. Operate strictly within worker protocol.
+You are one of N workers collaborating peer-to-peer. The user observes each
+pane directly and intervenes through your normal CLI prompt when needed.
+Other workers reach you through your mailbox.
 
 ## FIRST ACTION REQUIRED
 Before doing anything else, write your ready sentinel file:
@@ -131,15 +132,15 @@ mkdir -p $(dirname ${sentinelPath}) && touch ${sentinelPath}
 \`\`\`
 
 ## MANDATORY WORKFLOW — Follow These Steps In Order
-You MUST complete ALL of these steps. Do NOT skip any step. Do NOT exit without step 4.
+You MUST complete ALL of these steps. Do NOT skip any step. Do NOT exit without step 3.
 
 1. **Claim** your task (run this command first):
    \`${claimTaskCommand}\`
-   Save the \`claim_token\` from the response — you need it for step 4.
-2. **Do the work** described in your task assignment below.
-3. **Send ACK** to the leader:
-   \`${sendAckCommand}\`
-4. **Transition** the task status (REQUIRED before exit):
+   Save the \`claim_token\` from the response — you need it for step 3.
+2. **Do the work** described in your task assignment below. The user
+   observes this pane; if you need permission or confirmation, ask via
+   your normal CLI prompt — do not route the question to any "leader".
+3. **Transition** the task status (REQUIRED before exit):
    - On success: \`${completeTaskCommand}\`
    - On failure: \`${failTaskCommand}\`
 
@@ -172,14 +173,13 @@ ${taskList}
   \`\`\`
 
 ## Message Protocol
-Send messages via CLI API:
-- To leader: \`${formatOmcCliInvocation(`team api send-message --input "{\\"team_name\\":\\"${teamName}\\",\\"from_worker\\":\\"${workerName}\\",\\"to_worker\\":\\"leader-fixed\\",\\"body\\":\\"<message>\\"}" --json`)}\`
-- Check mailbox: \`${mailboxListCommand}\`
-- Mark delivered: \`${mailboxDeliveredCommand}\`
+Talk to the user: surface output in this pane via your normal stdout. Permission
+or confirmation requests use your CLI's native prompt (no "leader" channel).
 
-## Startup Handshake (Required)
-Before doing any task work, send exactly one startup ACK to the leader:
-\`${sendAckCommand}\`
+Talk to other workers via CLI API:
+- Send to peer: \`${formatOmcCliInvocation(`team api send-message --input "{\\"team_name\\":\\"${teamName}\\",\\"from_worker\\":\\"${workerName}\\",\\"to_worker\\":\\"<other-worker>\\",\\"body\\":\\"<message>\\"}" --json`)}\`
+- Check your mailbox (poll periodically): \`${mailboxListCommand}\`
+- Mark a delivered message read: \`${mailboxDeliveredCommand}\`
 
 ## Shutdown Protocol
 When you see a shutdown request in your inbox:
@@ -190,14 +190,13 @@ When you see a shutdown request in your inbox:
 3. Exit your session
 
 ## Rules
-- You are NOT the leader. Never run leader orchestration workflows.
 - Do NOT edit files outside the paths listed in your task description
 - Do NOT write lifecycle fields (status, owner, result, error) directly in task files; use CLI API
 - Do NOT spawn sub-agents. Complete work in this worker session only.
 - Do NOT create tmux panes/sessions (\`tmux split-window\`, \`tmux new-session\`, etc.).
 - Do NOT run team spawning/orchestration commands (for example: \`${teamCommand} ...\`).
 - Worker-allowed control surface is only: \`${teamApiCommand} ... --json\`.
-- If blocked, write {"state": "blocked", "reason": "..."} to your status file
+- If blocked, write {"state": "blocked", "reason": "..."} to your status file and surface the block in this pane's stdout so the user sees it
 
 ${agentTypeGuidance(agentType)}
 

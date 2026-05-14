@@ -23,7 +23,7 @@ plan_status: not_run
 - [ ] `cli.js` 라우팅 추가 (~10줄): remove / add 두 명령 등록
 - [ ] README.md 갱신: remove/add 명령 사용법 + 결정 사항 명시
 - [ ] `tools/my-team/docs/architecture.md` 갱신: 통신 5종 매트릭스에 워커 교체가 미치는 영향 (mailbox/tasks orphan 처리 등)
-- [ ] **`worker-bootstrap.js`에서 leader-fixed 의존 표현 7곳 제거 (peer-to-peer 모델로 정합화)** — 아래 §leader-fixed 자취 참조
+- [x] **`worker-bootstrap.js`에서 leader-fixed 의존 표현 7곳 제거 (peer-to-peer 모델로 정합화)** — 옵션 (i) 완전 제거로 진행. AGENTS.md 생성 결과 검증 완료 (leader-fixed 등장 0, peer-to-peer 정체성 박힘)
 
 ## Decisions / Traps (수명 긴 메모)
 
@@ -44,10 +44,14 @@ plan_status: not_run
 
 - [pending][plan] **(d) 워커 수 제한** — 현재 1~10. add로 11번째 시도 시 거부 vs 한도 늘리기.
 
-- [pending][plan] **(e) worker-bootstrap.js의 leader-fixed 의존 제거 정책** — OMC 차용 시 따라온 잔재로 워커 AGENTS.md에 "ACK·progress·blocker는 leader-fixed로 보내라"가 7곳에 박혀있다. 이전 세션에서 사용자가 정한 peer-to-peer 모델("리더 세션 불필요, 사용자가 페인 직접 관찰")과 정면 충돌. 다음 세션에서 결정할 정책:
-  - (i) 7곳 모두 제거 → 워커는 사용자에게 자기 페인에서 직접 prompt
-  - (ii) leader-fixed 채널 자체는 유지하되 "긴급 보고용"으로 제한, 평소 권한·결정은 페인 prompt
-  - (iii) config 워커별 토글 추가 (예: `peer_to_peer: true`로 leader 의존 끄기)
+- [resolved][plan] **(e) worker-bootstrap.js의 leader-fixed 의존 제거 정책** — 옵션 (i) 완전 제거 채택. 7곳 모두 peer-to-peer 모델로 재작성:
+  - agentTypeGuidance 4분기: leader-fixed 표현을 "사용자가 이 페인을 직접 관찰" 표현으로 교체
+  - 본문 헤더: "team worker, not the team leader" → "one of N workers collaborating peer-to-peer"
+  - MANDATORY WORKFLOW: 4단계(claim/work/ACK/transition) → 3단계(claim/work/transition). Step 3 'Send ACK to the leader' 완전 제거. Step 2에 "사용자 페인 prompt로 권한 받기" 명시
+  - sendAckCommand 변수와 'Startup Handshake' 섹션 완전 제거
+  - Message Protocol: "To leader: leader-fixed로 보내기" 제거 + "사용자한테는 stdout, 다른 워커는 peer mailbox" 안내
+  - Rules: "You are NOT the leader. Never run leader orchestration workflows" 제거
+  - 검증: AGENTS.md 생성 결과 leader-fixed 등장 0, peer-to-peer 정체성 박힘 확인
 
 ### leader-fixed 자취 — worker-bootstrap.js 7곳 위치 (다음 세션 작업용)
 
