@@ -216,10 +216,20 @@ export async function runStart(opts) {
 
         // 5. spawn CLI in pane
         const agentBin = AGENT_CLI[w.agent_type].bin;
+        const launchArgs = Array.isArray(w.launch_args) ? w.launch_args : [];
+
+        // Warn on known dangerous flags but do not block — caller owns the risk.
+        const dangerousFlags = launchArgs.filter((a) => /^--dangerously-/.test(a));
+        if (dangerousFlags.length > 0) {
+            process.stderr.write(
+                `[my-team] worker '${w.name}' launching ${agentBin} with dangerous flag(s): ${dangerousFlags.join(' ')}\n`
+            );
+        }
+
         const startConfig = {
             teamName: config.team_name,
             launchBinary: agentBin,
-            launchArgs: [],
+            launchArgs,
             envVars: {
                 MY_TEAM_WORKER: `${config.team_name}/${w.name}`,
                 MY_TEAM_STATE_ROOT: config.state_root,
@@ -228,7 +238,8 @@ export async function runStart(opts) {
             },
         };
         await spawnWorkerInPane(session.sessionName, pane.paneId, startConfig);
-        console.log(`[my-team] Spawned worker '${w.name}' in pane ${pane.paneId} (cwd: ${w.cwd}, cli: ${agentBin})`);
+        const argsHint = launchArgs.length > 0 ? ` args=[${launchArgs.join(' ')}]` : '';
+        console.log(`[my-team] Spawned worker '${w.name}' in pane ${pane.paneId} (cwd: ${w.cwd}, cli: ${agentBin}${argsHint})`);
 
         manifest.workers.push({
             name: w.name,

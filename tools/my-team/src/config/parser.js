@@ -192,6 +192,24 @@ function validateWorker(w, idx, seen) {
         }
     }
 
+    // launch_args (optional): extra CLI args appended to the worker binary
+    // invocation. Useful for permission-bypass flags (e.g. claude
+    // --dangerously-skip-permissions, codex --dangerously-bypass-approvals-
+    // and-sandbox). User-owned: my-team does not interpret the flags, just
+    // forwards them verbatim.
+    let launchArgs = [];
+    if (w.launch_args !== undefined) {
+        if (!Array.isArray(w.launch_args)) {
+            throw new Error(`${where}.launch_args must be an array of strings`);
+        }
+        for (const a of w.launch_args) {
+            if (typeof a !== 'string') {
+                throw new Error(`${where}.launch_args: each element must be a string, got ${typeof a}`);
+            }
+        }
+        launchArgs = [...w.launch_args];
+    }
+
     return {
         name: w.name,
         cwd: expandedCwd,
@@ -199,6 +217,7 @@ function validateWorker(w, idx, seen) {
         extra_prompt: extraPrompt,
         task,
         env,
+        launch_args: launchArgs,
     };
 }
 

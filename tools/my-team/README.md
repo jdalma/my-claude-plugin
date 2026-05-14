@@ -35,6 +35,7 @@ cat > my-team.json <<'EOF'
       "name": "alpha",
       "cwd": "~/work/project-a",
       "agent_type": "claude",
+      "launch_args": ["--dangerously-skip-permissions"],
       "extra_prompt": "Project A is the backend.",
       "task": { "subject": "Sketch the API", "description": "..." }
     },
@@ -42,6 +43,7 @@ cat > my-team.json <<'EOF'
       "name": "beta",
       "cwd": "~/work/project-b",
       "agent_type": "codex",
+      "launch_args": ["--dangerously-bypass-approvals-and-sandbox"],
       "extra_prompt": "Project B is the client of A."
     }
   ]
@@ -53,6 +55,32 @@ my-team status --team demo
 my-team msg --team demo --to alpha --body "also write tests"
 my-team add-task --team demo --worker beta --subject "Bump SDK" --description "..."
 my-team shutdown --team demo
+```
+
+## Worker launch flags
+
+Each worker's `launch_args` (optional `string[]`) is appended verbatim to the
+CLI binary invocation. my-team does not interpret the flags — it forwards them
+as-is. Use this to enable permission/sandbox bypass modes per worker:
+
+| agent_type | typical flag | effect |
+|---|---|---|
+| `claude` | `--dangerously-skip-permissions` | bypass all permission checks |
+| `claude` | `--permission-mode bypassPermissions` | same, via mode selector |
+| `codex` | `--dangerously-bypass-approvals-and-sandbox` | skip approval prompts + sandbox |
+| `codex` | `--ask-for-approval never -s workspace-write` | per-call approval policy |
+
+start prints a stderr warning when any `--dangerously-*` flag is detected, but
+does **not** block the launch. The user owns the risk.
+
+Example:
+
+```jsonc
+{
+  "name": "alpha",
+  "agent_type": "claude",
+  "launch_args": ["--dangerously-skip-permissions"]
+}
 ```
 
 ## Commands
