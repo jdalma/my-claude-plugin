@@ -99,6 +99,79 @@ Full example:
 }
 ```
 
+### Role-based recommended configurations
+
+Workers communicate via mailbox files (`my-team api send-message`) and may
+need to read peer workers' project files. Permission prompts on each Bash
+or file-access tool call are the single most common cause of "worker can't
+send message" or "worker can't read peer's file". Pick a configuration
+based on the worker's role:
+
+#### A. Autonomous collaboration (user observes panes, does not intervene)
+
+Workers freely message each other and read/write peer cwd files. User
+watches panes but does not respond to prompts.
+
+```jsonc
+// claude worker — full bypass
+{ "name": "writer", "agent_type": "claude",
+  "launch_args": ["--dangerously-skip-permissions"] }
+
+// codex worker — both approval prompts AND sandbox disabled
+{ "name": "builder", "agent_type": "codex",
+  "launch_args": ["--dangerously-bypass-approvals-and-sandbox"] }
+```
+
+When to pick: long autonomous work, model-to-model handoff, you trust
+the workers and want minimum friction.
+
+Risk: a worker may accidentally damage another worker's files or run a
+destructive command. The user owns the risk.
+
+#### B. Reviewer + autonomous writer (role separation)
+
+Writer workers run fully autonomous; reviewer/critic workers are
+read-only so they cannot accidentally edit code.
+
+```jsonc
+// writer — autonomous
+{ "name": "writer", "agent_type": "claude",
+  "launch_args": ["--dangerously-skip-permissions"] }
+
+// reviewer — read-only sandbox: can read every peer cwd, cannot write
+// anywhere. Use codex; claude has no clean single-flag equivalent.
+{ "name": "reviewer", "agent_type": "codex",
+  "launch_args": ["-s", "read-only"] }
+```
+
+When to pick: code review, security audit, fact-checking — you want a
+worker that physically cannot edit files but can still inspect peer
+output and reply via mailbox.
+
+#### C. Supervised mode (user reviews every risky operation)
+
+No bypass flags. The CLI's native permission prompt fires for every
+Bash call, file edit, and cross-cwd access. The user must respond in
+the pane.
+
+```jsonc
+{ "name": "alpha", "agent_type": "claude", "launch_args": [] }
+{ "name": "beta",  "agent_type": "codex",
+  "launch_args": ["-s", "workspace-write"] }
+```
+
+When to pick: production-touching work, irreversible operations
+(database migrations, deploys), or while learning what a new worker
+will actually do. High user attention required.
+
+> **Worker-to-worker messaging itself rarely fails** — mailbox writes
+> happen inside a single CLI invocation. The bottleneck is the *first*
+> Bash tool prompt: once the user approves it, subsequent sends usually
+> go through. The real friction is **cross-cwd file access** for the
+> file-sharing pattern (write big content to a file, send the path via
+> mailbox). For that pattern, mode A or B is required; mode C will
+> prompt every single peer read.
+
 ## Commands
 
 | Command | Purpose |
