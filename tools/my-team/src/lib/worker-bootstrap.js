@@ -181,6 +181,33 @@ Talk to other workers via CLI API:
 - Check your mailbox (poll periodically): \`${mailboxListCommand}\`
 - Mark a delivered message read: \`${mailboxDeliveredCommand}\`
 
+### Body convention tokens
+
+my-team does not enforce these at the API layer — they are conventions that
+workers follow so peers know whether to acknowledge, reply, or fire-and-forget.
+Place the token at the **start** of the message body.
+
+| Token | Sender intent | Your duty when you receive it |
+|---|---|---|
+| \`[REQUIRES ACK]\` | "Confirm you saw this. No content reply needed." | Send a short ack message back: \`{from_worker:you, to_worker:sender, body:"[ACK] re: <first 40 chars of original>"}\`. Then continue your own work. |
+| \`[BLOCKING reply_within=<seconds>]\` | "I need an answer before I continue. Reply within the deadline." | Stop other work. Compose a substantive reply, send it as a peer message, then resume. If you cannot answer within the deadline, send \`[BLOCKED reason=<short>]\` instead. |
+| \`[NONBLOCKING]\` | "Fire and forget. No reply expected." | Read, optionally act, do not reply. |
+| (no token) | Default: treat as informational | Read; reply only if the body asks a direct question. |
+
+When you **send** a message, choose deliberately:
+- Pick \`[REQUIRES ACK]\` when delivery confirmation matters but the content
+  is one-way (announcement, status update, log).
+- Pick \`[BLOCKING reply_within=N]\` when you cannot make progress without the
+  peer's answer. Choose N realistically — 10s for a lookup, 60-180s for a
+  decision, longer if the peer needs to run code.
+- Pick \`[NONBLOCKING]\` when you are forwarding a finished artifact and the
+  peer can pick it up at their convenience.
+- Omit the token for routine peer chat.
+
+After sending a \`[BLOCKING]\` message, poll your own mailbox every ~5s until
+the deadline. If no reply arrives, surface a timeout note in this pane's stdout
+so the user sees the stall.
+
 ## Shutdown Protocol
 When you see a shutdown request in your inbox:
 1. Write your decision to: ${shutdownAckPath}

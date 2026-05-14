@@ -120,6 +120,17 @@ Step 3: ACK (선택)
 
 **파일 형식**: 워커 1명당 하나의 JSON 파일, `messages` 배열에 시간순 push.
 
+**body 컨벤션 토큰** (API 미강제 — 워커 AGENTS.md가 동작 안내):
+
+| 토큰 (body 첫머리) | 의미 | 수신 워커의 의무 |
+|---|---|---|
+| `[REQUIRES ACK]` | 도착 확인만 받고 싶음 | 짧은 ack 메시지 회신 |
+| `[BLOCKING reply_within=<sec>]` | deadline 내 답변 필수, 송신자는 폴링 대기 | 다른 작업 멈추고 답변. 못 하면 `[BLOCKED reason=...]` 회신 |
+| `[NONBLOCKING]` | fire-and-forget | 읽기·옵션 작업, 회신 X |
+| (토큰 없음) | 기본 정보성 | 직접 질문이면 답, 아니면 읽기만 |
+
+도구는 토큰을 해석하지 않는다. `worker-bootstrap.js`의 generateWorkerOverlay가 모든 워커 AGENTS.md에 같은 표를 박아 LLM 행동을 표준화한다. 송신 워커가 `[BLOCKING reply_within=30]` 보내면 본인이 5초 간격으로 자기 mailbox를 폴링하다가 deadline 도과 시 페인 stdout에 timeout 노트.
+
 ### 4.2 사용자→워커 inbox 항목 (`workers/<w>/inbox.md`)
 
 마크다운 append 로그 — 메시지 ID 없음, 단순 추적용 텍스트:
