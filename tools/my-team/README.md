@@ -61,19 +61,35 @@ my-team shutdown --team demo
 
 Each worker's `launch_args` (optional `string[]`) is appended verbatim to the
 CLI binary invocation. my-team does not interpret the flags — it forwards them
-as-is. Use this to enable permission/sandbox bypass modes per worker:
+as-is to the underlying CLI.
 
-| agent_type | typical flag | effect |
+### ⚠️ Each token is a separate array element
+
+JSON array semantics: every argv token (flag name, flag value, option) **must
+be its own string in the array**. A single string containing spaces is passed
+as a single argv element, which most CLIs will reject as "unknown argument".
+
+```jsonc
+// ✅ correct — tokens split
+"launch_args": ["--ask-for-approval", "never", "-s", "workspace-write"]
+
+// ❌ wrong — codex will fail with "unexpected argument"
+"launch_args": ["--ask-for-approval never -s workspace-write"]
+```
+
+### Common configurations
+
+| agent_type | launch_args (JSON array) | effect |
 |---|---|---|
-| `claude` | `--dangerously-skip-permissions` | bypass all permission checks |
-| `claude` | `--permission-mode bypassPermissions` | same, via mode selector |
-| `codex` | `--dangerously-bypass-approvals-and-sandbox` | skip approval prompts + sandbox |
-| `codex` | `--ask-for-approval never -s workspace-write` | per-call approval policy |
+| `claude` | `["--dangerously-skip-permissions"]` | bypass all permission checks |
+| `claude` | `["--permission-mode", "bypassPermissions"]` | same effect via mode selector |
+| `codex` | `["--dangerously-bypass-approvals-and-sandbox"]` | skip both approval prompts AND sandbox boundary (extreme) |
+| `codex` | `["--ask-for-approval", "never", "-s", "workspace-write"]` | skip approval prompts but keep sandbox at workspace-write (moderate) |
 
-start prints a stderr warning when any `--dangerously-*` flag is detected, but
-does **not** block the launch. The user owns the risk.
+`start` prints a stderr warning when any `--dangerously-*` flag is detected,
+but does **not** block the launch. The user owns the risk.
 
-Example:
+Full example:
 
 ```jsonc
 {
