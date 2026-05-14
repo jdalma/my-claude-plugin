@@ -46,7 +46,6 @@ export const TeamPaths = {
     workerStatus: (teamName, workerName) => p(teamName, 'workers', workerName, 'status.json'),
     workerIdentity: (teamName, workerName) => p(teamName, 'workers', workerName, 'identity.json'),
     manifest: (teamName) => p(teamName, 'manifest.json'),
-    leaderInbox: (teamName) => p(teamName, 'leader', 'inbox.md'),
 };
 
 export function absPath(cwd, relativePath) {

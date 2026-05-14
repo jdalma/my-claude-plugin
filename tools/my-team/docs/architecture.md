@@ -28,9 +28,8 @@
    ║  │   ├── alpha.json                                                       ║
    ║  │   └── beta.json                                                        ║
    ║  ├── workers/<name>/                                                      ║
-   ║  │   └── inbox.md                   ← 사용자/leader→워커 자유형            ║
+   ║  │   └── inbox.md                   ← 사용자→워커 자유형                  ║
    ║  ├── tasks/<id>.json                ← 정형 작업 (추적 가능)                ║
-   ║  ├── leader/inbox.md                ← 워커→leader-fixed (특수)             ║
    ║  └── events.jsonl                   ← 모든 send-message 통합 로그          ║
    ╚═══════════════════════════════════════════════════════════════════════════╝
                                                │
@@ -54,17 +53,16 @@
 
 ---
 
-## 2. 통신 5종 매트릭스
+## 2. 통신 4종 매트릭스
 
 | # | 채널 | 누가 호출 | 어디로 쓰임 | tmux 트리거 | 추적 가능 |
 |---|---|---|---|---|---|
 | 1 | **사용자→워커 (자유형)** | `my-team msg --to A "..."` | `workers/A/inbox.md` (append) | `check-inbox` | ❌ |
 | 2 | **사용자→워커 (정형)** | `my-team add-task --worker A ...` | `tasks/N.json` + `workers/A/inbox.md` 알림 | `new-task:N` | ✅ task 상태 머신 |
 | 3 | **워커→워커** | `my-team api send-message` (워커 LLM 내부) | 수신자 `mailbox/B.json` (push) + `events.jsonl` | `new-message:<from>` | ✅ `message_id` |
-| 4 | **워커→리더** | `my-team api send-message --to leader-fixed` | `leader/inbox.md` (append) + `events.jsonl` | ❌ 트리거 없음 | ✅ `events.jsonl`로 |
-| 5 | **broadcast** | `queueBroadcastMessage` (CLI 노출 없음, 내부 함수만) | 모든 워커 mailbox + 각자 트리거 | `new-message:<from>` | ✅ |
+| 4 | **broadcast** | `queueBroadcastMessage` (CLI 노출 없음, 내부 함수만) | 모든 워커 mailbox + 각자 트리거 | `new-message:<from>` | ✅ |
 
-**리더 채널이 트리거 없는 이유**: `leader-fixed` 수신자는 사람일 수도 있으므로 페인 자동 전송이 의미 없다 (`send-message.js:29-35`). 사용자가 직접 `cat leader/inbox.md` 또는 `my-team monitor`로 확인.
+**워커→사용자 보고는 별도 채널 없음**: peer-to-peer 모델에서 사용자는 각 워커 페인을 직접 관찰한다. 워커는 자기 페인 stdout에 직접 출력하거나 CLI의 normal 권한 prompt를 띄운다. OMC 차용 시 따라온 `leader-fixed` 채널은 v0.1에서 제거됐다 (`api send-message`가 `to_worker === 'leader-fixed'`이면 명시적 에러 반환).
 
 ---
 
@@ -169,37 +167,21 @@ _queued: 2026-05-13T07:33:00.045Z_
 
 **상태 전이**: 워커 LLM이 `my-team api transition-task-status`로 변경.
 
-### 4.4 리더 inbox 항목 (`leader/inbox.md`)
-
-워커→`leader-fixed`가 도착하는 마크다운 append 파일:
-
-```markdown
-
-
----
-From: alpha
-At: 2026-05-13T07:50:00.123Z
-
-A 프로젝트 분석 완료. ~/projects/A/PLAN.md 참조.
-```
-
-**트리거 없음**: 사용자가 직접 `cat` 또는 `my-team monitor`로 확인.
-
-### 4.5 events.jsonl (통합 로그, monitor용)
+### 4.4 events.jsonl (통합 로그, monitor용)
 
 한 줄당 한 이벤트의 JSONL:
 
 ```jsonl
 {"ts":"2026-05-13T07:32:11.918Z","from":"alpha","to":"beta","body":"POST /payments body schema 알려줘"}
 {"ts":"2026-05-13T07:32:13.045Z","from":"beta","to":"alpha","body":"{amount, currency, order_id}.\nPaymentRequestDto에 정의됨."}
-{"ts":"2026-05-13T07:35:20.812Z","from":"alpha","to":"leader-fixed","body":"분석 완료"}
+{"ts":"2026-05-13T07:35:20.812Z","from":"charlie","to":"alpha","body":"통합 문서 작성 완료, 검토 부탁"}
 ```
 
 | 필드 | 타입 | 의미 |
 |---|---|---|
 | `ts` | ISO 8601 | 이벤트 시각 |
 | `from` | string | 보낸 워커 |
-| `to` | string | 받는 워커 (또는 `leader-fixed`) |
+| `to` | string | 받는 워커 (팀의 워커 이름) |
 | `body` | string | 메시지 본문 (mailbox와 동일) |
 
 **append-only**: `my-team monitor`가 `fs.watch`로 follow.
@@ -289,10 +271,10 @@ A 프로젝트 분석 완료. ~/projects/A/PLAN.md 참조.
 `src/lib/inbox-outbox.js`에 별도 JSONL 인박스/아웃박스가 있다:
 
 - `state_root/teams/<team>/inbox/<worker>.jsonl` — JSONL byte-cursor 읽기 (`readNewInboxMessages`)
-- `state_root/teams/<team>/outbox/<worker>.jsonl` — 워커→leader JSONL append
+- `state_root/teams/<team>/outbox/<worker>.jsonl` — JSONL append 파일 (현재 사용처 없음)
 - `state_root/teams/<team>/signals/<worker>.shutdown` — shutdown 신호 파일
 
-OMC 원본에서 차용한 채널. **현재 my-team의 `msg`/`api send-message` 명령은 이 채널을 사용하지 않는다.** shutdown 시그널만 일부 활용 가능성. 향후 워커→leader 구조화 통신이 필요해지면 활성화 후보.
+OMC 원본에서 차용한 채널. **현재 my-team의 `msg`/`api send-message` 명령은 이 채널을 사용하지 않는다.** shutdown 시그널만 일부 활용 가능성. peer-to-peer 모델로 전환된 v0.1 이후에는 outbox가 향후 어떤 구조화 통신에 사용될지 미정 — 필요 시 별도 결정.
 
 ---
 

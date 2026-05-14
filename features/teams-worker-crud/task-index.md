@@ -24,6 +24,7 @@ plan_status: not_run
 - [ ] README.md 갱신: remove/add 명령 사용법 + 결정 사항 명시
 - [ ] `tools/my-team/docs/architecture.md` 갱신: 통신 5종 매트릭스에 워커 교체가 미치는 영향 (mailbox/tasks orphan 처리 등)
 - [x] **`worker-bootstrap.js`에서 leader-fixed 의존 표현 7곳 제거 (peer-to-peer 모델로 정합화)** — 옵션 (i) 완전 제거로 진행. AGENTS.md 생성 결과 검증 완료 (leader-fixed 등장 0, peer-to-peer 정체성 박힘)
+- [x] **leader-fixed 진짜 제거 (코드·문서 전수)** — critic 리뷰가 짚은 잔재 3곳 정리: send-message.js 분기 제거 + 명시적 에러 반환, state-paths.js의 leaderInbox 엔트리 삭제, architecture.md 채널 매트릭스 5종 → 4종 + 다이어그램·예시·부록 정리. 채널 카운트와 코드 정합 회복.
 
 ## Decisions / Traps (수명 긴 메모)
 
