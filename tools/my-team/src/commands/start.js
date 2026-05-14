@@ -27,7 +27,7 @@ import {
     createTeamSession, spawnWorkerInPane, waitForPaneReady,
     sendToWorker, isUnixLikeOnWindows, sanitizeName,
 } from '../lib/tmux-session.js';
-import { tmuxShell } from '../lib/tmux-utils.js';
+import { tmuxShell, tmuxExecAsync } from '../lib/tmux-utils.js';
 import {
     generateWorkerOverlay, composeInitialInbox, ensureWorkerStateDir,
     generateTriggerMessage,
@@ -263,6 +263,27 @@ export async function runStart(opts) {
         await sendToWorker(session.sessionName, w.pane_id, trigger);
     }
     console.log('[my-team] Startup triggers sent. Team is live.');
+
+    // In detached mode the leader pane is just an empty shell that no one
+    // is typing in — auto-start `my-team monitor` there so the user sees
+    // worker-to-worker traffic the moment they attach.
+    //
+    // In in-place mode the leader pane is the user's own pane (they ran
+    // `my-team start` from there). Auto-running monitor would lock their
+    // keyboard input, so we only print a tip.
+    if (session.sessionMode === 'detached-session') {
+        try {
+            await tmuxExecAsync([
+                'send-keys', '-t', session.leaderPaneId,
+                `my-team monitor ${config.team_name}`, 'Enter',
+            ]);
+            console.log(`[my-team] Auto-started 'my-team monitor ${config.team_name}' in leader pane`);
+        } catch (err) {
+            console.warn(`[my-team] Could not auto-start monitor: ${err.message}`);
+        }
+    } else {
+        console.log(`[my-team] Tip: run 'my-team monitor ${config.team_name}' in the leader pane to watch worker traffic`);
+    }
 
     // Persist manifest for status/shutdown
     const manifestPath = join(config.state_root, 'manifest.json');
