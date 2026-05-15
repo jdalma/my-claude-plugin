@@ -55,6 +55,16 @@ export async function applyTeamLayout(teamTarget) {
             'pane-border-format', ' #{pane_title} ',
         ]);
     } catch { /* ignore */ }
+    // Worker CLIs (claude/codex/...) emit OSC title sequences that tmux would
+    // otherwise apply to pane title and window name, overwriting the worker
+    // name we set via `select-pane -T`. Disable both at the window level so
+    // our titles stick. Scoped to teamTarget — does not affect other windows.
+    try {
+        await tmuxExecAsync(['set-window-option', '-t', teamTarget, 'allow-rename', 'off']);
+    } catch { /* ignore */ }
+    try {
+        await tmuxExecAsync(['set-window-option', '-t', teamTarget, 'automatic-rename', 'off']);
+    } catch { /* ignore */ }
 }
 
 const SUPPORTED_POSIX_SHELLS = new Set(['sh', 'bash', 'zsh', 'fish', 'ksh']);

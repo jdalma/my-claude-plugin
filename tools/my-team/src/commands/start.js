@@ -164,6 +164,15 @@ export async function runStart(opts) {
         workers: [],
     };
 
+    // Build roster once so every worker's AGENTS.md can list its peers by name.
+    // Names here are the same strings used as to_worker in send-message and as
+    // pane titles, so workers can call each other by what they see on screen.
+    const teamRoster = config.workers.map((peer) => ({
+        name: peer.name,
+        agentType: peer.agent_type,
+        role: peer.extra_prompt || '',
+    }));
+
     for (let i = 0; i < config.workers.length; i++) {
         const w = config.workers[i];
         const pane = session.workerPanes[i];
@@ -203,6 +212,7 @@ export async function runStart(opts) {
             bootstrapInstructions: w.extra_prompt,
             instructionStateRoot: config.state_root,
             cwd: w.cwd,
+            teamRoster,
         });
         const overlayPath = join(workerDir, 'AGENTS.md');
         await writeFile(overlayPath, overlay, 'utf-8');
@@ -257,6 +267,18 @@ export async function runStart(opts) {
     await Promise.all(
         manifest.workers.map((w) => waitForPaneReady(w.pane_id, { timeoutMs: 30000 }))
     );
+
+    // Re-apply pane titles after workers are ready. Worker CLIs (notably
+    // claude / codex) emit OSC title sequences during boot that may have
+    // landed before our `allow-rename off` took effect, overwriting the
+    // initial `-T <worker.name>` we set in createTeamSession. Even with
+    // allow-rename off, a one-shot reset here guarantees the visible title
+    // matches config.workers[].name at the moment the team goes live.
+    for (const w of manifest.workers) {
+        try {
+            await tmuxExecAsync(['select-pane', '-t', w.pane_id, '-T', w.name]);
+        } catch { /* ignore — title is cosmetic */ }
+    }
 
     for (const w of manifest.workers) {
         const trigger = generateTriggerMessage(config.team_name, w.name, config.state_root);

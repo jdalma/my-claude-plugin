@@ -93,6 +93,7 @@ function agentTypeGuidance(agentType) {
 export function generateWorkerOverlay(params) {
     const { teamName, workerName, agentType, tasks, bootstrapInstructions } = params;
     const instructionStateRoot = params.instructionStateRoot ?? DEFAULT_INSTRUCTION_STATE_ROOT;
+    const teamRoster = Array.isArray(params.teamRoster) ? params.teamRoster : [];
 
     const sanitizedTasks = tasks.map((t) => ({
         id: t.id,
@@ -118,6 +119,18 @@ export function generateWorkerOverlay(params) {
     const taskList = sanitizedTasks.length > 0
         ? sanitizedTasks.map((t) => `- **Task ${t.id}**: ${t.subject}\n  Description: ${t.description}\n  Status: pending`).join('\n')
         : '- No tasks assigned yet. Check your inbox for assignments.';
+
+    const rosterList = teamRoster.length > 0
+        ? teamRoster
+            .map((peer) => {
+                const isSelf = peer.name === workerName;
+                const selfTag = isSelf ? ' (you)' : '';
+                const role = peer.role ? sanitizePromptContent(peer.role, 200).split('\n')[0].trim() : '';
+                const roleSuffix = role ? ` — ${role}` : '';
+                return `- **${peer.name}**${selfTag} [${peer.agentType}]${roleSuffix}`;
+            })
+            .join('\n')
+        : '- (roster unavailable)';
 
     return `# Team Worker Protocol
 
@@ -149,6 +162,12 @@ You MUST complete ALL of these steps. Do NOT skip any step. Do NOT exit without 
 - **Worker**: ${workerName}
 - **Agent Type**: ${agentType}
 - **Environment**: OMC_TEAM_WORKER=${teamName}/${workerName}
+
+## Team Roster
+These are the workers in this team. Use the exact \`name\` shown here as the
+\`to_worker\` value when calling \`my-team api send-message\`. The same name is
+also visible on each pane's top border.
+${rosterList}
 
 ## Your Tasks
 ${taskList}
