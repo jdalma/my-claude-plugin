@@ -1,9 +1,10 @@
 # my-team — 워커 통신 아키텍처
 
-> 본 문서는 `tools/my-team` CLI가 워커끼리 어떻게 메시지를 주고받게 하는지의 내부 메커니즘을 정리한다. 사용자 가이드는 `README.md`, 설계 결정은 `PLAN.md`. 코드 변경 시 본 문서도 업데이트해야 한다.
+> 본 문서는 `tools/my-team` CLI가 워커끼리 어떻게 메시지를 주고받게 하는지의 내부 메커니즘을 정리한다. 사용자 가이드는 `README.md`, 설계 결정은 `PLAN.md`, 워커 부팅 프롬프트는 `worker-bootstrap.md`. 코드 변경 시 본 문서도 업데이트해야 한다.
 >
-> **작성**: 2026-05-13
-> **대상 코드**: `src/lib/tmux-comm.js`, `src/lib/events.js`, `src/commands/api/send-message.js`, `src/commands/{msg,add-task,monitor}.js`
+> **작성**: 2026-05-13 · **갱신**: 2026-05-17 (식별자 일관성, monitor 자동 시작, sendToWorker robust 처리)
+> **대상 코드**: `src/lib/tmux-comm.js`, `src/lib/events.js`, `src/commands/api/send-message.js`, `src/commands/{msg,add-task,monitor,start}.js`, `src/lib/tmux-session.js`
+> **시각 다이어그램**: [`diagrams/communication-flow.excalidraw`](diagrams/communication-flow.excalidraw) — Excalidraw 앱 또는 VS Code `pomdtr.excalidraw-editor` 확장으로 열기. 5레인 액터 단면 (워커 A / mailbox/A.json / mailbox/B.json / 워커 B / tmux)으로 **요청→응답 1사이클**을 표현. 하단에 Q&A 4개로 "왜 메일박스가 워커마다 분리되나" / "응답은 어떻게 송신자에게 가나" / "여러 메시지가 쌓이면" / "수신 인지 메커니즘"을 상세 설명. 사용자 진입점은 §1 ASCII만 참고, body convention tokens는 §4.1 참조.
 
 ---
 
@@ -60,9 +61,27 @@
 | 1 | **사용자→워커 (자유형)** | `my-team msg --to A "..."` | `workers/A/inbox.md` (append) | `check-inbox` | ❌ |
 | 2 | **사용자→워커 (정형)** | `my-team add-task --worker A ...` | `tasks/N.json` + `workers/A/inbox.md` 알림 | `new-task:N` | ✅ task 상태 머신 |
 | 3 | **워커→워커** | `my-team api send-message` (워커 LLM 내부) | 수신자 `mailbox/B.json` (push) + `events.jsonl` | `new-message:<from>` | ✅ `message_id` |
-| 4 | **broadcast** | `queueBroadcastMessage` (CLI 노출 없음, 내부 함수만) | 모든 워커 mailbox + 각자 트리거 | `new-message:<from>` | ✅ |
+| 4 | **broadcast** ⚠️ dead code | `queueBroadcastMessage` (정의는 `tmux-comm.js:100`, 호출처 0) | (호출되지 않음) | (호출되지 않음) | — |
 
 **워커→사용자 보고는 별도 채널 없음**: peer-to-peer 모델에서 사용자는 각 워커 페인을 직접 관찰한다. 워커는 자기 페인 stdout에 직접 출력하거나 CLI의 normal 권한 prompt를 띄운다. OMC 차용 시 따라온 `leader-fixed` 채널은 v0.1에서 제거됐다 (`api send-message`가 `to_worker === 'leader-fixed'`이면 명시적 에러 반환).
+
+### 2.1 식별자 일관성 — `config.workers[].name` 단일 source
+
+워커를 가리키는 모든 라벨은 `config.workers[].name` 한 문자열에서 갈라져 나온다. 이 문자열은 5곳에서 동일하게 쓰이므로 화면-prompt-라우팅 사이의 모호성이 0이다.
+
+| 사용처 | 코드 위치 | 의미 |
+|---|---|---|
+| `to_worker` API 인자 | `commands/api/send-message.js:19` | 메시지 라우팅 키 |
+| mailbox 파일명 (`mailbox/<name>.json`) | `lib/state-paths.js:45` | 수신자 mailbox JSON |
+| inbox.md 경로 (`workers/<name>/inbox.md`) | `lib/state-paths.js:40` | 사용자→워커 채널 |
+| tmux pane title | `lib/tmux-session.js:281` `select-pane -T w.name` | 사용자가 화면에서 보는 라벨 |
+| AGENTS.md Identity + Team Roster | `lib/worker-bootstrap.js:150, Team Roster 섹션` | 워커 LLM이 자기·peer 이름을 prompt로 학습 |
+
+→ A 워커가 B에게 메시지를 보낼 때 `to_worker: "B"`로 쓰는 이름과 사용자가 화면 pane border에서 보는 `B`와 B 자신이 `MY_TEAM_WORKER` env로 가진 이름이 **반드시 동일**하다.
+
+**Team Roster 자동 주입** (2026-05-15 추가, 커밋 `e5dffb4`): 부팅 시 `start.js`가 모든 워커의 `{name, agent_type, role}` 명단을 만들어 각 워커의 AGENTS.md에 `## Team Roster` 섹션으로 박는다. 자기 자신은 `(you)` 태그. 이전엔 워커 LLM이 다른 워커 이름을 미리 알 수 없어 사용자 메시지나 mailbox 수신으로만 학습 가능했지만, 이제 부팅 시점에 팀 전체 명단을 prompt로 가진다.
+
+**Pane title 고정** (2026-05-15 추가, 같은 커밋): 워커 CLI(특히 claude는 진행 summary, codex는 cwd basename)가 OSC escape sequence로 pane title을 덮어쓰는 문제가 있었다. `applyTeamLayout`에서 `allow-rename off` + `automatic-rename off`를 window 단위로 설정하고, `waitForPaneReady` 직후 `select-pane -T <worker.name>`을 재실행하는 안전장치를 둬서 title이 항상 `name`으로 고정된다.
 
 ---
 
@@ -215,6 +234,18 @@ _queued: 2026-05-13T07:33:00.045Z_
 
 **전송 방식**: `tmux send-keys -t <pane_id> "<trigger>" Enter` — 워커 페인의 stdin에 평문 문자열 박음. 워커 LLM이 이걸 자연어 입력으로 받아 "trigger 메시지를 받았으니 자기 파일을 확인하라"고 해석.
 
+### 5.1 `sendToWorker` robust 처리 (`tmux-session.js:394–435`)
+
+단순 `send-keys`로는 워커가 busy 상태일 때 트리거가 흡수돼버린다. 그래서 `sendToWorker`는 다음 가드를 거친다:
+
+1. **copy-mode 체크**: pane이 copy-mode면 즉시 false 반환 (사용자가 텍스트 선택 중이면 방해하지 않음)
+2. **busy 감지**: `paneHasActiveTask`로 "esc to interrupt" / "background terminal running" 같은 신호를 찾음 → busy면 round 1에서 Tab 한 번 누른 뒤 Enter (Claude/Codex의 "interrupt and submit" 컨벤션)
+3. **trust prompt 감지**: 첫 부팅의 "Do you trust the contents of this directory?" 다이얼로그가 떠 있으면 C-m 두 번으로 통과
+4. **send → 6라운드 poll**: 메시지를 `-l --`(literal)로 입력 후, pane tail에 메시지가 그대로 남아있으면(=아직 안 먹힘) Enter 다시 보냄. 최대 6번 시도, 각 라운드 사이 짧은 sleep.
+5. **200자 한계** (`tmux-comm.js:49–52`): 초과 시 거부. trigger는 짧아야 한다는 원칙 — 긴 내용은 파일에, trigger는 "이 파일 봐"만.
+
+**원칙**: 알림은 best-effort. 실패해도 mailbox/inbox 파일은 이미 쓰여 있어 워커가 우연히 폴링하거나 다음 trigger에서 발견 가능. `notified_at` 필드의 부재가 "트리거 실패" 신호.
+
 ---
 
 ## 6. 핵심 호출 시퀀스 — 워커 A→B 한 사이클
@@ -312,9 +343,25 @@ OMC 원본에서 차용한 채널. **현재 my-team의 `msg`/`api send-message` 
 
 ---
 
-## 11. 참고
+## 11. Monitor 자동 시작 — detached 모드 한정 (`start.js`)
+
+`my-team start`는 tmux 모드에 따라 leader pane 처리를 다르게 한다 (`commands/start.js:274–286`):
+
+| 모드 | leader pane 정체 | monitor 처리 |
+|---|---|---|
+| **split-pane** | 사용자가 `my-team start`를 친 그 pane | 자동 시작 안 함 — 사용자 키보드를 잠가버리면 안 되니까. tip만 출력 |
+| **dedicated-window** | 같은 tmux session의 새 window | tip만 출력 (사용자가 직접 실행) |
+| **detached-session** | my-team이 새로 만든 tmux session의 leader pane | `tmux send-keys`로 `my-team monitor <team>`을 자동 입력 + Enter |
+
+→ detached 모드에서는 사용자가 `tmux attach -t my-team-<team>-<ts>`로 붙는 순간 leader pane에 이미 monitor가 떠 있어 워커 트래픽이 즉시 흐른다. 이 동작은 2026-05-14 커밋 `3aec944`에서 추가됐다.
+
+---
+
+## 12. 참고
 
 - 사용자 가이드: `tools/my-team/README.md`
 - 설계 결정 + 31 acceptance criteria: `tools/my-team/PLAN.md`
+- 워커 부팅 프롬프트 구조: `tools/my-team/docs/worker-bootstrap.md`
+- 시각 다이어그램: `tools/my-team/docs/diagrams/communication-flow.excalidraw`
 - 원본: oh-my-claude-sisyphus (MIT) — https://github.com/Yeachan-Heo/oh-my-claudecode
 - 관련 스킬: `plugins/workflow/skills/my-team/SKILL.md`, `plugins/workflow/skills/my-team-install/SKILL.md`

@@ -1,9 +1,10 @@
 # my-team — 워커 부트스트랩 프롬프트 / 강제 지시
 
-> 본 문서는 `my-team start`가 각 워커 CLI(claude/codex/gemini/cursor)에게 어떤 "최초 프롬프트와 강제 지시"를 주입하는지 정리한다. 사용자 가이드는 `README.md`, 통신 메커니즘은 `architecture.md`, 설계 결정은 `PLAN.md`. 코드 변경 시 본 문서도 업데이트해야 한다.
+> 본 문서는 `my-team start`가 각 워커 CLI(claude/codex/gemini/cursor)에게 어떤 "최초 프롬프트와 강제 지시"를 주입하는지 정리한다. 사용자 가이드는 `README.md`, 통신 메커니즘은 [`architecture.md`](architecture.md), 설계 결정은 `PLAN.md`. 코드 변경 시 본 문서도 업데이트해야 한다.
 >
 > **작성**: 2026-05-14
 > **대상 코드**: `src/lib/worker-bootstrap.js`, `src/lib/prompt-helpers.js`, `src/commands/start.js`
+> **관련 다이어그램**: [`diagrams/communication-flow.excalidraw`](diagrams/communication-flow.excalidraw) (통신 아키텍처 시각화)
 
 ---
 
