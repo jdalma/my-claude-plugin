@@ -164,13 +164,26 @@ When to pick: production-touching work, irreversible operations
 (database migrations, deploys), or while learning what a new worker
 will actually do. High user attention required.
 
-> **Worker-to-worker messaging itself rarely fails** — mailbox writes
-> happen inside a single CLI invocation. The bottleneck is the *first*
-> Bash tool prompt: once the user approves it, subsequent sends usually
-> go through. The real friction is **cross-cwd file access** for the
-> file-sharing pattern (write big content to a file, send the path via
-> mailbox). For that pattern, mode A or B is required; mode C will
-> prompt every single peer read.
+> **How a worker receives messages**: a peer's `send-message` writes to
+> your `mailbox/<you>.json` and fires a best-effort tmux trigger. The
+> trigger can be lost (busy pane, confirm prompt). So workers also
+> **self-poll** their mailbox with `api mailbox-list` at the end of each
+> work cycle, and mark consumed messages with `api mailbox-mark-delivered`
+> — a lost trigger no longer means a lost message.
+>
+> The remaining friction is **cross-cwd file access** for the file-sharing
+> pattern (write big content to a file, send the path via mailbox). For
+> that pattern, mode A or B is required; mode C will prompt every single
+> peer read.
+>
+> Known limitation (see `PLAN.md` §6 K1): a busy-pane trigger may be
+> falsely reported as delivered. The message still reaches the mailbox
+> file, so self-poll recovers it — only immediacy is lost.
+>
+> Mailbox files use an unlocked read-modify-write. This is safe under the
+> current model (a single human drives commands serially — no concurrent
+> writers). It only becomes a race once workers orchestrate each other;
+> harden it (atomic write / JSONL) before reaching that stage.
 
 ## Commands
 

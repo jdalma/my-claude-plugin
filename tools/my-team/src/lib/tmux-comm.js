@@ -80,6 +80,7 @@ export async function queueDirectMessage(teamName, fromWorker, toWorker, body, t
         to_worker: toWorker,
         body,
         created_at: new Date().toISOString(),
+        consumed_at: null,
     };
     mailbox.messages.push(message);
     await writeMailboxFile(teamName, toWorker, cwd, mailbox);
@@ -109,6 +110,7 @@ export async function queueBroadcastMessage(teamName, fromWorker, body, workerPa
             to_worker: toWorker,
             body,
             created_at: new Date().toISOString(),
+            consumed_at: null,
         };
         mailbox.messages.push(message);
         await writeMailboxFile(teamName, toWorker, cwd, mailbox);

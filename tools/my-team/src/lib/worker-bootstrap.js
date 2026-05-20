@@ -197,8 +197,30 @@ or confirmation requests use your CLI's native prompt (no "leader" channel).
 
 Talk to other workers via CLI API:
 - Send to peer: \`${formatOmcCliInvocation(`team api send-message --input "{\\"team_name\\":\\"${teamName}\\",\\"from_worker\\":\\"${workerName}\\",\\"to_worker\\":\\"<other-worker>\\",\\"body\\":\\"<message>\\"}" --json`)}\`
-- Check your mailbox (poll periodically): \`${mailboxListCommand}\`
-- Mark a delivered message read: \`${mailboxDeliveredCommand}\`
+- List unread mailbox messages: \`${mailboxListCommand}\`
+- Mark a message consumed: \`${mailboxDeliveredCommand}\`
+
+### MANDATORY — Mailbox self-poll discipline
+
+A tmux notification (\`new-message:<sender>\` typed into this pane) is a
+**best-effort hint only**. It can be lost: if this pane was busy, in a
+confirmation prompt, or in copy-mode when a peer sent to you, the trigger
+never lands. Do NOT rely on it as your only signal.
+
+Your mailbox file is the source of truth. You MUST poll it yourself:
+
+1. **At the end of every work cycle** — before you yield your turn or go
+   idle, run \`mailbox-list\`. Treat each returned message per its body
+   convention token (see table below).
+2. **When you receive any \`new-message\` notification** — run \`mailbox-list\`
+   immediately; the notification only tells you to check, not what changed.
+3. **After processing a message** — run \`mailbox-mark-delivered\` for its
+   \`message_id\`. \`mailbox-list\` returns only unconsumed messages by default,
+   so marking is what stops you from reprocessing the same message.
+
+\`mailbox-list\` returns \`{ ok, worker, messages }\`. An empty \`messages\`
+array means no unread mail — that is normal, not an error. A thrown error
+(malformed mailbox) is real; surface it in this pane's stdout.
 
 ### Body convention tokens
 
@@ -223,9 +245,9 @@ When you **send** a message, choose deliberately:
   peer can pick it up at their convenience.
 - Omit the token for routine peer chat.
 
-After sending a \`[BLOCKING]\` message, poll your own mailbox every ~5s until
-the deadline. If no reply arrives, surface a timeout note in this pane's stdout
-so the user sees the stall.
+After sending a \`[BLOCKING]\` message, run \`mailbox-list\` every ~5s until
+the deadline (tighter than the per-cycle poll above). If no reply arrives,
+surface a timeout note in this pane's stdout so the user sees the stall.
 
 ## Shutdown Protocol
 When you see a shutdown request in your inbox:

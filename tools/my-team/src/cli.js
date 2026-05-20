@@ -6,7 +6,8 @@
  *
  * api subcommands (called by worker LLMs from AGENTS.md):
  *   api transition-task-status, api send-message, api read-task,
- *   api create-task, api claim-task (noop)
+ *   api create-task, api claim-task (noop),
+ *   api mailbox-list, api mailbox-mark-delivered
  */
 
 import { Command } from 'commander';
@@ -25,6 +26,8 @@ import { runApiTransitionTaskStatus } from './commands/api/transition-task-statu
 import { runApiSendMessage } from './commands/api/send-message.js';
 import { runApiReadTask } from './commands/api/read-task.js';
 import { runApiCreateTask } from './commands/api/create-task.js';
+import { runApiMailboxList } from './commands/api/mailbox-list.js';
+import { runApiMailboxMarkDelivered } from './commands/api/mailbox-mark-delivered.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -164,6 +167,16 @@ async function main() {
         .requiredOption('--input <json>', 'JSON payload')
         .option('--json', 'JSON output')
         .action(async (opts) => emit(await runApiCreateTask(parseApiInput(opts)), opts.json));
+
+    api.command('mailbox-list')
+        .requiredOption('--input <json>', 'JSON payload')
+        .option('--json', 'JSON output')
+        .action((opts) => emit(runApiMailboxList(parseApiInput(opts)), opts.json));
+
+    api.command('mailbox-mark-delivered')
+        .requiredOption('--input <json>', 'JSON payload')
+        .option('--json', 'JSON output')
+        .action((opts) => emit(runApiMailboxMarkDelivered(parseApiInput(opts)), opts.json));
 
     // claim-task: noop (AC-31). Workers may call it from OMC-style AGENTS.md.
     api.command('claim-task')
