@@ -1,7 +1,7 @@
 # Vertical Slice + Tracer Bullet 원칙
 
 > 출처: mattpocock `tdd` + `to-issues` 핵심 원리
-> 적용: tdd 스킬 Step 1-2 + /plan Step 3
+> 적용: slice-tdd 스킬 Step 1-2 + /plan Step 3
 
 ## 핵심 정의
 

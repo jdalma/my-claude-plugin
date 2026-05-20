@@ -1,33 +1,55 @@
 ---
-name: tdd
-description: 사용자가 "/tdd" 슬래시 호출 또는 "tdd로 슬라이스 #N 시작", "RED→GREEN으로 슬라이스 #N 작업", "features/<feature-name>/task-index.md 픽업" 같이 plan에서 산출된 task-index.md의 특정 슬라이스를 픽업해 구현하겠다는 의도를 명시했을 때만 사용. plan을 거치지 않은 자유 텍스트 요구사항이거나 "테스트 작성해줘" 같은 일반 의도만 표현했다면 절대 자동 호출 금지. behavior 리스트, tracer bullet, RED→GREEN 사이클, refactor, 검증 워크플로우만 제공하며 실행 방식은 사용자 선택. 자동 호출·자동 제안·자동 escalate 금지.
+name: slice-tdd
+description: 사용자가 "/slice-tdd" 슬래시 호출 또는 "slice-tdd로 슬라이스 #N 시작", "RED→GREEN으로 슬라이스 #N 작업", "features/<feature-name>/task-index.md 픽업" 같이 plan에서 산출된 task-index.md의 특정 슬라이스를 픽업해 구현하겠다는 의도를 명시했을 때만 사용. plan을 거치지 않은 자유 텍스트 요구사항이거나 "테스트 작성해줘"/"tdd로 짜줘" 같은 일반 의도만 표현했다면 절대 자동 호출 금지. behavior 리스트, tracer bullet, RED→GREEN 사이클, refactor, 검증 워크플로우만 제공하며 실행 방식은 사용자 선택. 자동 호출·자동 제안·자동 escalate 금지. 어떤 단계에서도 git commit/add를 자동 실행하지 않는다.
 disable-model-invocation: true
 ---
 
-# TDD — Vertical Slice Implementation Skill
+# slice-tdd — Vertical Slice Implementation Skill
 
 OMC 의존만. 다른 플러그인 의존 X (필요한 원칙은 번들 .md로 흡수).
+
+> 본 스킬은 이전 이름이 `tdd`였다. 트리거 충돌(다른 플러그인의 `tdd` 키워드/스킬과 겹침)을 피하기 위해 `slice-tdd`로 변경됨. 외부 문서·세션 메모에서 "tdd 스킬"이라는 표기가 보이면 이 스킬을 가리키는 것으로 해석한다.
 
 ## ⛔ 호출 규칙 (가장 중요)
 
 이 스킬은 **사용자가 명시 호출했을 때만** 동작한다.
 
 활성 조건 — 다음 중 하나라도 만족해야 함:
-- 사용자가 `/tdd` 슬래시로 직접 호출
-- 사용자가 "tdd로 슬라이스 #N 시작" / "RED→GREEN으로 슬라이스 #N 작업" / "task-index.md 픽업" 같이 *특정 슬라이스 번호와 함께* 호출
+- 사용자가 `/slice-tdd` 슬래시로 직접 호출
+- 사용자가 "slice-tdd로 슬라이스 #N 시작" / "RED→GREEN으로 슬라이스 #N 작업" / "task-index.md 픽업" 같이 *특정 슬라이스 번호와 함께* 호출
 - `task-index.md`가 존재하고 사용자가 그 안의 슬라이스를 가리켜 구현 의도를 명시
 
 🚫 **자동 호출 차단** — 다음 케이스는 활성하지 않는다:
-- ❌ "테스트 작성해줘", "이거 구현해줘" 같은 일반 의도만 표현
+- ❌ "테스트 작성해줘", "이거 구현해줘", "tdd로 가자" 같은 일반 의도만 표현
 - ❌ task-index.md 없이 자유 텍스트 요구사항만 있을 때 → `/plan` 먼저 안내
-- ❌ 키워드("tdd")가 일상 대화에 포함됐다고 자동 활성
-- ❌ "tdd 스킬 쓸까요?" 식 선제 권유
+- ❌ 키워드("tdd", "slice-tdd")가 일상 대화에 포함됐다고 자동 활성
+- ❌ "slice-tdd 스킬 쓸까요?" 식 선제 권유
+- ❌ 다른 플러그인의 `tdd` 슬래시·트리거가 이 스킬을 자동 활성하는 것 (이름이 다르므로 매칭되지 않아야 정상)
 
 ## 진입 전 사전 조건
 
 - [ ] `features/<feature-name>/task-index.md` 존재 (없으면 `/plan` 먼저 안내)
 - [ ] 현재 작업할 슬라이스 1개 식별됨
 - [ ] feature-name이 컨텍스트에서 명확 (불명확 시 사용자에게 확인)
+
+## ⛔ 커밋 금지 원칙 (가장 중요 #2)
+
+slice-tdd 스킬은 **어떤 단계에서도** `git commit` / `git add` / `git push`를 *자동으로 실행하지 않는다*.
+
+이 원칙은 사용자의 자율 재량 위임("알아서 해줘") 같은 발언으로도 *해제되지 않는다*. 커밋 행위는 항상 명시적 검수 게이트를 거친다.
+
+규칙:
+- ❌ 슬라이스 시작·도중·완료·verification 통과 시점 어디서도 자동 커밋 금지
+- ❌ "GREEN 됐으니 커밋해두자" 같은 자체 판단 금지
+- ❌ WIP 커밋 자체 실행 금지 (WIP 커밋이 필요하다고 판단되면 *제안*만 한다)
+- ❌ refactor 후 자동 커밋 금지
+- ❌ Step 5.5 슬라이스 완료 토글 이후에도 자동 커밋 금지
+- ✅ 사용자가 *명시적으로* "커밋해줘" 라고 요청해도, 먼저 변경 diff 요약 + 제안 커밋 메시지를 보여주고 사용자 y/n을 받은 뒤에만 실행
+- ✅ 사용자가 직접 커밋하는 것은 자유 (스킬이 끼어들지 않는다)
+
+> **이유**: slice-tdd는 RED→GREEN 사이클 도중 자주 부분 상태를 만든다. 자동 커밋은 검수되지 않은 코드가 history에 박히게 만들고, 검수 흐름을 끊는다. 검수는 항상 사용자가 직접 하도록 한다.
+
+세부 절차는 *Step 5.6 — 커밋 검수 게이트* 참조.
 
 ## Vault Decision 인용 (언제든)
 
@@ -162,7 +184,7 @@ NEXT:   다음 behavior로 (사이클 1회 = behavior 1개)
 적용하시겠습니까? (y/n)
 ```
 
-- `y` → tdd가 마커 한 글자만 수정.
+- `y` → slice-tdd가 마커 한 글자만 수정.
 - `n` → 건너뜀. 다음 `/handoff` 시점에 일괄 동기화.
 - **자동 수정 금지** — 반드시 사용자 확인 후. Slices·TODO·Decisions 다른 항목·구조 변경은 절대 하지 않음.
 
@@ -170,10 +192,51 @@ NEXT:   다음 behavior로 (사이클 1회 = behavior 1개)
 
 | 시점 | 변환 | 권한 | 확인 |
 |------|------|------|------|
-| 슬라이스 시작 (Step 0 진입 시) | `[ ]→[~]` | tdd | y/n |
-| 슬라이스 완료 (Step 5.5) | `[~]→[x]` | tdd | y/n |
-| 깊이 5 초과 또는 가정 흔들림 | `[~]→[!]` | tdd | y/n + 사유 메모 |
-| 다른 슬라이스로 전환 (현 슬라이스 미완) | 직전 `[~]` 유지, 새 슬라이스 `[ ]→[~]` | tdd | y/n |
+| 슬라이스 시작 (Step 0 진입 시) | `[ ]→[~]` | slice-tdd | y/n |
+| 슬라이스 완료 (Step 5.5) | `[~]→[x]` | slice-tdd | y/n |
+| 깊이 5 초과 또는 가정 흔들림 | `[~]→[!]` | slice-tdd | y/n + 사유 메모 |
+| 다른 슬라이스로 전환 (현 슬라이스 미완) | 직전 `[~]` 유지, 새 슬라이스 `[ ]→[~]` | slice-tdd | y/n |
+
+### Step 5.6 — 커밋 검수 게이트 (사용자 명시 요청 시에만)
+
+🚫 **자동 진입 금지** — Step 5.5 통과 후에도 slice-tdd는 *자동으로 커밋을 만들지 않는다*. 사용자가 "커밋해줘" / "이거 커밋" 같이 *명시적으로* 요청했을 때에만 이 단계로 진입한다.
+
+진입 시 5단계 게이트:
+
+```
+1. DIFF SUMMARY
+   `git status --short` + `git diff --stat`을 실행해 변경 파일·라인 수 요약.
+   (실행하지 않고 요약을 만들지 말 것.)
+
+2. SCOPE CHECK
+   변경 파일이 *현재 슬라이스 in-scope*에 들어맞는가? out-of-scope 파일이 끼었는가?
+   - 이번 슬라이스 외 파일이 섞여 있으면 사용자에게 분리 여부 확인.
+
+3. MESSAGE DRAFT
+   커밋 메시지 초안을 제시. 형식은 기존 git log 컨벤션을 참고.
+   - 슬라이스 #N + tracer bullet 한 줄 요약을 본문에 포함.
+   - 작성만 한다. 적용은 다음 단계.
+
+4. USER APPROVAL (y/n)
+   "위 diff/메시지로 커밋할까요? (y/n)"
+   - y → Step 5 실행
+   - n → 사용자가 직접 수정 지시할 때까지 대기. slice-tdd는 다시 손대지 않음.
+   - 다른 답변 → 게이트 중단, 사용자 의도 재확인.
+
+5. COMMIT
+   사용자 y/n이 y인 경우에만 `git add <명시된 파일들> && git commit -m "<승인된 메시지>"` 실행.
+   - `git add -A` / `git add .` 금지 (실수로 의도하지 않은 파일을 staging).
+   - `--no-verify` 금지.
+   - push는 별도 명시 요청이 있을 때까지 *절대* 실행하지 않음.
+```
+
+🚫 **금지 행위**:
+- ❌ Step 5 verification 통과 직후 사용자 확인 없이 커밋 메시지 생성·실행
+- ❌ "이왕 GREEN인데 커밋해두자" 류 자체 판단
+- ❌ refactor 후 자동 커밋
+- ❌ diff를 보지 않은 채 커밋 메시지 작성 (반드시 `git diff` 실행 후 작성)
+- ❌ 사용자 자율 위임 발언("알아서 해줘")으로 게이트 우회
+- ❌ amend / force-push / `--no-verify` 사용
 
 세션 종료 시 `/handoff` 명시 호출 → `task-index.md`의 *TODO 섹션* 일괄 동기화 + `.claude/handoff/` 세션 dump 생성. 다음 세션은 `/takeover`로 인수.
 
@@ -252,9 +315,9 @@ Last cycle: <timestamp>
 
 | 신호 | 처리 경로 |
 |------|-----------|
-| 현재 슬라이스 demoable 안 + 같은 tracer bullet 경로 + 1-3일 안에 끝남 | **tdd가 내부 분해** (트리에 자식 노드 추가) |
+| 현재 슬라이스 demoable 안 + 같은 tracer bullet 경로 + 1-3일 안에 끝남 | **slice-tdd가 내부 분해** (트리에 자식 노드 추가) |
 | 다른 슬라이스에 의존 / AFK·Demoable 4기준을 별도 만족해야 / 1-3일 narrow 깸 | task-index.md의 `## Decisions` 섹션에 `[pending][slice-<현재 슬라이스 번호>] slice 추가 후보: <설명>` 형태로 누적, **현 슬라이스 종료 후 `/plan` 재호출** |
-| 가정 자체 흔들림 (요구사항·전제 무너짐) | **즉시 STOP + WIP 커밋 + `/plan` 재진입** (task-index.md overwrite/append/abort 분기 진입) |
+| 가정 자체 흔들림 (요구사항·전제 무너짐) | **즉시 STOP + WIP 커밋 *제안* (사용자 승인 필요, Step 5.6 게이트 적용) + `/plan` 재진입** (task-index.md overwrite/append/abort 분기 진입) |
 
 → **현 슬라이스 진행 중 `/plan`을 호출하지 않는다** (가정 흔들림 케이스 제외). 슬라이스 종료 직전·직후에만 재호출.
 
@@ -306,12 +369,12 @@ Last cycle: <timestamp>
 
 
 
-이 표는 plan / tdd / handoff / takeover 4개 자산이 모두 동일하게 따른다.
+이 표는 plan / slice-tdd / handoff / takeover 4개 자산이 모두 동일하게 따른다.
 
 | 파일 | 생성 | 갱신 | 읽기만 |
 |------|------|------|--------|
-| `task-index.md` | plan / handoff (Step 2.5 신규 슬롯 생성 시) | plan (재진입 시 overwrite/append/abort/fill), **tdd** (슬라이스 진행 마커 토글 y/n + Decisions 섹션 vault 인용 시), handoff (TODO 섹션 일괄 y/n) | takeover |
-| `tdd-state/slice-N.md` | **tdd** (슬라이스 시작 시) | **tdd** (RED→GREEN 사이클마다) | handoff, takeover |
+| `task-index.md` | plan / handoff (Step 2.5 신규 슬롯 생성 시) | plan (재진입 시 overwrite/append/abort/fill), **slice-tdd** (슬라이스 진행 마커 토글 y/n + Decisions 섹션 vault 인용 시), handoff (TODO 섹션 일괄 y/n) | takeover |
+| `tdd-state/slice-N.md` | **slice-tdd** (슬라이스 시작 시) | **slice-tdd** (RED→GREEN 사이클마다) | handoff, takeover |
 
 이 매트릭스를 벗어난 수정은 금지. 특히 takeover는 어느 파일도 수정하지 않는다.
 
@@ -336,3 +399,11 @@ Last cycle: <timestamp>
 - ❌ 트리 노드 추가 시 사용자 y/n 생략 (자동 추가 금지)
 - ❌ 부모 노드를 수동 체크 (자식 모두 GREEN 시 자동 GREEN이 룰)
 - ❌ 깊이 5 초과까지 진행 후 plan 재진입 미고려
+- ❌ **사용자 명시 승인 없이 자동 커밋** (Step 5.6 게이트 우회 — 가장 중요한 금지)
+- ❌ "GREEN 됐으니 일단 커밋해두자" 류 자체 판단으로 git commit 실행
+- ❌ 사용자 자율 위임("알아서 해줘")을 커밋 자동 실행 권한으로 해석
+- ❌ `git add -A` / `git add .` 사용 (의도하지 않은 파일 staging)
+- ❌ diff를 실제로 보지 않고 커밋 메시지 작성
+- ❌ refactor 후 자동 커밋
+- ❌ `--no-verify` / amend / force-push 사용
+- ❌ 다른 플러그인의 `tdd` 키워드·트리거를 통해 이 스킬이 호출되는 것 (이름이 `slice-tdd`로 분리됨)

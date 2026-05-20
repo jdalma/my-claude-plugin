@@ -1,7 +1,7 @@
 # RED-GREEN-REFACTOR 디시플린
 
 > 흡수 출처: `superpowers:test-driven-development`
-> 적용: tdd 스킬 Step 3
+> 적용: slice-tdd 스킬 Step 3
 
 ## Iron Law
 

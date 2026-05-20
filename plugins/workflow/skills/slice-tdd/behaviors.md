@@ -1,7 +1,7 @@
 # Behavior 추출·식별 5원칙
 
 > 출처: mattpocock `tdd` 핵심 원리 + SP TDD 디시플린 종합
-> 적용: tdd 스킬 Step 1 (behavior 리스트 작성)
+> 적용: slice-tdd 스킬 Step 1 (behavior 리스트 작성)
 
 ## 정의
 

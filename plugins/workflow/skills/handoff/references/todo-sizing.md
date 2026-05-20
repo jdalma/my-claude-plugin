@@ -4,7 +4,7 @@
 
 **task-index.md TODO 섹션 항목 1개의 크기 = handoff 1회로 깔끔하게 떨어지는 작업 단위.**
 
-> 본 가이드는 task-index.md의 *TODO 섹션* — 슬라이스 외 작업·잡일·외부 의존 대기 — 에 적용된다. 슬라이스 자체의 분해 가이드는 `tdd/SKILL.md`의 분기 룰(트리 vs `/plan` 재진입)을 참조.
+> 본 가이드는 task-index.md의 *TODO 섹션* — 슬라이스 외 작업·잡일·외부 의존 대기 — 에 적용된다. 슬라이스 자체의 분해 가이드는 `slice-tdd/SKILL.md`의 분기 룰(트리 vs `/plan` 재진입)을 참조.
 
 이 등식이 깨지면(항목이 너무 크거나 작으면) 다음이 연쇄적으로 망가진다:
 
@@ -105,9 +105,9 @@ feature_name: payment-msa
 
 | 섹션 | 역할 | 갱신 주체 | handoff/takeover와의 관계 |
 |------|------|-----------|------------------------|
-| Slices | slice 정의 + 진행 마커(`[ ]/[~]/[x]/[!]`) | plan(생성), tdd(마커 토글) | takeover가 수평 진행도 즉시 파악 |
+| Slices | slice 정의 + 진행 마커(`[ ]/[~]/[x]/[!]`) | plan(생성), slice-tdd(마커 토글) | takeover가 수평 진행도 즉시 파악 |
 | TODO | slice 외 작업·외부 의존 대기·잡일 | handoff (사용자 y/n 후 일괄) | handoff의 Candidate Next Action과 매칭 |
-| Decisions / Traps | 수명 긴 메모 | plan, tdd | handoff의 Key Decisions / Traps가 여기로 승격 |
+| Decisions / Traps | 수명 긴 메모 | plan, slice-tdd | handoff의 Key Decisions / Traps가 여기로 승격 |
 
 > **WIP 단일 룰**: 한 시점에 `[~]` 마커는 1개만 (Slices 섹션). 멀티 WIP 금지. takeover가 첫 보고에 명시.
 

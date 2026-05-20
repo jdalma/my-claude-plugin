@@ -23,13 +23,13 @@ disable-model-invocation: true
 
 ## 4개 자산 통합 검증
 
-이 스킬은 plan/tdd/handoff/takeover 4개 자산이 공유하는 단일 디렉토리 컨벤션을 전제한다:
+이 스킬은 plan/slice-tdd/handoff/takeover 4개 자산이 공유하는 단일 디렉토리 컨벤션을 전제한다:
 
 ```
 features/<feature-name>/
 ├── task-index.md     ← /plan 산출물 (slice 정의 + 진행 마커 + TODO 섹션 + Decisions 섹션)
 └── tdd-state/
-    ├── slice-1.md    ← tdd 슬라이스마다 진행 상태 (behavior 트리)
+    ├── slice-1.md    ← slice-tdd 슬라이스마다 진행 상태 (behavior 트리)
     └── slice-N.md
 ```
 
@@ -51,7 +51,7 @@ features/<feature-name>/
 - ❌ 검증 결과 보고 없이 코딩 시작
 - ❌ stale 판정을 날짜만으로 결정
 - ❌ task-index.md / tdd-state/slice-N.md를 source of truth로 신뢰 (코드와 대조 후에만 판단)
-- ❌ task-index.md / tdd-state/ 자동 수정 (takeover는 읽기·검증·보고만; 수정은 handoff/plan/tdd 각자의 역할)
+- ❌ task-index.md / tdd-state/ 자동 수정 (takeover는 읽기·검증·보고만; 수정은 handoff/plan/slice-tdd 각자의 역할)
 
 ## 실행 흐름
 
@@ -178,7 +178,7 @@ ls features/*/task-index.md 2>/dev/null
    - 부모 노드의 GREEN 상태가 자식 모두 GREEN과 일치하는지 sanity check (불일치 시 stale 의심 신호)
    - 다른 슬라이스 파일(`slice-(N-1).md`, `slice-(N+1).md`)은 필요 시에만 Read
 
-이 정보는 Step 5 보고에 포함한다. **3개 파일 모두 자체를 수정하지 않는다** — 수정은 handoff/plan/tdd 스킬의 역할.
+이 정보는 Step 5 보고에 포함한다. **3개 파일 모두 자체를 수정하지 않는다** — 수정은 handoff/plan/slice-tdd 스킬의 역할.
 
 ### Step 4: Relevant Files 검증
 
@@ -246,7 +246,7 @@ for file in Relevant Files (최대 8개):
   - Slice #5 — 깊이 7 (4 levels too deep) → `/plan` 재호출로 분리 권장
 
 ### 다음 가능한 명시 호출 예시
-- `tdd로 슬라이스 #3 이어서` (또는 `RED→GREEN으로 슬라이스 #3 작업`)
+- `slice-tdd로 슬라이스 #3 이어서` (또는 `RED→GREEN으로 슬라이스 #3 작업`)
 - `/plan` 재호출 (가정이 흔들렸거나 신규 슬라이스 분해 필요, 또는 깊이 5 초과 슬라이스 분리)
 - `/handoff` (지금까지 보고만 받고 종료)
 
@@ -264,7 +264,7 @@ for file in Relevant Files (최대 8개):
 | 상황 | 행동 |
 |------|------|
 | `.claude/handoff/` 디렉토리 자체 없음 + features/ 슬롯도 없음 | "handoff·features/ 슬롯 모두 없음. 새 기능이면 `/plan`을 호출하세요. takeover로 할 일 없음." |
-| `.claude/handoff/` 없음 + `features/<name>/` 슬롯은 있음 | 슬롯 자체를 hypothesis로 검증 (Step 3.5만 수행). 보고에 *"handoff 누락 — 직전 세션이 handoff 없이 종료된 것으로 보임. features/ 슬롯이 stale일 가능성 높음"* 명시. 다음 명시 호출 예시는 `/plan` 재호출 또는 `tdd로 슬라이스 #N 이어서` |
+| `.claude/handoff/` 없음 + `features/<name>/` 슬롯은 있음 | 슬롯 자체를 hypothesis로 검증 (Step 3.5만 수행). 보고에 *"handoff 누락 — 직전 세션이 handoff 없이 종료된 것으로 보임. features/ 슬롯이 stale일 가능성 높음"* 명시. 다음 명시 호출 예시는 `/plan` 재호출 또는 `slice-tdd로 슬라이스 #N 이어서` |
 | handoff 파일 frontmatter 손상 | 손상 사실 보고하고 본문만 읽어 hypothesis로 사용 |
 | `head_commit` 필드 누락 (구버전 handoff or non-git) | git 기반 검증 건너뛰고 날짜 기반 약한 검증으로 fallback |
 | Relevant Files가 모두 삭제됨 | "이 handoff는 stale 가능성 매우 높음. 새 세션으로 시작 권장" |
@@ -277,11 +277,11 @@ for file in Relevant Files (최대 8개):
 
 ## 상태 갱신 책임 매트릭스 (4개 자산 공통)
 
-이 표는 plan / tdd / handoff / takeover 4개 자산이 모두 동일하게 따른다.
+이 표는 plan / slice-tdd / handoff / takeover 4개 자산이 모두 동일하게 따른다.
 
 | 파일 | 생성 | 갱신 | 읽기만 |
 |------|------|------|--------|
-| `task-index.md` | plan / handoff (Step 2.5 신규 슬롯 생성 시) | plan (재진입 시 overwrite/append/abort/fill), tdd (슬라이스 진행 마커 토글 y/n + Decisions 섹션 vault 인용 시), handoff (TODO 섹션 일괄 y/n) | **takeover** |
+| `task-index.md` | plan / handoff (Step 2.5 신규 슬롯 생성 시) | plan (재진입 시 overwrite/append/abort/fill), slice-tdd (슬라이스 진행 마커 토글 y/n + Decisions 섹션 vault 인용 시), handoff (TODO 섹션 일괄 y/n) | **takeover** |
 | `tdd-state/slice-N.md` | tdd (슬라이스 시작 시) | tdd (RED→GREEN 사이클마다) | handoff, **takeover** |
 
 **takeover는 어느 파일도 수정하지 않는다.** 검증·보고만 한다.

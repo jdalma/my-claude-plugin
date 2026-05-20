@@ -1,7 +1,7 @@
 # Verification Gate Function
 
 > 흡수 출처: `superpowers:verification-before-completion`
-> 적용: tdd 스킬 Step 5 (완료 주장 전)
+> 적용: slice-tdd 스킬 Step 5 (완료 주장 전)
 
 ## Iron Law
 
