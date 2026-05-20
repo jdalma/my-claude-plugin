@@ -167,10 +167,13 @@ export async function runStart(opts) {
     // Build roster once so every worker's AGENTS.md can list its peers by name.
     // Names here are the same strings used as to_worker in send-message and as
     // pane titles, so workers can call each other by what they see on screen.
+    // `role` prefers the worker's `description` (a one-liner written for peers)
+    // and falls back to `extra_prompt` (the worker's own instructions) so
+    // configs predating the `description` field still surface something.
     const teamRoster = config.workers.map((peer) => ({
         name: peer.name,
         agentType: peer.agent_type,
-        role: peer.extra_prompt || '',
+        role: peer.description || peer.extra_prompt || '',
     }));
 
     for (let i = 0; i < config.workers.length; i++) {

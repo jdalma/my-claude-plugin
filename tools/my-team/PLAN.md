@@ -405,7 +405,9 @@ interface WorkerConfig {
     cwd: string;                          // 필수, 절대경로 또는 ~ 시작
     agent_type: 'claude' | 'codex' | 'gemini' | 'cursor';
 
-    extra_prompt?: string;                // AGENTS.md `## Role Context` 슬롯
+    description?: string;                 // 다른 워커가 Team Roster에서 보는 한 줄 소개
+                                          //   (없으면 extra_prompt 첫 줄로 폴백)
+    extra_prompt?: string;                // AGENTS.md `## Role Context` 슬롯 (자기 자신용 상세 지시)
     extra_prompt_file?: string;           // 옵션, 파일에서 읽기
 
     task?: {                              // 부팅 task (옵션)
@@ -502,6 +504,10 @@ interface WorkerConfig {
     - body convention 토큰 전면 제거 (`[BLOCKING]` / `[BLOCKED]` / `[NONBLOCKING]` / `[REQUIRES ACK]` / `[ACK]`) — `reply_within` 등은 시스템이 강제하지 않아 워커에게 혼란만 줬음
     - 메시지 스키마에 `reply_to` 필드 도입 (원본 `message_id` 참조) → 비동기 응답을 구조적으로 매칭. `send-message`가 optional `reply_to` 입력을 받음
     - AGENTS.md 재서술: 모든 워커 간 통신은 비동기, 워커는 답을 기다리며 멈추지 않음. 답이 필요한 메시지는 per-cycle `mailbox-list`가 자연히 surface
+- **2026-05-20 (v7)**: 워커 `description` 필드 도입 (피어 인식)
+    - config WorkerConfig에 optional `description` 추가 — 다른 워커가 Team Roster에서 보는 한 줄 소개. 없으면 `extra_prompt` 첫 줄로 폴백 (후방 호환)
+    - `extra_prompt`(자기 자신용 상세 지시)와 역할 분리 — 이전엔 roster가 `extra_prompt` 첫 줄을 재활용하던 암묵적 구조였음
+    - AGENTS.md Team Roster 섹션에 "스코프 밖 문제는 역할이 맞는 peer에게 위임하라" 안내 추가 → 워커가 도움 요청 여부를 스스로 판단
 
 ---
 

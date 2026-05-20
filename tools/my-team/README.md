@@ -36,6 +36,7 @@ cat > my-team.json <<'EOF'
       "cwd": "~/work/project-a",
       "agent_type": "claude",
       "launch_args": ["--dangerously-skip-permissions"],
+      "description": "Backend API owner — DB schema and endpoint design.",
       "extra_prompt": "Project A is the backend.",
       "task": { "subject": "Sketch the API", "description": "..." }
     },
@@ -44,6 +45,7 @@ cat > my-team.json <<'EOF'
       "cwd": "~/work/project-b",
       "agent_type": "codex",
       "launch_args": ["--dangerously-bypass-approvals-and-sandbox"],
+      "description": "Frontend client of A — consumes alpha's API.",
       "extra_prompt": "Project B is the client of A."
     }
   ]
@@ -56,6 +58,12 @@ my-team msg --team demo --to alpha --body "also write tests"
 my-team add-task --team demo --worker beta --subject "Bump SDK" --description "..."
 my-team shutdown --team demo
 ```
+
+> **`description` vs `extra_prompt`** — both optional. `description` is a
+> one-liner shown to *other* workers in the Team Roster, so a worker can
+> judge whom to ask for help. `extra_prompt` is detailed instructions
+> injected only into *that* worker's own prompt. If `description` is
+> omitted, the roster falls back to the first line of `extra_prompt`.
 
 ## Worker launch flags
 

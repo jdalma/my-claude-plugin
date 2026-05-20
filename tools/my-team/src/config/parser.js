@@ -160,6 +160,20 @@ function validateWorker(w, idx, seen) {
         extraPrompt = readFileSync(filePath, 'utf-8');
     }
 
+    // description (optional): a one-line summary shown to *other* workers in
+    // the Team Roster, so a worker LLM can judge whom to ask for help.
+    // Distinct from extra_prompt (this worker's own detailed instructions).
+    // A whitespace-only value normalizes to '' (same as extra_prompt above).
+    let description = '';
+    if (w.description !== undefined) {
+        if (typeof w.description !== 'string') {
+            throw new Error(`${where}.description must be a string`);
+        }
+        if (w.description.trim()) {
+            description = w.description;
+        }
+    }
+
     // task (optional)
     let task = null;
     if (w.task !== undefined) {
@@ -214,6 +228,7 @@ function validateWorker(w, idx, seen) {
         name: w.name,
         cwd: expandedCwd,
         agent_type: w.agent_type,
+        description,
         extra_prompt: extraPrompt,
         task,
         env,

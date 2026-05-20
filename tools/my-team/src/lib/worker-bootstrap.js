@@ -167,6 +167,10 @@ You MUST complete ALL of these steps. Do NOT skip any step. Do NOT exit without 
 These are the workers in this team. Use the exact \`name\` shown here as the
 \`to_worker\` value when calling \`my-team api send-message\`. The same name is
 also visible on each pane's top border.
+
+Each entry shows that worker's role/specialty. When a sub-problem falls
+outside your own scope but matches a peer's role, send that peer a message
+instead of solving it yourself — that is what the roster is for.
 ${rosterList}
 
 ## Your Tasks
