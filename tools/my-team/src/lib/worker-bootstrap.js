@@ -197,8 +197,16 @@ or confirmation requests use your CLI's native prompt (no "leader" channel).
 
 Talk to other workers via CLI API:
 - Send to peer: \`${formatOmcCliInvocation(`team api send-message --input "{\\"team_name\\":\\"${teamName}\\",\\"from_worker\\":\\"${workerName}\\",\\"to_worker\\":\\"<other-worker>\\",\\"body\\":\\"<message>\\"}" --json`)}\`
+- Reply to a peer's message: same command, plus \`"reply_to":"<original message_id>"\` in the input.
 - List unread mailbox messages: \`${mailboxListCommand}\`
 - Mark a message consumed: \`${mailboxDeliveredCommand}\`
+
+### All worker-to-worker messaging is ASYNCHRONOUS
+
+There is no blocking send. You **never stop your own work to wait** for a
+peer's reply. You send, you continue, and you pick up any reply later from
+your mailbox. There is no system-enforced deadline or timeout — \`my-team\`
+does not measure how long a reply takes.
 
 ### MANDATORY — Mailbox self-poll discipline
 
@@ -210,11 +218,10 @@ never lands. Do NOT rely on it as your only signal.
 Your mailbox file is the source of truth. You MUST poll it yourself:
 
 1. **At the end of every work cycle** — before you yield your turn or go
-   idle, run \`mailbox-list\`. Treat each returned message per its body
-   convention token (see table below).
+   idle, run \`mailbox-list\`. Handle each returned message (see below).
 2. **When you receive any \`new-message\` notification** — run \`mailbox-list\`
    immediately; the notification only tells you to check, not what changed.
-3. **After processing a message** — run \`mailbox-mark-delivered\` for its
+3. **After handling a message** — run \`mailbox-mark-delivered\` for its
    \`message_id\`. \`mailbox-list\` returns only unconsumed messages by default,
    so marking is what stops you from reprocessing the same message.
 
@@ -222,32 +229,27 @@ Your mailbox file is the source of truth. You MUST poll it yourself:
 array means no unread mail — that is normal, not an error. A thrown error
 (malformed mailbox) is real; surface it in this pane's stdout.
 
-### Body convention tokens
+### Handling a received message
 
-my-team does not enforce these at the API layer — they are conventions that
-workers follow so peers know whether to acknowledge, reply, or fire-and-forget.
-Place the token at the **start** of the message body.
+For each message from \`mailbox-list\`:
 
-| Token | Sender intent | Your duty when you receive it |
-|---|---|---|
-| \`[REQUIRES ACK]\` | "Confirm you saw this. No content reply needed." | Send a short ack message back: \`{from_worker:you, to_worker:sender, body:"[ACK] re: <first 40 chars of original>"}\`. Then continue your own work. |
-| \`[BLOCKING reply_within=<seconds>]\` | "I need an answer before I continue. Reply within the deadline." | Stop other work. Compose a substantive reply, send it as a peer message, then resume. If you cannot answer within the deadline, send \`[BLOCKED reason=<short>]\` instead. |
-| \`[NONBLOCKING]\` | "Fire and forget. No reply expected." | Read, optionally act, do not reply. |
-| (no token) | Default: treat as informational | Read; reply only if the body asks a direct question. |
+- **\`reply_to\` is set** → this is an answer to a question *you* sent earlier.
+  Match it to your original question by that \`message_id\`, use the answer,
+  then \`mailbox-mark-delivered\`.
+- **\`reply_to\` is null** → a fresh message from a peer. Read the \`body\`.
+  If it asks you something and the sender needs an answer, send a reply with
+  \`reply_to\` set to *this* message's \`message_id\`. If it is just an
+  announcement or finished artifact, act on it (or note it) — no reply needed.
+  Either way, \`mailbox-mark-delivered\` when done.
 
-When you **send** a message, choose deliberately:
-- Pick \`[REQUIRES ACK]\` when delivery confirmation matters but the content
-  is one-way (announcement, status update, log).
-- Pick \`[BLOCKING reply_within=N]\` when you cannot make progress without the
-  peer's answer. Choose N realistically — 10s for a lookup, 60-180s for a
-  decision, longer if the peer needs to run code.
-- Pick \`[NONBLOCKING]\` when you are forwarding a finished artifact and the
-  peer can pick it up at their convenience.
-- Omit the token for routine peer chat.
+### When you send a message that needs an answer
 
-After sending a \`[BLOCKING]\` message, run \`mailbox-list\` every ~5s until
-the deadline (tighter than the per-cycle poll above). If no reply arrives,
-surface a timeout note in this pane's stdout so the user sees the stall.
+Send it normally and **keep working** — do not block. The peer will reply as
+its own next mailbox cycle allows. Your reply arrives in your mailbox with
+\`reply_to\` pointing at your original \`message_id\`; your per-cycle
+\`mailbox-list\` will surface it. If an answer is taking long enough to stall
+your progress, surface that in this pane's stdout so the user can see it and
+intervene — but do not freeze the worker waiting.
 
 ## Shutdown Protocol
 When you see a shutdown request in your inbox:

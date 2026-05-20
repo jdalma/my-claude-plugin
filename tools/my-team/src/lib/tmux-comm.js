@@ -71,8 +71,12 @@ export async function queueInboxInstruction(teamName, workerName, instruction, p
 
 /**
  * Send a direct message from one worker to another via mailbox + tmux trigger.
+ *
+ * `replyTo` (optional) is the `message_id` of the message this one answers.
+ * It lets the original sender match an async reply to its question via
+ * `mailbox-list` — workers never block waiting for a reply.
  */
-export async function queueDirectMessage(teamName, fromWorker, toWorker, body, toPaneId, cwd) {
+export async function queueDirectMessage(teamName, fromWorker, toWorker, body, toPaneId, cwd, replyTo = null) {
     const mailbox = await readMailboxFile(teamName, toWorker, cwd);
     const message = {
         message_id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -81,6 +85,7 @@ export async function queueDirectMessage(teamName, fromWorker, toWorker, body, t
         body,
         created_at: new Date().toISOString(),
         consumed_at: null,
+        reply_to: replyTo ?? null,
     };
     mailbox.messages.push(message);
     await writeMailboxFile(teamName, toWorker, cwd, mailbox);
@@ -111,6 +116,7 @@ export async function queueBroadcastMessage(teamName, fromWorker, body, workerPa
             body,
             created_at: new Date().toISOString(),
             consumed_at: null,
+            reply_to: null,
         };
         mailbox.messages.push(message);
         await writeMailboxFile(teamName, toWorker, cwd, mailbox);

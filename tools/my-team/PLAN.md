@@ -497,7 +497,11 @@ interface WorkerConfig {
     - 누락 API 구현: `api mailbox-list`, `api mailbox-mark-delivered` (AGENTS.md가 호출하지만 cli.js에 미등록 상태였음 — 워커가 메일박스를 읽을 수단 자체가 없던 결함)
     - 메일박스 메시지에 `consumed_at` 필드 도입 → cursor 역할. `mailbox-list`는 기본적으로 미소비 메시지만 반환
     - `worker-bootstrap.js` AGENTS.md에 self-poll discipline 추가, tmux trigger를 best-effort hint로 격하
-    - §6 Known Limitations 추가: K1(trigger false-positive), K2(메일박스 동시 쓰기 race) — 별도 PR 대상
+    - §6 Known Limitations 추가: K1(trigger false-positive). 메일박스 동시 쓰기는 단일 작업자 모델에서 발생 불가 — 미래 조건부 이슈로 기록
+- **2026-05-20 (v6)**: 워커 통신 모델을 비동기 단일 모델로 단순화
+    - body convention 토큰 전면 제거 (`[BLOCKING]` / `[BLOCKED]` / `[NONBLOCKING]` / `[REQUIRES ACK]` / `[ACK]`) — `reply_within` 등은 시스템이 강제하지 않아 워커에게 혼란만 줬음
+    - 메시지 스키마에 `reply_to` 필드 도입 (원본 `message_id` 참조) → 비동기 응답을 구조적으로 매칭. `send-message`가 optional `reply_to` 입력을 받음
+    - AGENTS.md 재서술: 모든 워커 간 통신은 비동기, 워커는 답을 기다리며 멈추지 않음. 답이 필요한 메시지는 per-cycle `mailbox-list`가 자연히 surface
 
 ---
 

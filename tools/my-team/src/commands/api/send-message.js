@@ -16,7 +16,7 @@ import { queueDirectMessage } from '../../lib/tmux-comm.js';
 import { appendMessageEvent } from '../../lib/events.js';
 
 export async function runApiSendMessage(input) {
-    const { team_name, from_worker, to_worker, body } = input;
+    const { team_name, from_worker, to_worker, body, reply_to } = input;
     if (!team_name) throw new Error('team_name is required');
     if (!from_worker) throw new Error('from_worker is required');
     if (!to_worker) throw new Error('to_worker is required');
@@ -38,7 +38,9 @@ export async function runApiSendMessage(input) {
     }
 
     const parentDir = manifest.state_root.replace(/\/[^/]+$/, '');
-    const message = await queueDirectMessage(team_name, from_worker, to_worker, body, recipient.pane_id, parentDir);
+    const message = await queueDirectMessage(
+        team_name, from_worker, to_worker, body, recipient.pane_id, parentDir, reply_to ?? null
+    );
     await appendMessageEvent(manifest.state_root, { from: from_worker, to: to_worker, body });
-    return { ok: true, delivered_to: to_worker, message_id: message.message_id };
+    return { ok: true, delivered_to: to_worker, message_id: message.message_id, reply_to: message.reply_to };
 }
