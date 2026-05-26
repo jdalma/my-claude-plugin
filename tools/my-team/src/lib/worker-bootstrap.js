@@ -113,6 +113,8 @@ export function generateWorkerOverlay(params) {
     const readTaskCommand = formatOmcCliInvocation(`team api read-task --input "{\\"team_name\\":\\"${teamName}\\",\\"task_id\\":\\"<id>\\"}" --json`);
     const mailboxListCommand = formatOmcCliInvocation(`team api mailbox-list --input "{\\"team_name\\":\\"${teamName}\\",\\"worker\\":\\"${workerName}\\"}" --json`);
     const mailboxDeliveredCommand = formatOmcCliInvocation(`team api mailbox-mark-delivered --input "{\\"team_name\\":\\"${teamName}\\",\\"worker\\":\\"${workerName}\\",\\"message_id\\":\\"<id>\\"}" --json`);
+    const archiveLookupCommand = formatOmcCliInvocation(`team api archive-lookup --input "{\\"team_name\\":\\"${teamName}\\",\\"worker\\":\\"${workerName}\\",\\"message_id\\":\\"<id>\\"}" --json`);
+    const sendWithReplyExpectedCommand = formatOmcCliInvocation(`team api send-message --input "{\\"team_name\\":\\"${teamName}\\",\\"from_worker\\":\\"${workerName}\\",\\"to_worker\\":\\"<other-worker>\\",\\"body\\":\\"<question>\\",\\"expects_reply\\":true}" --json`);
     const teamApiCommand = formatOmcCliInvocation('team api');
     const teamCommand = formatOmcCliInvocation('team');
 
@@ -200,10 +202,12 @@ Talk to the user: surface output in this pane via your normal stdout. Permission
 or confirmation requests use your CLI's native prompt (no "leader" channel).
 
 Talk to other workers via CLI API:
-- Send to peer: \`${formatOmcCliInvocation(`team api send-message --input "{\\"team_name\\":\\"${teamName}\\",\\"from_worker\\":\\"${workerName}\\",\\"to_worker\\":\\"<other-worker>\\",\\"body\\":\\"<message>\\"}" --json`)}\`
-- Reply to a peer's message: same command, plus \`"reply_to":"<original message_id>"\` in the input.
-- List unread mailbox messages: \`${mailboxListCommand}\`
-- Mark a message consumed: \`${mailboxDeliveredCommand}\`
+- Send a one-way notice (no answer expected): \`${formatOmcCliInvocation(`team api send-message --input "{\\"team_name\\":\\"${teamName}\\",\\"from_worker\\":\\"${workerName}\\",\\"to_worker\\":\\"<other-worker>\\",\\"body\\":\\"<message>\\"}" --json`)}\`
+- Ask a question that needs an answer (sets expects_reply): \`${sendWithReplyExpectedCommand}\`
+- Reply to a peer's message: same command, add \`"reply_to":"<original message_id>"\`. Replies never set expects_reply=true.
+- List unread inbox + your outstanding questions: \`${mailboxListCommand}\`
+- Mark a message consumed (moves it to archive): \`${mailboxDeliveredCommand}\`
+- Resolve a reply_to that is not in sent_pending: \`${archiveLookupCommand}\`
 
 ### All worker-to-worker messaging is ASYNCHRONOUS
 
@@ -212,6 +216,25 @@ peer's reply. You send, you continue, and you pick up any reply later from
 your mailbox. There is no system-enforced deadline or timeout — \`my-team\`
 does not measure how long a reply takes.
 
+### Message correlation — request/response tracking
+
+Every message has a unique \`message_id\`. When you ask a question, set
+\`expects_reply: true\` so the system records that question in your
+\`sent_pending\` map until an answer arrives. Replies set \`reply_to\` to the
+original \`message_id\`; \`mailbox-list\` automatically removes the matching
+\`sent_pending\` entry when it absorbs an incoming reply, so your outstanding
+questions list stays accurate without any manual bookkeeping.
+
+\`mailbox-list\` returns \`{ ok, worker, messages, sent_pending }\`:
+- \`messages\` is your inbox (unread by default), sorted by \`created_at\`
+  ascending. **Do not rely on object key order** — always iterate the array.
+- \`sent_pending\` is the questions you have sent with \`expects_reply: true\`
+  that are still awaiting an answer.
+
+If \`sent_pending\` is non-empty for too long, the answers are simply slow —
+surface that in this pane's stdout so the user can intervene, but keep
+working on other items. Never freeze waiting.
+
 ### MANDATORY — Mailbox self-poll discipline
 
 A tmux notification (\`new-message:<sender>\` typed into this pane) is a
@@ -219,41 +242,61 @@ A tmux notification (\`new-message:<sender>\` typed into this pane) is a
 confirmation prompt, or in copy-mode when a peer sent to you, the trigger
 never lands. Do NOT rely on it as your only signal.
 
-Your mailbox file is the source of truth. You MUST poll it yourself:
+Your mailbox is the source of truth. You MUST poll it yourself:
 
 1. **At the end of every work cycle** — before you yield your turn or go
    idle, run \`mailbox-list\`. Handle each returned message (see below).
 2. **When you receive any \`new-message\` notification** — run \`mailbox-list\`
    immediately; the notification only tells you to check, not what changed.
 3. **After handling a message** — run \`mailbox-mark-delivered\` for its
-   \`message_id\`. \`mailbox-list\` returns only unconsumed messages by default,
-   so marking is what stops you from reprocessing the same message.
+   \`message_id\`. That moves the message into your archive jsonl and stops
+   \`mailbox-list\` from returning it again. The archive is the durable
+   record for later \`archive-lookup\` calls.
 
-\`mailbox-list\` returns \`{ ok, worker, messages }\`. An empty \`messages\`
-array means no unread mail — that is normal, not an error. A thrown error
-(malformed mailbox) is real; surface it in this pane's stdout.
+\`mailbox-list\` returns an empty \`messages\` array when there is no unread
+mail — that is normal, not an error. A thrown error (malformed mailbox,
+schema mismatch) is real; surface it in this pane's stdout.
 
-### Handling a received message
+### Handling a received message — reply_to resolution order
 
-For each message from \`mailbox-list\`:
+For each entry in \`messages\`:
 
-- **\`reply_to\` is set** → this is an answer to a question *you* sent earlier.
-  Match it to your original question by that \`message_id\`, use the answer,
-  then \`mailbox-mark-delivered\`.
-- **\`reply_to\` is null** → a fresh message from a peer. Read the \`body\`.
-  If it asks you something and the sender needs an answer, send a reply with
-  \`reply_to\` set to *this* message's \`message_id\`. If it is just an
-  announcement or finished artifact, act on it (or note it) — no reply needed.
-  Either way, \`mailbox-mark-delivered\` when done.
+1. **\`reply_to\` is set** — resolve it in this order:
+   a. **Check \`sent_pending\`** returned by the same \`mailbox-list\` call.
+      If the id is there, this is the answer to your still-open question.
+      \`mailbox-list\` has already removed it from \`sent_pending\` for you.
+   b. **Otherwise call \`archive-lookup\`**. A "direction: out" hit means
+      \`reply_to\` points at a message you sent earlier (often a question
+      where you didn't set \`expects_reply\`); a "direction: in" hit means
+      \`reply_to\` points at a message you previously received (this is a
+      follow-up to something you already handled).
+   c. **If neither finds a hit**, log it in this pane's stdout — the peer
+      is referencing an id you have no record of, which is a peer bug, not
+      a protocol error. Treat the message body on its own merits.
+   After resolving, \`mailbox-mark-delivered\`.
+
+2. **\`reply_to\` is null** — a fresh message. Read the body and:
+   - If the message has \`expects_reply: true\` you should answer. Send a
+     reply with \`reply_to\` set to *this* message's \`message_id\`.
+   - If \`expects_reply\` is false, this is an announcement or artifact
+     handoff. Act on it (or note it) — no reply needed.
+   Either way, \`mailbox-mark-delivered\` when done.
 
 ### When you send a message that needs an answer
 
-Send it normally and **keep working** — do not block. The peer will reply as
-its own next mailbox cycle allows. Your reply arrives in your mailbox with
-\`reply_to\` pointing at your original \`message_id\`; your per-cycle
-\`mailbox-list\` will surface it. If an answer is taking long enough to stall
-your progress, surface that in this pane's stdout so the user can see it and
-intervene — but do not freeze the worker waiting.
+Use \`expects_reply: true\` so it lands in your \`sent_pending\`. Then keep
+working — do not block. The peer's reply arrives in your inbox with
+\`reply_to\` pointing at your \`message_id\`; the next \`mailbox-list\`
+surfaces it and clears the pending entry. If too many entries pile up in
+\`sent_pending\`, surface it on stdout so the user can intervene.
+
+### Broadcast caveat
+
+\`queueBroadcastMessage\` (server-side helper) **does not support
+\`expects_reply: true\`** because one \`message_id\` is shared across N
+recipients and cannot be cleanly correlated. If you need answers from
+several peers, send individual \`send-message\` calls with distinct
+\`message_id\`s instead.
 
 ## Shutdown Protocol
 When you see a shutdown request in your inbox:

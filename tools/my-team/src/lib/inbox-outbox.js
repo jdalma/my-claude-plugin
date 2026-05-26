@@ -9,7 +9,7 @@
  */
 
 import {
-    readFileSync, existsSync, statSync, unlinkSync, renameSync,
+    readFileSync, existsSync, statSync, unlinkSync, renameSync, rmSync,
     openSync, readSync, closeSync,
 } from 'fs';
 import { join, dirname } from 'path';
@@ -20,6 +20,7 @@ import {
     appendFileWithMode, writeFileWithMode, atomicWriteJson,
     ensureDirWithMode, validateResolvedPath,
 } from './fs-utils.js';
+import { TeamPaths, absPath } from './state-paths.js';
 
 const MAX_INBOX_READ_SIZE = 10 * 1024 * 1024;
 
@@ -230,5 +231,31 @@ export function cleanupWorkerFiles(teamName, workerName) {
         if (existsSync(f)) {
             try { unlinkSync(f); } catch { /* ignore */ }
         }
+    }
+}
+
+/**
+ * Cleanup per-cwd worker state introduced in schema v2:
+ *   - mailbox/<worker>.json
+ *   - archive/<worker>.jsonl
+ *   - incoming-spool/<worker>/  (and every file inside it)
+ *
+ * Keeps the operator-visible audit trail (the team-state root jsonl events
+ * log) intact. Failures are swallowed — cleanup is best-effort.
+ */
+export function cleanupWorkerCwdState(teamName, workerName, cwd) {
+    if (!cwd) return;
+    const targets = [
+        absPath(cwd, TeamPaths.mailbox(teamName, workerName)),
+        absPath(cwd, TeamPaths.archive(teamName, workerName)),
+    ];
+    for (const f of targets) {
+        if (existsSync(f)) {
+            try { unlinkSync(f); } catch { /* ignore */ }
+        }
+    }
+    const spoolDir = absPath(cwd, TeamPaths.incomingSpoolDir(teamName, workerName));
+    if (existsSync(spoolDir)) {
+        try { rmSync(spoolDir, { recursive: true, force: true }); } catch { /* ignore */ }
     }
 }

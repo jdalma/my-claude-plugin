@@ -1,43 +1,52 @@
 /**
- * `my-team api mailbox-list` — read a worker's mailbox.
+ * `my-team api mailbox-list` — read a worker's mailbox (schema v2, Phase B).
+ *
+ * Before returning, absorbs any messages in the worker's incoming-spool into
+ * its mailbox.inbox. This is the **only** place where spool→inbox transfer
+ * happens, preserving the "worker owns its mailbox" invariant.
  *
  * Input JSON:
  *   { team_name, worker, unread_only? = true }
  *
- * Returns: { ok: true, worker, messages: [...] }
+ * Returns: { ok: true, worker, messages: [...], sent_pending: [...] }
  *
- * `unread_only=true` (default) filters to messages where `consumed_at` is
- * null/undefined. Set `false` to return the full mailbox.
- *
- * Phase 0 of the worker mailbox recovery work — pairs with
- * `mailbox-mark-delivered`. Self-poll discipline for workers is documented
- * in `worker-bootstrap.js` AGENTS.md template.
- *
- * Failure modes intentionally distinct from OMC's silent-empty pattern:
- *   - missing mailbox file → empty messages array (legitimate "no mail")
- *   - mailbox file present but malformed JSON → throw (callers must see this)
+ *   - messages: inbox map projected to an array, sorted by created_at asc.
+ *     Object key order is NOT a contract — use the array.
+ *     With unread_only=true (default), entries with consumed_at set are
+ *     filtered out.
+ *   - sent_pending: the sender-side pending map projected to an array,
+ *     sorted by sent_at asc.
  */
 
 import { readFileSync, existsSync } from 'fs';
 import { loadManifest } from '../_manifest.js';
 import { setStateRoot } from '../../lib/state-root.js';
-import { TeamPaths, absPath } from '../../lib/state-paths.js';
+import { TeamPaths } from '../../lib/state-paths.js';
+import { absorbIncomingSpool } from '../../lib/tmux-comm.js';
+import { requireTeamAndWorker, resolveTeamPath, assertMailboxSchemaVersion } from '../../lib/handler-guards.js';
 
-export function runApiMailboxList(input) {
-    const { team_name, worker, unread_only } = input ?? {};
-    if (!team_name) throw new Error('team_name is required');
-    if (!worker) throw new Error('worker is required');
-    const onlyUnread = unread_only === undefined ? true : Boolean(unread_only);
+function sortByCreatedAt(a, b) {
+    return String(a.created_at ?? '').localeCompare(String(b.created_at ?? ''));
+}
 
-    const manifest = loadManifest(team_name);
+export async function runApiMailboxList(input) {
+    const { teamName, worker } = requireTeamAndWorker(input);
+    const onlyUnread = input?.unread_only === undefined ? true : Boolean(input.unread_only);
+
+    const manifest = loadManifest(teamName);
     process.env.MY_TEAM_STATE_ROOT = manifest.state_root;
     setStateRoot(manifest.state_root);
 
     const parentDir = manifest.state_root.replace(/\/[^/]+$/, '');
-    const mailboxFile = absPath(parentDir, TeamPaths.mailbox(team_name, worker));
+
+    // Pull anything dropped into the spool into the worker's own mailbox.
+    // This may write to mailbox.json; safe because the worker is the sole writer.
+    await absorbIncomingSpool(teamName, worker, parentDir);
+
+    const mailboxFile = resolveTeamPath(teamName, worker, parentDir, TeamPaths.mailbox);
 
     if (!existsSync(mailboxFile)) {
-        return { ok: true, worker, messages: [] };
+        return { ok: true, worker, messages: [], sent_pending: [] };
     }
 
     let raw;
@@ -54,7 +63,16 @@ export function runApiMailboxList(input) {
         throw new Error(`Mailbox at ${mailboxFile} is not valid JSON: ${err.message}`);
     }
 
-    const all = Array.isArray(parsed?.messages) ? parsed.messages : [];
-    const messages = onlyUnread ? all.filter((m) => m && m.consumed_at == null) : all;
-    return { ok: true, worker, messages };
+    assertMailboxSchemaVersion(parsed, mailboxFile);
+
+    const inboxMap = parsed?.inbox && typeof parsed.inbox === 'object' ? parsed.inbox : {};
+    const inboxEntries = Object.values(inboxMap);
+    const filtered = onlyUnread ? inboxEntries.filter((m) => m && m.consumed_at == null) : inboxEntries;
+    filtered.sort(sortByCreatedAt);
+
+    const sentPendingMap = parsed?.sent_pending && typeof parsed.sent_pending === 'object' ? parsed.sent_pending : {};
+    const sentPending = Object.values(sentPendingMap).slice();
+    sentPending.sort((a, b) => String(a.sent_at ?? '').localeCompare(String(b.sent_at ?? '')));
+
+    return { ok: true, worker, messages: filtered, sent_pending: sentPending };
 }

@@ -43,6 +43,10 @@ export const TeamPaths = {
     overlay: (teamName, workerName) => p(teamName, 'workers', workerName, 'AGENTS.md'),
     shutdownAck: (teamName, workerName) => p(teamName, 'workers', workerName, 'shutdown-ack.json'),
     mailbox: (teamName, workerName) => p(teamName, 'mailbox', `${workerName}.json`),
+    archive: (teamName, workerName) => p(teamName, 'archive', `${workerName}.jsonl`),
+    incomingSpoolDir: (teamName, workerName) => p(teamName, 'incoming-spool', workerName),
+    incomingSpoolFile: (teamName, workerName, messageId) =>
+        p(teamName, 'incoming-spool', workerName, `${messageId}.json`),
     workerStatus: (teamName, workerName) => p(teamName, 'workers', workerName, 'status.json'),
     workerIdentity: (teamName, workerName) => p(teamName, 'workers', workerName, 'identity.json'),
     manifest: (teamName) => p(teamName, 'manifest.json'),

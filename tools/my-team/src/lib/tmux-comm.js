@@ -3,41 +3,198 @@
  * https://github.com/Yeachan-Heo/oh-my-claudecode
  *
  * Source: dist/team/tmux-comm.js (low-level functions only)
- * Modifications:
- *  - dispatch-queue / high-level `queue*` helpers from OMC `mcp-comm.js` are
- *    intentionally NOT borrowed. my-team uses the simple write-then-notify
- *    pattern directly: write file, then send-keys trigger.
- *  - import paths rewired to local modules.
+ *
+ * Schema v2 (Phase B — incoming-spool + sent_pending):
+ *
+ *   mailbox/<worker>.json   ← worker-owned (worker is sole writer)
+ *     {
+ *       "schema_version": 2,
+ *       "worker": <name>,
+ *       "inbox":        { [message_id]: { from_worker, body, reply_to,
+ *                                          expects_reply, created_at,
+ *                                          notified_at?, consumed_at? } },
+ *       "sent_pending": { [message_id]: { to_worker, body, expects_reply,
+ *                                          sent_at } }
+ *     }
+ *
+ *   incoming-spool/<to_worker>/<message_id>.json   ← sender writes, receiver consumes
+ *     {
+ *       "message_id", "from_worker", "to_worker", "body",
+ *       "reply_to", "expects_reply", "created_at"
+ *     }
+ *
+ *   archive/<worker>.jsonl  ← worker-owned append-only
+ *     One JSON object per line. direction "out" on send, "in" on
+ *     mark-delivered.
+ *
+ * Concurrency model:
+ *   - Each mailbox.json has exactly ONE writer (the owning worker / its
+ *     mailbox-list and mark-delivered handlers running in the worker's
+ *     process). Senders never touch the recipient mailbox file.
+ *   - incoming-spool uses one file per message, so concurrent senders cannot
+ *     clobber each other (filename uniqueness via random message_id).
+ *   - archive jsonl is append-only.
+ *   - mailbox.json writes use atomicWriteJson (write-temp + rename) so torn
+ *     writes are impossible.
  */
 
-import { mkdir, appendFile, readFile, writeFile } from 'fs/promises';
-import { join } from 'path';
+import { mkdir, readFile, readdir, unlink } from 'fs/promises';
+import { join, dirname } from 'path';
 
 import { sendToWorker } from './tmux-session.js';
 import { TeamPaths, absPath } from './state-paths.js';
+import { atomicWriteJson, appendFileWithMode, ensureDirWithMode } from './fs-utils.js';
+
+export const MAILBOX_SCHEMA_VERSION = 2;
 
 function mailboxPath(teamName, workerName, cwd) {
     return absPath(cwd, TeamPaths.mailbox(teamName, workerName));
 }
 
-async function readMailboxFile(teamName, workerName, cwd) {
-    const canonicalPath = mailboxPath(teamName, workerName, cwd);
-    try {
-        const raw = await readFile(canonicalPath, 'utf-8');
-        const parsed = JSON.parse(raw);
-        if (parsed && Array.isArray(parsed.messages)) {
-            return { worker: workerName, messages: parsed.messages };
-        }
-    } catch {
-        // mailbox not yet created — return empty
-    }
-    return { worker: workerName, messages: [] };
+function archivePath(teamName, workerName, cwd) {
+    return absPath(cwd, TeamPaths.archive(teamName, workerName));
 }
 
-async function writeMailboxFile(teamName, workerName, cwd, mailbox) {
+function spoolDir(teamName, workerName, cwd) {
+    return absPath(cwd, TeamPaths.incomingSpoolDir(teamName, workerName));
+}
+
+function spoolFile(teamName, workerName, messageId, cwd) {
+    return absPath(cwd, TeamPaths.incomingSpoolFile(teamName, workerName, messageId));
+}
+
+function emptyMailbox(workerName) {
+    return {
+        schema_version: MAILBOX_SCHEMA_VERSION,
+        worker: workerName,
+        inbox: {},
+        sent_pending: {},
+    };
+}
+
+/**
+ * Read a mailbox file. Returns the v2 shape. Missing file → empty mailbox.
+ * Schema mismatch → throw (no automatic migration; operator must shutdown).
+ */
+export async function readMailboxFile(teamName, workerName, cwd) {
+    const canonicalPath = mailboxPath(teamName, workerName, cwd);
+    let raw;
+    try {
+        raw = await readFile(canonicalPath, 'utf-8');
+    } catch {
+        return emptyMailbox(workerName);
+    }
+    let parsed;
+    try {
+        parsed = JSON.parse(raw);
+    } catch (err) {
+        throw new Error(`Mailbox at ${canonicalPath} is not valid JSON: ${err.message}`);
+    }
+    if (!parsed || typeof parsed !== 'object') {
+        return emptyMailbox(workerName);
+    }
+    if (parsed.schema_version !== MAILBOX_SCHEMA_VERSION) {
+        throw new Error(
+            `Mailbox at ${canonicalPath} has schema_version=${parsed.schema_version ?? 'missing'}, ` +
+            `expected ${MAILBOX_SCHEMA_VERSION}. ` +
+            `Shutdown the team (my-team shutdown) and restart to begin with a fresh schema; ` +
+            `automatic migration is not supported.`
+        );
+    }
+    return {
+        schema_version: MAILBOX_SCHEMA_VERSION,
+        worker: parsed.worker ?? workerName,
+        inbox: parsed.inbox && typeof parsed.inbox === 'object' ? parsed.inbox : {},
+        sent_pending: parsed.sent_pending && typeof parsed.sent_pending === 'object' ? parsed.sent_pending : {},
+    };
+}
+
+export async function writeMailboxFile(teamName, workerName, cwd, mailbox) {
     const canonicalPath = mailboxPath(teamName, workerName, cwd);
     await mkdir(join(canonicalPath, '..'), { recursive: true });
-    await writeFile(canonicalPath, JSON.stringify(mailbox, null, 2), 'utf-8');
+    atomicWriteJson(canonicalPath, {
+        schema_version: MAILBOX_SCHEMA_VERSION,
+        worker: workerName,
+        inbox: mailbox.inbox ?? {},
+        sent_pending: mailbox.sent_pending ?? {},
+    });
+}
+
+/**
+ * Append one entry to a worker's archive jsonl. Race-free: append-only.
+ * `direction` is "in" (received and consumed) or "out" (sent).
+ */
+export function appendArchive(teamName, workerName, cwd, entry) {
+    const path = archivePath(teamName, workerName, cwd);
+    ensureDirWithMode(dirname(path));
+    appendFileWithMode(path, JSON.stringify(entry) + '\n');
+}
+
+/**
+ * Drop a message into the recipient's incoming-spool. One file per message,
+ * so concurrent senders never collide.
+ */
+function dropSpoolMessage(teamName, toWorker, cwd, message) {
+    const path = spoolFile(teamName, toWorker, message.message_id, cwd);
+    ensureDirWithMode(dirname(path));
+    atomicWriteJson(path, message);
+}
+
+/**
+ * Absorb all messages from a worker's incoming-spool into its mailbox.inbox.
+ * Each spool file is deleted after its contents are merged. Resolves
+ * sent_pending entries when an absorbed message carries a known reply_to.
+ *
+ * Returns the list of absorbed message_ids (for logging / debugging).
+ */
+export async function absorbIncomingSpool(teamName, workerName, cwd) {
+    const dir = spoolDir(teamName, workerName, cwd);
+    let entries;
+    try {
+        entries = await readdir(dir);
+    } catch (err) {
+        if (err && err.code === 'ENOENT') return [];
+        throw err;
+    }
+    const jsonFiles = entries.filter((n) => n.endsWith('.json'));
+    if (jsonFiles.length === 0) return [];
+
+    const mailbox = await readMailboxFile(teamName, workerName, cwd);
+    const absorbed = [];
+    for (const filename of jsonFiles) {
+        const filePath = join(dir, filename);
+        let payload;
+        try {
+            payload = JSON.parse(await readFile(filePath, 'utf-8'));
+        } catch (err) {
+            process.stderr.write(`[tmux-comm] dropping malformed spool file ${filePath}: ${err.message}\n`);
+            try { await unlink(filePath); } catch { /* ignore */ }
+            continue;
+        }
+        if (!payload || !payload.message_id) {
+            try { await unlink(filePath); } catch { /* ignore */ }
+            continue;
+        }
+        mailbox.inbox[payload.message_id] = {
+            message_id: payload.message_id,
+            from_worker: payload.from_worker,
+            to_worker: payload.to_worker ?? workerName,
+            body: payload.body,
+            reply_to: payload.reply_to ?? null,
+            expects_reply: Boolean(payload.expects_reply),
+            created_at: payload.created_at,
+        };
+        if (payload.reply_to && mailbox.sent_pending[payload.reply_to]) {
+            // A peer answered a question I had pending — resolve it.
+            delete mailbox.sent_pending[payload.reply_to];
+        }
+        absorbed.push(payload.message_id);
+        try { await unlink(filePath); } catch { /* ignore */ }
+    }
+    if (absorbed.length > 0) {
+        await writeMailboxFile(teamName, workerName, cwd, mailbox);
+    }
+    return absorbed;
 }
 
 /**
@@ -59,9 +216,11 @@ export async function sendTmuxTrigger(paneId, triggerType, payload) {
 
 /**
  * Write an instruction to a worker inbox.md, then send tmux trigger.
- * Write-then-notify pattern: file is written first, trigger is sent after.
+ * Note: inbox.md is the Lead→worker free-form markdown channel, unrelated to
+ * the mailbox JSON inbox map.
  */
 export async function queueInboxInstruction(teamName, workerName, instruction, paneId, cwd) {
+    const { appendFile } = await import('fs/promises');
     const inboxPath = absPath(cwd, TeamPaths.inbox(teamName, workerName));
     await mkdir(join(inboxPath, '..'), { recursive: true });
     const entry = `\n\n---\n${instruction}\n_queued: ${new Date().toISOString()}_\n`;
@@ -69,57 +228,114 @@ export async function queueInboxInstruction(teamName, workerName, instruction, p
     return await sendTmuxTrigger(paneId, 'check-inbox');
 }
 
+function newMessageId() {
+    return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
 /**
- * Send a direct message from one worker to another via mailbox + tmux trigger.
+ * Send a direct message from one worker to another.
  *
- * `replyTo` (optional) is the `message_id` of the message this one answers.
- * It lets the original sender match an async reply to its question via
- * `mailbox-list` — workers never block waiting for a reply.
+ * Owner model:
+ *   - Sender writes ONLY: the sender's own mailbox.sent_pending (when
+ *     expects_reply), the sender's own archive jsonl, and the recipient's
+ *     incoming-spool file.
+ *   - The recipient absorbs the spool file into its own inbox on its next
+ *     mailbox-list call.
+ *
+ * Step ordering (crash-safe):
+ *   1. Record `sent_pending` on the sender first (only when expectsReply).
+ *      A crash before this step means nothing happened. A crash after it
+ *      means the sender shows a pending entry for a message the recipient
+ *      will never get — visible to the user and easy to recover.
+ *   2. Append the sender archive line (direction=out). Now the message
+ *      exists in the durable sender log even if delivery fails next.
+ *   3. Drop the spool file. This is the act of delivery.
+ *   4. Fire the tmux notification (best-effort; recipient still polls).
+ *
+ * `replyTo` (optional) is the message_id this answers. `expectsReply`
+ * defaults to false; senders set it to true only for questions.
  */
-export async function queueDirectMessage(teamName, fromWorker, toWorker, body, toPaneId, cwd, replyTo = null) {
-    const mailbox = await readMailboxFile(teamName, toWorker, cwd);
+export async function queueDirectMessage(
+    teamName,
+    fromWorker,
+    toWorker,
+    body,
+    toPaneId,
+    cwd,
+    replyTo = null,
+    expectsReply = false
+) {
+    const messageId = newMessageId();
+    const createdAt = new Date().toISOString();
     const message = {
-        message_id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        message_id: messageId,
         from_worker: fromWorker,
         to_worker: toWorker,
         body,
-        created_at: new Date().toISOString(),
-        consumed_at: null,
         reply_to: replyTo ?? null,
+        expects_reply: Boolean(expectsReply),
+        created_at: createdAt,
     };
-    mailbox.messages.push(message);
-    await writeMailboxFile(teamName, toWorker, cwd, mailbox);
 
-    const notified = await sendTmuxTrigger(toPaneId, 'new-message', fromWorker);
-    if (notified) {
-        const updated = await readMailboxFile(teamName, toWorker, cwd);
-        const entry = updated.messages.find((c) => c.message_id === message.message_id);
-        if (entry) entry.notified_at = new Date().toISOString();
-        await writeMailboxFile(teamName, toWorker, cwd, updated);
+    // 1. If we expect a reply, track it on our own sent_pending FIRST so a
+    //    later failure cannot leave the recipient with a message that the
+    //    sender doesn't know it sent.
+    if (expectsReply) {
+        const senderMailbox = await readMailboxFile(teamName, fromWorker, cwd);
+        senderMailbox.sent_pending[messageId] = {
+            message_id: messageId,
+            to_worker: toWorker,
+            body,
+            expects_reply: true,
+            sent_at: createdAt,
+        };
+        await writeMailboxFile(teamName, fromWorker, cwd, senderMailbox);
     }
+
+    // 2. Sender archive (direction=out) — durable record before delivery.
+    appendArchive(teamName, fromWorker, cwd, { ...message, direction: 'out' });
+
+    // 3. Drop into recipient's spool (commits delivery).
+    dropSpoolMessage(teamName, toWorker, cwd, message);
+
+    // 4. Notify the recipient via tmux (best-effort).
+    await sendTmuxTrigger(toPaneId, 'new-message', fromWorker);
+
     return message;
 }
 
 /**
- * Broadcast a message to all workers (write to each mailbox, then trigger).
+ * Broadcast a message to all workers. One message_id shared across recipients.
+ *
+ * Broadcasts intentionally forbid `expectsReply=true`: a single message_id
+ * cannot be cleanly correlated to N replies (which peer's answer "resolves"
+ * the pending entry?). Senders that need answers must call
+ * `queueDirectMessage` per recipient with distinct message_ids.
  */
-export async function queueBroadcastMessage(teamName, fromWorker, body, workerPanes, cwd) {
-    const workerNames = Object.keys(workerPanes);
-    const messageId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+export async function queueBroadcastMessage(teamName, fromWorker, body, workerPanes, cwd, { expectsReply = false } = {}) {
+    if (expectsReply) {
+        throw new Error(
+            'Broadcast does not support expects_reply=true. Send individual queueDirectMessage calls per recipient if you need answers.'
+        );
+    }
+    // Exclude the sender from its own broadcast — even if the caller passed
+    // the whole roster including itself.
+    const workerNames = Object.keys(workerPanes).filter((n) => n !== fromWorker);
+    const messageId = newMessageId();
+    const createdAt = new Date().toISOString();
     const messages = [];
     for (const toWorker of workerNames) {
-        const mailbox = await readMailboxFile(teamName, toWorker, cwd);
         const message = {
             message_id: messageId,
             from_worker: fromWorker,
             to_worker: toWorker,
             body,
-            created_at: new Date().toISOString(),
-            consumed_at: null,
             reply_to: null,
+            expects_reply: false,
+            created_at: createdAt,
         };
-        mailbox.messages.push(message);
-        await writeMailboxFile(teamName, toWorker, cwd, mailbox);
+        dropSpoolMessage(teamName, toWorker, cwd, message);
+        appendArchive(teamName, fromWorker, cwd, { ...message, direction: 'out' });
         messages.push(message);
     }
     await Promise.all(
@@ -129,11 +345,14 @@ export async function queueBroadcastMessage(teamName, fromWorker, body, workerPa
 }
 
 /**
- * Read all messages from a worker mailbox.
+ * Read all messages from a worker mailbox. Returned messages are sorted by
+ * created_at ascending — callers must not rely on object key order.
  */
 export async function readMailbox(teamName, workerName, cwd) {
     const mailbox = await readMailboxFile(teamName, workerName, cwd);
-    return mailbox.messages.map((m) => ({
+    const entries = Object.values(mailbox.inbox);
+    entries.sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
+    return entries.map((m) => ({
         id: m.message_id,
         from: m.from_worker,
         body: m.body,
