@@ -1,202 +1,180 @@
 # my-team — 워커 부트스트랩 프롬프트 / 강제 지시
 
-> 본 문서는 `my-team start`가 각 워커 CLI(claude/codex/gemini/cursor)에게 어떤 "최초 프롬프트와 강제 지시"를 주입하는지 정리한다. 사용자 가이드는 `README.md`, 통신 메커니즘은 [`architecture.md`](architecture.md), 설계 결정은 `PLAN.md`. 코드 변경 시 본 문서도 업데이트해야 한다.
+> 본 문서는 `my-team start`가 각 워커 CLI(claude/codex/gemini/cursor)에게 어떤 "최초 프롬프트와 강제 지시"를 주입하는지 정리한다. 사용자 가이드는 `README.md`, 통신 메커니즘은 [`architecture.md`](architecture.md), 초기 설계 의도는 `PLAN.md`.
 >
-> **작성**: 2026-05-14
+> **현재 모델 (옵션 B 컷오버 이후)** — 워커는 부팅 시 단 하나의 instruction surface만 받는다: **`AGENTS.md` 오버레이**. 그 외에 옛 시점의 `inbox.md` 첫 작업 지시서, mandatory task lifecycle workflow, `check-inbox` 트리거는 모두 제거됐다.
+>
 > **대상 코드**: `src/lib/worker-bootstrap.js`, `src/lib/prompt-helpers.js`, `src/commands/start.js`
-> **관련 다이어그램**: [`diagrams/communication-flow.excalidraw`](diagrams/communication-flow.excalidraw) (통신 아키텍처 시각화)
+>
+> **관련 다이어그램**: [`diagrams/communication-flow.excalidraw`](diagrams/communication-flow.excalidraw)는 옵션 B 이전(inbox.md 시대)을 묘사한다. peer mailbox 사이클 부분은 그대로 유효.
 
 ---
 
-## 1. 한눈에 보는 3-레이어 구조
-
-워커 pane에는 그냥 단일 CLI(claude/codex/gemini/cursor)가 떠 있을 뿐이다. my-team은 그 CLI에게 다음 3겹을 깔아준다.
+## 1. 한눈에 보는 부팅 흐름
 
 ```
-┌────────────────────────────────────────────────────────────────────────────┐
-│ 워커 CLI (claude / codex / gemini / cursor)                                │
-│                                                                            │
-│   ① AGENTS.md 오버레이  — "먼저 읽어야 하는 규약 파일" (시스템 강제)        │
-│        <state_root>/workers/<w>/AGENTS.md                                  │
-│                                                                            │
-│   ② inbox.md            — "첫 작업 지시서" (시스템 + task)                  │
-│        <state_root>/workers/<w>/inbox.md                                   │
-│                                                                            │
-│   ③ 트리거 메시지        — pane stdin에 타이핑되는 한 줄 (시스템)           │
-│        "Read <inbox-path>, work now, report progress."                    │
-└────────────────────────────────────────────────────────────────────────────┘
+my-team start --config my-team.json
+        │
+        ▼
+[1] config 검증 (workers[].task 필드 발견 시 hard-reject)
+        │
+        ▼
+[2] tmux 세션 + 워커당 pane 생성 (per-worker cwd)
+        │
+        ▼
+[3] 워커마다:
+      a. 상태 디렉터리 ensure
+      b. AGENTS.md 오버레이 생성 → workers/<name>/AGENTS.md
+      c. 워커 CLI를 그 pane에서 spawn (--dangerously-* flags 포함)
+      d. pane title을 워커 이름으로 박음 (@worker_name + select-pane -T)
+        │
+        ▼
+[4] 모든 pane이 ready (CLI prompt 등장) 대기
+        │
+        ▼
+[5] 각 pane에 시작 안내 한 줄 전송:
+    "Team is live. Follow <AGENTS.md path> for the peer protocol;
+     wait for user input in this pane or peer messages in your mailbox."
+        │
+        ▼
+[6] manifest.json persist + detached 모드면 host pane에 monitor 자동 실행
 ```
 
-부팅 흐름:
+부팅 후 워커는 **idle 상태**로 대기한다. 사용자가 그 pane에 입력하거나 peer가 `api send-message`로 메시지를 보낼 때까지 자발적으로 일하지 않는다.
 
-1. `start.js`가 워커별로 state dir 생성 → task 파일 기록 → AGENTS.md 작성 → inbox.md 작성
-2. tmux pane에 CLI 바이너리 spawn (env 주입 포함)
-3. pane이 ready 상태가 되면 트리거 메시지 1줄을 stdin으로 입력
-4. CLI는 트리거 → inbox.md → AGENTS.md 순으로 읽고 mandatory workflow에 진입
+## 2. `AGENTS.md` 오버레이 (`generateWorkerOverlay`)
 
----
-
-## 2. 레이어 ① — `AGENTS.md` 오버레이 (`generateWorkerOverlay`)
-
-`src/lib/worker-bootstrap.js:93` `generateWorkerOverlay()`가 만든다. **모든 워커에 동일한 골격**이 들어가고, 에이전트 타입별 미세 가이드와 사용자 `extra_prompt`만 가변이다.
+워커별 `workers/<name>/AGENTS.md` 파일로 작성된다. 워커 CLI는 자기 cwd의 AGENTS.md를 자동으로 읽어 시스템 프롬프트로 사용한다 (claude/codex/gemini/cursor 모두 동일 컨벤션).
 
 ### 골격 구성 요소
 
-| 섹션 | 코드 위치 | 강제 내용 |
-|---|---|---|
-| FIRST ACTION | worker-bootstrap.js:128–132 | `mkdir -p ... && touch <sentinel>` 로 ready sentinel 작성 |
-| MANDATORY WORKFLOW | worker-bootstrap.js:134–145 | ① `claim-task` → ② 작업 수행 → ③ `transition-task-status` (exit 전 필수) |
-| Identity | worker-bootstrap.js:148–151 | team / worker / agent_type / `OMC_TEAM_WORKER` env |
-| Team Roster | worker-bootstrap.js (Identity 다음) | 팀 내 모든 워커 이름·agent_type·역할(extra_prompt 첫 줄)을 나열. `to_worker` 값으로 어떤 이름을 써야 하는지 명시. 자기 자신은 `(you)` 표시 |
-| Your Tasks | worker-bootstrap.js:97–101, 153–154 | config의 `task.subject` / `task.description`을 `sanitizePromptContent`로 정제 후 삽입 |
-| Communication Protocol | worker-bootstrap.js:163–173 | inbox / status / heartbeat 파일 경로와 JSON 포맷 |
-| Message Protocol | worker-bootstrap.js:179–182 | peer↔peer CLI: `send-message`, `mailbox-list`, `mailbox-mark-delivered` |
-| Body convention tokens | worker-bootstrap.js:184–209 | `[REQUIRES ACK]` / `[BLOCKING reply_within=N]` / `[NONBLOCKING]` 컨벤션 + 수신 시 행동 규칙 |
-| Shutdown Protocol | worker-bootstrap.js:211–217 | inbox에 shutdown 요청 → `shutdown-ack.json`에 accept/reject 기록 후 종료 |
-| Rules (금지 목록) | worker-bootstrap.js:219–226 | 아래 표 참조 |
-| Agent-Type Guidance | worker-bootstrap.js:57–91 | claude/codex/gemini/cursor 별 톤·제약 |
-| BEFORE YOU EXIT | worker-bootstrap.js:230–231 | transition-task-status 재경고 |
-| Role Context | worker-bootstrap.js:233 | 사용자가 준 `extra_prompt`를 마지막에 그대로 append |
+| 섹션 | 내용 |
+|------|------|
+| `# Team Worker Protocol` (헤더) | peer-to-peer 모델 한 줄 선언 + user는 pane으로, peer는 mailbox로 본다 |
+| `## Identity` | team_name, worker name, agent_type, `OMC_TEAM_WORKER` env |
+| `## Team Roster` | 모든 워커 한 줄씩: `- **name** [agent_type] — role`. role은 config의 `description` (없으면 `extra_prompt` 첫 줄) |
+| `## Liveness` | `status.json` / `heartbeat.json` 갱신 안내 |
+| `## Message Protocol` | **hard rule**: peer 통신은 오직 `api send-message`. `tmux send-keys` 금지, `my-team msg` 금지 |
+| `## Message Protocol > Talk to other workers via CLI API` | 6개 명령 한 줄씩 (send-message 1-way / send-message expects_reply / 답장 / mailbox-list / mark-delivered / archive-lookup) |
+| `### All worker-to-worker messaging is ASYNCHRONOUS` | 절대 블로킹하지 말라는 원칙 |
+| `### Message correlation` | message_id / reply_to / sent_pending 메커니즘 설명 |
+| `### MANDATORY — Mailbox self-poll discipline` | 사이클 끝마다 + new-message 트리거 받을 때 mailbox-list, 처리 후 mark-delivered |
+| `### Handling a received message — reply_to resolution order` | sent_pending hit → archive-lookup 순서 |
+| `### When you send a message that needs an answer` | expects_reply=true 후 다른 일 계속 |
+| `### Broadcast caveat` | 1:1만 지원 |
+| `## Shutdown Protocol` | shutdown sentinel 받으면 shutdown-ack.json 쓰고 exit |
+| `## Rules` | 6가지 금지 룰 (아래) |
+| Agent-type guidance | claude/codex/gemini/cursor 별 추가 룰 |
+| `## Role Context` | config의 `extra_prompt`가 그대로 들어감 (없으면 생략) |
 
-### 금지 목록 (Rules 섹션)
+### 금지 목록 (`## Rules`)
 
-- 태스크에 명시된 경로 밖 파일 수정 금지
-- 태스크 파일에 lifecycle 필드(status/owner/result/error) 직접 쓰기 금지 — 반드시 CLI API 사용
-- **서브에이전트 spawn 금지**
-- **tmux split-window / new-session 금지**
-- **`my-team` orchestration 명령 호출 금지** — 워커가 쓸 수 있는 control surface는 `my-team api ... --json` 뿐
-- 블록되면 `status.json`에 `{state:"blocked", reason:"..."}` 기록 + pane stdout으로 사용자에게 알림
+```
+- Do NOT edit files outside the scope described in your ## Role Context brief
+- Do NOT spawn sub-agents. Complete work in this worker session only.
+- Do NOT create tmux panes/sessions.
+- Do NOT type into another worker's pane via tmux send-keys / tmux send-text /
+  any pane-targeting tmux command. The mailbox is the ONLY peer channel.
+- Do NOT call `my-team msg` — that command was removed. user→worker is the user
+  typing directly into your pane; worker→worker is `my-team api send-message`.
+- Do NOT run team spawning/orchestration commands (`my-team start` etc.).
+- Trust asynchrony: when you need an answer from a peer, send with
+  expects_reply=true and continue your own work. Never invent a "faster path"
+  that pushes text directly into a peer's pane.
+```
+
+이 가드 두 줄(`tmux send-keys 금지` + `my-team msg 금지`)은 **실제 사고 대응이다** — 2026-05-27 cdc-feature 세션에서 워커 LLM이 두 우회 경로를 모두 사용한 archive 증거가 있다.
 
 ### 에이전트 타입별 가이드 (요약)
 
-| agent_type | 핵심 추가 지시 |
-|---|---|
-| `claude` | "이 pane은 사용자가 직접 본다. 위험한 명령 전 native confirmation으로 사용자에게 묻고 답을 기다려라." |
-| `codex` | "짧고 명시적인 `--json` 명령 선호. 실패 시 stderr를 그대로 노출. claim/transition은 **반드시** 호출." |
-| `gemini` | "작고 검증 가능한 단위로 진행. claim/transition 누락 시 exit 금지." |
-| `cursor` | "REPL이라 `/exit` 입력하지 마라. **reviewer/critic/security-review 역할은 받지 마라** — verdict-file write-and-exit가 REPL과 호환 안 됨. executor-style 태스크만 수락." |
+| agent_type | 추가 룰 |
+|------------|---------|
+| **claude** | "Role Context의 작업 브리프에 집중. 위험 명령 전 native permission prompt로 사용자 확인" |
+| **codex** | "짧고 명시적인 `api ... --json` 호출 + 실패 시 stderr 그대로 사용자에게 surface" |
+| **gemini** | "작은 verifiable 증분 + commit-sized scope" |
+| **cursor** | "REPL이라 /exit 절대 하지 말 것" |
 
-### Body convention tokens 상세
+옵션 B 이전 가이드에 있던 "exit 전 transition-task-status 호출" 의무는 제거됐다 (task lifecycle 자체가 없음).
 
-API 레이어가 강제하지는 않는, **워커들이 따르기로 한 컨벤션**. 메시지 body 맨 앞에 토큰을 둔다.
+## 3. `extra_prompt` — 워커의 첫 작업 브리프
 
-| 토큰 | 송신자 의도 | 수신자 의무 |
-|---|---|---|
-| `[REQUIRES ACK]` | 받았다는 확인만 필요 | 짧은 ack 메시지 회신: `[ACK] re: <원본 앞 40자>` 후 자기 작업 계속 |
-| `[BLOCKING reply_within=<sec>]` | 답을 받기 전엔 진행 못함 | 다른 작업 멈추고 substantive 회신. 데드라인 못 맞추면 `[BLOCKED reason=<short>]` 회신 |
-| `[NONBLOCKING]` | fire-and-forget | 읽고 선택적 액션, 회신 없음 |
-| (no token) | 정보성 | 읽고, 직접 질문이 있을 때만 회신 |
+옵션 B에서 `workers[].task.{subject,description}` 필드는 제거되고 모든 부팅 시 작업 지시가 **`workers[].extra_prompt`** 로 일원화됐다.
 
-`[BLOCKING]` 송신 후에는 송신자도 **자기 mailbox를 ~5초 간격으로 폴링**하고, 데드라인 초과 시 pane stdout으로 timeout 노출.
-
----
-
-## 3. 레이어 ② — `inbox.md` (첫 작업 지시서)
-
-`src/commands/start.js:211–215`가 워커마다 작성.
-
-**태스크 있을 때**:
-```markdown
-# Initial Inbox — <worker>
-
-Your first task is #<id>: <subject>
-
-Details:
-<description>
-
-Follow AGENTS.md protocol.
+```jsonc
+{
+  "name": "alpha",
+  "agent_type": "claude",
+  "description": "Backend API owner — peers see this one-liner",
+  "extra_prompt": "Project A is the backend. First job: POST /orders with validation rules in §3 of the spec. Owner: alpha."
+}
 ```
 
-**태스크 없을 때**:
-```markdown
-# Initial Inbox — <worker>
+- `description` (옵션) — 한 줄. peer의 AGENTS.md `## Team Roster`에 노출. 없으면 `extra_prompt` 첫 줄로 fallback.
+- `extra_prompt` (옵션) — 자유 길이. 본인 AGENTS.md의 `## Role Context` 섹션에 그대로 들어감. 첫 작업 지시 + 도메인 컨텍스트 + 제약 등 무엇이든.
 
-No task assigned yet. Wait for instructions via mailbox or this inbox.
+`extra_prompt_file`로 외부 파일에서 읽을 수도 있다 (parser는 둘 다 있으면 inline `extra_prompt`를 쓰고 경고).
+
+## 4. 환경 변수 주입 (`start.js`)
+
+워커 CLI는 다음 env로 spawn된다:
+
+| 변수 | 값 | 용도 |
+|------|-----|------|
+| `MY_TEAM_WORKER` | `<team>/<name>` | 자기 정체성 |
+| `MY_TEAM_STATE_ROOT` | 절대 경로 | 상태 디렉토리 위치 (state-paths.js가 사용) |
+| `OMC_TEAM_WORKER` | `<team>/<name>` | OMC 호환 (워커 LLM이 자기가 my-team 워커임을 안다) |
+| `...config.workers[].env` | 사용자 지정 | 워커별 추가 env (DB URL, API token 등) |
+
+## 5. Pane title 고정 (`start.js` + `tmux-session.js`)
+
+워커 CLI는 OSC title sequence를 계속 emit하므로 일반 `select-pane -T`로 박은 라벨이 곧 덮어쓰여진다. 그래서 pane-scoped user option `@worker_name`을 별도로 박고, pane-border-format이 이걸 우선 표시하도록 설정한다 (`tmux-session.js`의 `createTeamSession`). pane title은 cosmetic fallback.
+
+→ 사용자가 그리드에서 보는 라벨이 항상 `config.workers[].name`이다.
+
+## 6. 부팅 시 시작 안내 (`start.js`)
+
+각 워커 pane이 ready 상태에 들어간 후, start.js는 짧은 안내 한 줄을 send-keys로 보낸다:
+
+```
+Team is live. Follow <state_root>/workers/<name>/AGENTS.md for the peer protocol;
+wait for user input in this pane or peer messages in your mailbox.
 ```
 
-이후 lead → worker free-form 메시지(`my-team msg`)나 추가 task(`my-team add-task`)는 같은 inbox.md에 append 된다 (`appendToInbox`, worker-bootstrap.js:242–249).
+이걸 받은 워커 LLM은 자기 AGENTS.md를 (이미 시스템 프롬프트로 갖고 있지만) 한 번 더 읽고 idle 진입한다.
 
----
+옵션 B 이전에는 `generateTriggerMessage`가 `Read <inbox.md path>, execute now, report concrete progress.`를 보냈지만, inbox.md 폐기 후 그 헬퍼도 함께 제거됐다.
 
-## 4. 레이어 ③ — 트리거 메시지 (pane stdin에 타이핑)
+## 7. 사용자가 자유롭게 주입할 수 있는 채널
 
-`src/lib/worker-bootstrap.js:34` `generateTriggerMessage()` 가 만들어 `start.js:262–263`의 `sendToWorker`로 pane에 입력. state root에 따라 둘 중 하나:
+| 채널 | 방법 | 영속성 |
+|------|------|--------|
+| **부팅 시 작업 브리프** | `config.workers[].extra_prompt` (또는 `extra_prompt_file`) | AGENTS.md `## Role Context`로 영구 |
+| **도중 추가 지시** | 사용자가 그 워커의 tmux pane에 직접 타이핑 | tmux scrollback only |
+| **peer 알림** | 워커끼리 `api send-message` (워커 LLM이 호출) | mailbox + archive + events.jsonl |
 
-- 기본 `.omc/state` 사용 시:
-  > `Read <inbox-path>, execute now, report concrete progress.`
-- 커스텀 state root (my-team 일반 케이스):
-  > `Read <inbox-path>, work now, report progress.`
+옵션 B 이전에 있던 `my-team msg`, `my-team add-task`, `workers/<w>/inbox.md`는 더 이상 채널이 아니다.
 
-이게 워커가 부팅 직후 받는 **유일한 사람-말투 명령**이고, 이걸 받자마자 inbox.md → AGENTS.md 순으로 읽으며 mandatory workflow에 진입한다.
+## 8. 보안 — 프롬프트 인젝션 방어
 
-추가 변형:
-- **mailbox 알림 트리거** (`generateMailboxTriggerMessage`, worker-bootstrap.js:48): peer 메시지 도착 시 `<n> new msg(s): check <mailbox-path>, act and report progress.` 가 pane에 타이핑됨.
-- **prompt-mode 시작 프롬프트** (`generatePromptModeStartupPrompt`, worker-bootstrap.js:42): 일부 CLI의 `-p`/`--prompt` 모드용 단축 버전. `cliOutputContract`가 있으면 뒤에 append.
+- `description`, `extra_prompt`는 `sanitizePromptContent`로 정제된 뒤 AGENTS.md에 박힘 (마크다운 escape + 길이 제한).
+- 사용자가 워커 pane에 직접 타이핑하는 텍스트는 신뢰 채널 (사용자가 곧 운영자).
+- peer 메시지 body는 정제하지 않는다 — 송수신 워커 모두 같은 권한 수준이라는 가정. 악성 peer 시나리오는 my-team의 위협 모델 밖.
 
----
+## 9. 요약 표
 
-## 4-bis. Pane title 고정 (워커 이름 표시)
+| 레이어 | 파일 | 누가 작성 | 워커가 언제 읽나 |
+|--------|------|-----------|------------------|
+| ① AGENTS.md 오버레이 | `workers/<name>/AGENTS.md` | start.js가 부팅 시 generate | 부팅 시 1회 (시스템 프롬프트) |
+| ② Role Context (extra_prompt) | AGENTS.md `## Role Context` | 사용자의 config | ①에 포함되어 부팅 시 1회 |
+| ③ peer 메시지 | `mailbox/<name>.json` | peer가 `api send-message` | new-message 트리거 또는 사이클 끝마다 폴링 |
+| ④ 사용자 자유 입력 | 워커 pane stdin | 사용자가 직접 타이핑 | 즉시 (tmux 키 입력) |
 
-각 워커 pane의 위쪽 border에 표시되는 title은 `config.workers[].name`으로 고정된다 (`tmux-session.js:280–282`의 `select-pane -T <w.name>`). 워커 CLI(특히 `claude`는 진행 summary, `codex`는 cwd basename)는 OSC escape sequence로 자기 마음대로 title을 바꾸려 하지만, my-team이 두 단계로 차단한다.
+옵션 B 이전 레이어 ②(`inbox.md`)와 mandatory task lifecycle workflow는 제거됐다.
 
-1. **`applyTeamLayout`에서 OSC rename 무시** (`tmux-session.js:applyTeamLayout`):
-   - `set-window-option -t <teamTarget> allow-rename off`
-   - `set-window-option -t <teamTarget> automatic-rename off`
-   - 효과: 워커 CLI가 OSC를 흘려도 tmux가 무시. window 단위 적용이라 사용자의 다른 tmux 세션에는 영향 없음.
+## 10. 변경 시 체크리스트
 
-2. **워커 ready 직후 title 재박기** (`start.js`, waitForPaneReady 직후):
-   - 모든 워커가 ready 상태가 되면 `select-pane -T <worker.name>`을 한 번 더 호출
-   - 부팅 도중 `allow-rename off`가 적용되기 전에 들어온 OSC가 title을 덮어썼을 경우의 안전장치
-
-결과적으로 사용자가 보는 pane title은 항상 `config.workers[].name`이다. 단, **leader pane은 `"leader"`로 박혀 있음** (`tmux-session.js:288`).
-
----
-
-## 5. 환경 변수 주입 (`start.js:233–238`)
-
-각 워커 pane에 자동 주입:
-
-| Var | 값 | 용도 |
-|---|---|---|
-| `MY_TEAM_WORKER` | `<team>/<worker>` | 워커 자기 식별 |
-| `MY_TEAM_STATE_ROOT` | `<absolute>` | state 파일 위치 |
-| `OMC_TEAM_WORKER` | `<team>/<worker>` | OMC 호환 |
-| `config.workers[].env` | 사용자 정의 | 추가 env 전달 |
-
-CLI 바이너리는 `start.js:39–44` `AGENT_CLI` 매핑으로 결정 (claude/codex/gemini/cursor-agent). `launch_args`에 `--dangerously-*` 플래그가 있으면 stderr로 경고만 하고 차단하지는 않는다 (start.js:222–227).
-
----
-
-## 6. 사용자가 자유롭게 주입할 수 있는 채널
-
-코드에 박힌 골격 외에, 사용자가 **config로 자유롭게 주입할 수 있는 영역은 두 곳뿐**이다.
-
-| 채널 | config 필드 | 어디에 들어가나 |
-|---|---|---|
-| 역할 설명 | `workers[].extra_prompt` | AGENTS.md 끝 `## Role Context` 섹션 (worker-bootstrap.js:233) |
-| 첫 태스크 | `workers[].task.{subject,description}` | inbox.md 본문 + AGENTS.md `## Your Tasks` (sanitize 후) |
-
-그 외(claim/transition 강제, 서브에이전트·tmux·orchestration 금지, 메시지 토큰 컨벤션, 통신 프로토콜, agent-type 가이드 등)는 전부 코드에 박혀 있어 워커마다 동일하게 깔린다.
-
----
-
-## 7. 보안 — 프롬프트 인젝션 방어
-
-`src/lib/prompt-helpers.js:9` `sanitizePromptContent()`가 task subject/description을 AGENTS.md에 삽입하기 전에 두 가지를 한다:
-
-1. 4000자 초과 시 잘라내고 surrogate pair 깨지지 않게 보정
-2. `<system-instructions>`, `<system-reminder>`, `<TASK_SUBJECT>`, `<TASK_DESCRIPTION>`, `<INBOX_MESSAGE>` 같은 태그를 `[…]` 형태로 무력화
-
-inbox에 append되는 lead 메시지(`appendToInbox`)는 `validateResolvedPath`로 path traversal만 막고 sanitize는 하지 않는다 — lead는 trusted 채널이라는 가정.
-
----
-
-## 8. 요약 표
-
-| 레이어 | 파일/채널 | 누가 결정 | 핵심 메시지 |
-|---|---|---|---|
-| ① 규약 | `<state_root>/workers/<w>/AGENTS.md` | 시스템 (고정 골격) + `extra_prompt` (사용자) | claim → work → transition, 통신/금지/종료 프로토콜 |
-| ② 첫 지시 | `<state_root>/workers/<w>/inbox.md` | 시스템 + `task.subject/description` | "이게 네 첫 태스크다" |
-| ③ 트리거 | tmux pane stdin (한 줄) | 시스템 | "inbox 읽고 지금 시작하라" |
-
-자유 주입 영역: `extra_prompt`, `task.subject`, `task.description`. 나머지는 코드 고정.
+- AGENTS.md overlay 섹션 추가/제거 → §2 표 업데이트
+- 새 금지 룰 → §2 "금지 목록" 갱신 + 사고 사례 출처 추가 (LLM이 룰의 *이유*를 알면 더 잘 지킨다)
+- 에이전트별 가이드 변경 → §2 "에이전트 타입별 가이드" 표
+- start.js의 시작 안내 문구 변경 → §6
+- env 변수 추가/변경 → §4

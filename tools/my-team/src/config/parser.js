@@ -174,19 +174,14 @@ function validateWorker(w, idx, seen) {
         }
     }
 
-    // task (optional)
-    let task = null;
+    // task field removed: my-team no longer tracks task lifecycle. The
+    // initial work brief now lives in `extra_prompt` and is rendered into
+    // the worker's AGENTS.md `## Role Context` section. Reject configs that
+    // still carry the legacy field so users migrate explicitly.
     if (w.task !== undefined) {
-        if (!w.task || typeof w.task !== 'object') {
-            throw new Error(`${where}.task must be an object with subject and description`);
-        }
-        if (typeof w.task.subject !== 'string' || !w.task.subject.trim()) {
-            throw new Error(`${where}.task.subject is required`);
-        }
-        task = {
-            subject: w.task.subject,
-            description: typeof w.task.description === 'string' ? w.task.description : '',
-        };
+        throw new Error(
+            `${where}.task is no longer supported. Move your task subject/description into 'extra_prompt' (or 'extra_prompt_file'); my-team no longer tracks task lifecycle.`
+        );
     }
 
     // env (optional)
@@ -230,7 +225,6 @@ function validateWorker(w, idx, seen) {
         agent_type: w.agent_type,
         description,
         extra_prompt: extraPrompt,
-        task,
         env,
         launch_args: launchArgs,
     };

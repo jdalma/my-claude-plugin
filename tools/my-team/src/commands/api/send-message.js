@@ -48,8 +48,20 @@ export async function runApiSendMessage(input) {
     process.env.MY_TEAM_STATE_ROOT = manifest.state_root;
     setStateRoot(manifest.state_root);
 
-    // Recipient must be a known team member. Sanitizer already removed
-    // traversal characters; this check enforces team-roster membership.
+    // Both sender and recipient must be known team members. Sanitizer already
+    // removed traversal characters; these checks enforce roster membership so
+    // a hallucinated `from_worker` (e.g. typed into a pane by an external
+    // text expander) cannot inject a peer message that has no origin in the
+    // team. Without this guard, a forged `new-message:<from>` trigger could
+    // arrive in a recipient pane with no trace in events.jsonl/archive,
+    // because the spool write would silently succeed.
+    const sender = manifest.workers.find((w) => sanitizeName(w.name) === safeFrom);
+    if (!sender) {
+        throw new Error(
+            `Sender '${from_worker}' not in team '${team_name}'. ` +
+            `Known workers: ${manifest.workers.map((w) => w.name).join(', ')}.`
+        );
+    }
     const recipient = manifest.workers.find((w) => sanitizeName(w.name) === safeTo);
     if (!recipient) {
         throw new Error(`Recipient '${to_worker}' not in team '${team_name}'`);

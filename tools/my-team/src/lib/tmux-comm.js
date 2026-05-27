@@ -38,6 +38,7 @@
  *     writes are impossible.
  */
 
+import { existsSync, unlinkSync, rmSync } from 'fs';
 import { mkdir, readFile, readdir, unlink } from 'fs/promises';
 import { join, dirname } from 'path';
 
@@ -214,20 +215,6 @@ export async function sendTmuxTrigger(paneId, triggerType, payload) {
     }
 }
 
-/**
- * Write an instruction to a worker inbox.md, then send tmux trigger.
- * Note: inbox.md is the Lead→worker free-form markdown channel, unrelated to
- * the mailbox JSON inbox map.
- */
-export async function queueInboxInstruction(teamName, workerName, instruction, paneId, cwd) {
-    const { appendFile } = await import('fs/promises');
-    const inboxPath = absPath(cwd, TeamPaths.inbox(teamName, workerName));
-    await mkdir(join(inboxPath, '..'), { recursive: true });
-    const entry = `\n\n---\n${instruction}\n_queued: ${new Date().toISOString()}_\n`;
-    await appendFile(inboxPath, entry, 'utf-8');
-    return await sendTmuxTrigger(paneId, 'check-inbox');
-}
-
 function newMessageId() {
     return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -342,6 +329,32 @@ export async function queueBroadcastMessage(teamName, fromWorker, body, workerPa
         workerNames.map((toWorker) => sendTmuxTrigger(workerPanes[toWorker], 'new-message', fromWorker))
     );
     return messages;
+}
+
+/**
+ * Cleanup per-cwd worker state for `my-team shutdown`:
+ *   - mailbox/<worker>.json
+ *   - archive/<worker>.jsonl
+ *   - incoming-spool/<worker>/  (and every file inside it)
+ *
+ * Keeps the operator-visible audit trail (the team-state root jsonl events
+ * log) intact. Failures are swallowed — cleanup is best-effort.
+ */
+export function cleanupWorkerCwdState(teamName, workerName, cwd) {
+    if (!cwd) return;
+    const targets = [
+        mailboxPath(teamName, workerName, cwd),
+        archivePath(teamName, workerName, cwd),
+    ];
+    for (const f of targets) {
+        if (existsSync(f)) {
+            try { unlinkSync(f); } catch { /* ignore */ }
+        }
+    }
+    const dir = spoolDir(teamName, workerName, cwd);
+    if (existsSync(dir)) {
+        try { rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ }
+    }
 }
 
 /**

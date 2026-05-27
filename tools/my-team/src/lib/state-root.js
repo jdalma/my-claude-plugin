@@ -43,9 +43,11 @@ export function getStateRootBase() {
 }
 
 /**
- * OMC compatibility shim. OMC modules call this to discover the base directory
- * for `teams/` and `tasks/`. We point it at our state root so OMC-borrowed
- * modules (inbox-outbox, outbox-reader, task-file-ops) work without changes.
+ * OMC compatibility shim. The originally-borrowed OMC modules that called this
+ * (inbox-outbox, outbox-reader, task-file-ops) have all been removed in the
+ * option-B cutover, so this export currently has no in-tree callers. Kept as a
+ * one-line forwarder in case a future OMC-borrowed module needs the same
+ * config-dir indirection.
  */
 export function getClaudeConfigDir() {
     return getStateRootBase();

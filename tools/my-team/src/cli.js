@@ -2,12 +2,11 @@
  * `my-team` CLI entry point.
  *
  * Subcommands (user-facing):
- *   start, status, msg, add-task, shutdown
+ *   start, status, shutdown, monitor
  *
- * api subcommands (called by worker LLMs from AGENTS.md):
- *   api transition-task-status, api send-message, api read-task,
- *   api create-task, api claim-task (noop),
- *   api mailbox-list, api mailbox-mark-delivered
+ * api subcommands (called by worker LLMs from AGENTS.md) — peer messaging only:
+ *   api send-message, api mailbox-list, api mailbox-mark-delivered,
+ *   api archive-lookup
  */
 
 import { Command } from 'commander';
@@ -17,15 +16,10 @@ import { dirname, join } from 'path';
 
 import { runStart } from './commands/start.js';
 import { runStatus } from './commands/status.js';
-import { runMsg } from './commands/msg.js';
-import { runAddTask } from './commands/add-task.js';
 import { runShutdown } from './commands/shutdown.js';
 import { runMonitor } from './commands/monitor.js';
 
-import { runApiTransitionTaskStatus } from './commands/api/transition-task-status.js';
 import { runApiSendMessage } from './commands/api/send-message.js';
-import { runApiReadTask } from './commands/api/read-task.js';
-import { runApiCreateTask } from './commands/api/create-task.js';
 import { runApiMailboxList } from './commands/api/mailbox-list.js';
 import { runApiMailboxMarkDelivered } from './commands/api/mailbox-mark-delivered.js';
 import { runApiArchiveLookup } from './commands/api/archive-lookup.js';
@@ -96,36 +90,6 @@ async function main() {
             await runStatus(opts);
         });
 
-    // msg
-    program
-        .command('msg')
-        .description('Send free-form message to a worker inbox')
-        .requiredOption('--team <name>', 'team name')
-        .requiredOption('--to <worker>', 'worker name')
-        .option('--body <text>', 'message body')
-        .option('--from-file <path>', 'read body from file')
-        .option('--no-trigger', 'skip tmux send-keys notification')
-        .option('--state-root <path>', 'override state root')
-        .action(async (opts) => {
-            await runMsg(opts);
-        });
-
-    // add-task
-    program
-        .command('add-task')
-        .description('Register a new tracked task and notify the worker')
-        .requiredOption('--team <name>', 'team name')
-        .requiredOption('--worker <name>', 'assignee worker')
-        .requiredOption('--subject <text>', 'task subject (short)')
-        .option('--description <text>', 'task description', '')
-        .option('--description-file <path>', 'read description from file')
-        .option('--id <id>', 'override task id')
-        .option('--no-notify', 'do not notify the worker')
-        .option('--state-root <path>', 'override state root')
-        .action(async (opts) => {
-            await runAddTask(opts);
-        });
-
     // shutdown
     program
         .command('shutdown')
@@ -146,28 +110,13 @@ async function main() {
             await runMonitor(teamName, opts);
         });
 
-    // api ...
-    const api = program.command('api').description('Internal API used by worker LLMs');
-
-    api.command('transition-task-status')
-        .requiredOption('--input <json>', 'JSON payload')
-        .option('--json', 'JSON output')
-        .action((opts) => emit(runApiTransitionTaskStatus(parseApiInput(opts)), opts.json));
+    // api ... (peer messaging only)
+    const api = program.command('api').description('Internal API used by worker LLMs for peer messaging');
 
     api.command('send-message')
         .requiredOption('--input <json>', 'JSON payload')
         .option('--json', 'JSON output')
         .action(async (opts) => emit(await runApiSendMessage(parseApiInput(opts)), opts.json));
-
-    api.command('read-task')
-        .requiredOption('--input <json>', 'JSON payload')
-        .option('--json', 'JSON output')
-        .action((opts) => emit(runApiReadTask(parseApiInput(opts)), opts.json));
-
-    api.command('create-task')
-        .requiredOption('--input <json>', 'JSON payload')
-        .option('--json', 'JSON output')
-        .action(async (opts) => emit(await runApiCreateTask(parseApiInput(opts)), opts.json));
 
     api.command('mailbox-list')
         .requiredOption('--input <json>', 'JSON payload')
@@ -183,22 +132,6 @@ async function main() {
         .requiredOption('--input <json>', 'JSON payload')
         .option('--json', 'JSON output')
         .action((opts) => emit(runApiArchiveLookup(parseApiInput(opts)), opts.json));
-
-    // claim-task: noop (AC-31). Workers may call it from OMC-style AGENTS.md.
-    api.command('claim-task')
-        .requiredOption('--input <json>', 'JSON payload')
-        .option('--json', 'JSON output')
-        .action((opts) => {
-            const input = parseApiInput(opts);
-            const claim_token = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-            emit({
-                ok: true,
-                task_id: input.task_id ?? null,
-                worker: input.worker ?? null,
-                claim_token,
-                note: 'claim-task is a noop in my-team; token returned for OMC AGENTS.md compatibility.',
-            }, opts.json);
-        });
 
     try {
         await program.parseAsync(process.argv);

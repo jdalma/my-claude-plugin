@@ -12,7 +12,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, existsSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
-import { cleanupWorkerCwdState } from '../../src/lib/inbox-outbox.js';
+import { cleanupWorkerCwdState } from '../../src/lib/tmux-comm.js';
 
 function setupCwd({ teamName = 't1', worker = 'alice' } = {}) {
     const base = mkdtempSync(join(tmpdir(), 'my-team-test-'));

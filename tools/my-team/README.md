@@ -37,8 +37,7 @@ cat > my-team.json <<'EOF'
       "agent_type": "claude",
       "launch_args": ["--dangerously-skip-permissions"],
       "description": "Backend API owner — DB schema and endpoint design.",
-      "extra_prompt": "Project A is the backend.",
-      "task": { "subject": "Sketch the API", "description": "..." }
+      "extra_prompt": "Project A is the backend. First job: sketch the API — POST /orders, /users; validation rules in section 3 of the spec."
     },
     {
       "name": "beta",
@@ -46,7 +45,7 @@ cat > my-team.json <<'EOF'
       "agent_type": "codex",
       "launch_args": ["--dangerously-bypass-approvals-and-sandbox"],
       "description": "Frontend client of A — consumes alpha's API.",
-      "extra_prompt": "Project B is the client of A."
+      "extra_prompt": "Project B is the client of A. First job: bump SDK to v3 and adapt call sites."
     }
   ]
 }
@@ -54,16 +53,27 @@ EOF
 
 my-team start                    # auto-discovers ./my-team.json
 my-team status --team demo
-my-team msg --team demo --to alpha --body "also write tests"
-my-team add-task --team demo --worker beta --subject "Bump SDK" --description "..."
+my-team monitor demo             # tail peer messages in real-time
+
+# Mid-session: to give a worker a new task, type into that worker's tmux pane
+# directly. Workers reach each other via `my-team api send-message` (called
+# from inside their AGENTS.md protocol).
+
 my-team shutdown --team demo
 ```
 
 > **`description` vs `extra_prompt`** — both optional. `description` is a
 > one-liner shown to *other* workers in the Team Roster, so a worker can
-> judge whom to ask for help. `extra_prompt` is detailed instructions
-> injected only into *that* worker's own prompt. If `description` is
+> judge whom to ask for help. `extra_prompt` carries the worker's own
+> work brief (initial task plus any context) and renders into the
+> `## Role Context` section of its AGENTS.md. If `description` is
 > omitted, the roster falls back to the first line of `extra_prompt`.
+>
+> **There is no `task` field and no task lifecycle.** my-team used to track
+> tasks via `add-task` / `claim-task` / `transition-task-status`; those were
+> removed because the user observes every pane directly. Configs that still
+> carry `workers[].task` are rejected with an explicit error — move the
+> subject/description into `extra_prompt`.
 
 ## Worker launch flags
 
@@ -198,37 +208,42 @@ will actually do. High user attention required.
 | Command | Purpose |
 |---------|---------|
 | `start` | Boot a team from config (or inline `--worker name:agent:cwd`) |
-| `status` | Show team / workers / tasks |
-| `msg` | Free-form inbox message to one worker |
-| `add-task` | Register a tracked task and notify the worker |
+| `status` | Show team and worker liveness |
+| `monitor` | Tail peer messages in real-time |
 | `shutdown` | Terminate a team |
-| `api …` | Internal API used by worker LLMs (do not call manually) |
+| `api send-message` / `api mailbox-list` / `api mailbox-mark-delivered` / `api archive-lookup` | Internal peer-messaging API called by worker LLMs (do not call manually) |
 
 Run `my-team <cmd> --help` for full options.
+
+There is intentionally no user→worker CLI command for mid-session messaging.
+To give a worker a new instruction, type into its tmux pane directly. The
+old `my-team msg` / `my-team add-task` commands were removed when task
+lifecycle was dropped.
 
 ## State layout
 
 ```
 ~/.my-team/sessions/<team>/
 ├── manifest.json
-├── tasks/<id>.json
+├── events.jsonl              # peer message audit log
 ├── workers/<name>/
-│   ├── AGENTS.md          # per-worker system prompt overlay (reused from OMC)
-│   ├── inbox.md           # free-form lead → worker
+│   ├── AGENTS.md             # per-worker system prompt overlay
 │   ├── status.json
-│   └── heartbeat.json
-├── mailbox/<name>.json    # worker → worker direct messages
-└── leader/inbox.md        # worker → leader notifications
+│   ├── heartbeat.json
+│   └── shutdown-ack.json     # written on shutdown
+├── mailbox/<name>.json       # peer mailbox (read by recipient)
+├── incoming-spool/<name>/    # one file per inbound message (sender writes)
+└── archive/<name>.jsonl      # processed messages, append-only
 ```
 
 ## What's borrowed from OMC
 
 See `PLAN.md` Appendix A. Briefly:
 
-- **Borrowed verbatim** — `tmux-utils.js`, `tmux-comm.js` (low-level), `fs-utils.js`, `inbox-outbox.js`, `worker-bootstrap.js`, `team-name.js`, `state-paths.js`
-- **Modified** — `tmux-session.js` (per-worker cwd in `createTeamSession`), `task-ops.js` (claim_token removed)
+- **Borrowed verbatim** — `tmux-utils.js`, `tmux-comm.js` (low-level), `fs-utils.js`, `team-name.js`
+- **Modified** — `tmux-session.js` (per-worker cwd in `createTeamSession`), `worker-bootstrap.js` (task lifecycle / inbox.md removed), `state-paths.js` (slimmed to mailbox/archive/spool only)
 - **Stubbed** — `prompt-helpers.js`, `cli-rendering.js`, `state-root.js`
-- **Dropped** — `dispatch-queue.js`, `mcp-comm.js` (high-level), `git-worktree.js`, OMC governance modules
+- **Dropped** — `dispatch-queue.js`, `mcp-comm.js` (high-level), `git-worktree.js`, `task-ops.js`, `inbox-outbox.js`, OMC governance modules
 
 ## License
 

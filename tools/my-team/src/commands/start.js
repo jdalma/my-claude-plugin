@@ -9,10 +9,9 @@
  *  3. Reject if team with same name already running (AC-28)
  *  4. Set MY_TEAM_STATE_ROOT so state-paths uses our absolute root
  *  5. Create tmux topology with per-worker cwd
- *  6. For each worker: ensure state dir, write task file (if any),
- *     write AGENTS.md overlay, compose initial inbox.md
+ *  6. For each worker: ensure state dir, write AGENTS.md overlay
  *  7. Spawn worker CLI in each pane, wait for ready
- *  8. Send startup trigger message
+ *  8. Send a short startup notice into each pane
  *  9. Persist manifest for status/shutdown to find
  */
 
@@ -29,10 +28,8 @@ import {
 } from '../lib/tmux-session.js';
 import { tmuxShell, tmuxExecAsync } from '../lib/tmux-utils.js';
 import {
-    generateWorkerOverlay, composeInitialInbox, ensureWorkerStateDir,
-    generateTriggerMessage,
+    generateWorkerOverlay, ensureWorkerStateDir,
 } from '../lib/worker-bootstrap.js';
-import { writeTask, nextTaskId } from '../lib/task-ops.js';
 import { atomicWriteJson } from '../lib/fs-utils.js';
 
 /** AGENT_TYPE → CLI binary name + install hint. */
@@ -134,7 +131,8 @@ export async function runStart(opts) {
             team_name: config.team_name,
             state_root: config.state_root,
             workers: config.workers.map((w) => ({
-                name: w.name, cwd: w.cwd, agent_type: w.agent_type, has_task: Boolean(w.task),
+                name: w.name, cwd: w.cwd, agent_type: w.agent_type,
+                has_extra_prompt: Boolean(w.extra_prompt && w.extra_prompt.trim()),
             })),
         }, null, 2));
         return { dryRun: true, config };
@@ -151,7 +149,7 @@ export async function runStart(opts) {
         newWindow: config.new_window,
     });
     console.log(`[my-team] Session: ${session.sessionName} (mode: ${session.sessionMode})`);
-    console.log(`[my-team] Leader pane: ${session.leaderPaneId}`);
+    console.log(`[my-team] Host pane (monitor): ${session.leaderPaneId}`);
 
     // For each worker: state dir, task file, AGENTS.md overlay, initial inbox, spawn CLI
     const manifest = {
@@ -188,30 +186,11 @@ export async function runStart(opts) {
         const workerDir = join(config.state_root, 'workers', w.name);
         await mkdir(workerDir, { recursive: true });
 
-        // 2. task file (if config.task present)
-        let taskId = null;
-        const tasks = [];
-        if (w.task) {
-            taskId = nextTaskId(config.state_root.replace(/\/[^/]+$/, ''), config.team_name);
-            const task = {
-                id: taskId,
-                subject: w.task.subject,
-                description: w.task.description,
-                status: 'pending',
-                owner: w.name,
-                createdAt: new Date().toISOString(),
-                updatedAt: new Date().toISOString(),
-            };
-            writeTask(config.state_root.replace(/\/[^/]+$/, ''), config.team_name, task);
-            tasks.push({ id: taskId, subject: w.task.subject, description: w.task.description });
-        }
-
-        // 3. AGENTS.md overlay (per worker)
+        // 2. AGENTS.md overlay (per worker)
         const overlay = generateWorkerOverlay({
             teamName: config.team_name,
             workerName: w.name,
             agentType: w.agent_type,
-            tasks,
             bootstrapInstructions: w.extra_prompt,
             instructionStateRoot: config.state_root,
             cwd: w.cwd,
@@ -219,13 +198,6 @@ export async function runStart(opts) {
         });
         const overlayPath = join(workerDir, 'AGENTS.md');
         await writeFile(overlayPath, overlay, 'utf-8');
-
-        // 4. initial inbox.md
-        const inboxContent = w.task
-            ? `# Initial Inbox — ${w.name}\n\nYour first task is #${taskId}: ${w.task.subject}\n\nDetails:\n${w.task.description}\n\nFollow AGENTS.md protocol.\n`
-            : `# Initial Inbox — ${w.name}\n\nNo task assigned yet. Wait for instructions via mailbox or this inbox.\n`;
-        const inboxPath = join(workerDir, 'inbox.md');
-        await writeFile(inboxPath, inboxContent, 'utf-8');
 
         // 5. spawn CLI in pane
         const agentBin = AGENT_CLI[w.agent_type].bin;
@@ -259,9 +231,7 @@ export async function runStart(opts) {
             pane_id: pane.paneId,
             cwd: w.cwd,
             agent_type: w.agent_type,
-            task_id: taskId,
             overlay_path: overlayPath,
-            inbox_path: inboxPath,
         });
     }
 
@@ -280,17 +250,23 @@ export async function runStart(opts) {
         } catch { /* ignore — title is cosmetic */ }
     }
 
+    // Startup notice: tell each worker to read its AGENTS.md and wait for the
+    // user (in this pane) or peer messages (via mailbox). No task lifecycle,
+    // no inbox.md — every instruction either lands here as user input or in
+    // the mailbox as a peer message.
     for (const w of manifest.workers) {
-        const trigger = generateTriggerMessage(config.team_name, w.name, config.state_root);
-        await sendToWorker(session.sessionName, w.pane_id, trigger);
+        const overlayHint = `${config.state_root}/workers/${w.name}/AGENTS.md`;
+        const notice = `Team is live. Follow ${overlayHint} for the peer protocol; wait for user input in this pane or peer messages in your mailbox.`;
+        await sendToWorker(session.sessionName, w.pane_id, notice);
     }
-    console.log('[my-team] Startup triggers sent. Team is live.');
+    console.log('[my-team] Startup notices sent. Team is live.');
 
-    // In detached mode the leader pane is just an empty shell that no one
-    // is typing in — auto-start `my-team monitor` there so the user sees
-    // worker-to-worker traffic the moment they attach.
+    // In detached mode the host pane is just an empty shell that no one is
+    // typing in — auto-start `my-team monitor` there so the user sees
+    // worker-to-worker traffic the moment they attach. The host pane is not
+    // an orchestrator; it is purely the user's observation surface.
     //
-    // In in-place mode the leader pane is the user's own pane (they ran
+    // In in-place mode the host pane is the user's own pane (they ran
     // `my-team start` from there). Auto-running monitor would lock their
     // keyboard input, so we only print a tip.
     if (session.sessionMode === 'detached-session') {
@@ -299,12 +275,12 @@ export async function runStart(opts) {
                 'send-keys', '-t', session.leaderPaneId,
                 `my-team monitor ${config.team_name}`, 'Enter',
             ]);
-            console.log(`[my-team] Auto-started 'my-team monitor ${config.team_name}' in leader pane`);
+            console.log(`[my-team] Auto-started 'my-team monitor ${config.team_name}' in host pane`);
         } catch (err) {
             console.warn(`[my-team] Could not auto-start monitor: ${err.message}`);
         }
     } else {
-        console.log(`[my-team] Tip: run 'my-team monitor ${config.team_name}' in the leader pane to watch worker traffic`);
+        console.log(`[my-team] Tip: run 'my-team monitor ${config.team_name}' in the host pane to watch worker traffic`);
     }
 
     // Persist manifest for status/shutdown

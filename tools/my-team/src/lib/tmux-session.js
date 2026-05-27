@@ -50,7 +50,7 @@ export async function applyTeamLayout(teamTarget) {
         await tmuxExecAsync(['set-window-option', '-t', teamTarget, 'pane-border-status', 'top']);
     } catch { /* ignore */ }
     // Render @worker_name (set per pane) when present, otherwise fall back to
-    // pane_title (used for the leader pane). Worker CLIs continuously emit OSC
+    // pane_title (used for the host pane). Worker CLIs continuously emit OSC
     // title sequences that overwrite pane_title — `allow-rename off` only
     // protects window names, not pane titles, so we route worker labels
     // through a pane-scoped user option that the CLI cannot touch.
@@ -178,7 +178,13 @@ export function sessionName(teamName, workerName) {
 }
 
 /**
- * Create a tmux topology for leader + N workers.
+ * Create a tmux topology of a host pane + N worker panes.
+ *
+ * The host pane (kept in `leaderPaneId` for OMC manifest compatibility) is
+ * NOT an orchestrator role — my-team is peer-to-peer. It is just the first
+ * pane in the layout: either the user's own pane (in-place mode) or the
+ * empty shell that runs `my-team monitor` (detached mode). No worker reports
+ * to it and no code routes worker traffic through it.
  *
  * SIGNATURE CHANGE from OMC: instead of `(teamName, workerCount, cwd)` we take
  * `(teamName, workers, options)` where `workers: [{name, cwd}]`. Each worker
@@ -295,7 +301,10 @@ export async function createTeamSession(teamName, workers, options = {}) {
         }
     }
 
-    // Also label the leader pane so it's not blank in the grid.
+    // Also label the host pane so it's not blank in the grid. The tmux title
+    // string is kept as "leader" for visual compatibility with existing
+    // screenshots/docs; the role itself is just "user's host pane" (not an
+    // orchestrator). See createTeamSession docstring.
     try {
         await tmuxExecAsync(['select-pane', '-t', leaderPaneId, '-T', 'leader']);
     } catch { /* ignore */ }
@@ -502,7 +511,9 @@ export async function killWorkerPanes(opts) {
 
 /**
  * Kill the team session entirely (for detached-session/dedicated-window),
- * or kill worker panes only (for split-pane), preserving leader pane.
+ * or kill worker panes only (for split-pane), preserving the user's host
+ * pane. The host pane is not an orchestrator — it is the pane the user ran
+ * `my-team start` from and continues to type in after shutdown.
  */
 export async function killTeamSession(sessionName, workerPaneIds, leaderPaneId, options = {}) {
     const sessionMode = options.sessionMode

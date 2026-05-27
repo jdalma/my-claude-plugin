@@ -23,7 +23,7 @@ export async function runShutdown(opts) {
     console.log(`[my-team] Shutting down team '${opts.team}' (mode: ${manifest.session_mode}, grace: ${graceMs}ms)...`);
 
     if (manifest.session_mode === 'split-pane') {
-        // Graceful sentinel + kill worker panes only (preserve user leader pane)
+        // Graceful sentinel + kill worker panes only (preserve user's host pane)
         await killWorkerPanes({
             paneIds: workerPaneIds,
             leaderPaneId,
@@ -34,7 +34,7 @@ export async function runShutdown(opts) {
     } else {
         // detached-session or dedicated-window: kill whole session/window
         if (graceMs > 0) {
-            // Best-effort: wait briefly so workers can see the upcoming kill via inbox.md or similar
+            // Best-effort: wait briefly so workers can react to the shutdown sentinel before kill
             await new Promise((r) => setTimeout(r, graceMs));
         }
         await killTeamSession(

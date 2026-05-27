@@ -5,6 +5,16 @@
 > **추정 규모**: 1,200–1,500줄, 작업 기간 2–3일
 > **라이선스**: MIT (OMC `oh-my-claude-sisyphus` 차용 표시)
 
+> ⚠️ **옵션 B 컷오버 노트** — 본 PLAN의 다음 항목들은 *제거되었고 더 이상 유효하지 않다*:
+> - **AC-8 (`my-team msg`)**: 명령 자체 제거. user→worker는 워커 tmux pane 직접 입력만.
+> - **AC-11 (`my-team add-task`)**: 명령 자체 제거. 부팅 시 task는 `workers[].extra_prompt`로 일원화.
+> - **AC-31 (`claim-task` noop) + 모든 task lifecycle API** (`api create-task`, `api read-task`, `api transition-task-status`, `api claim-task`): 통째로 제거. my-team은 task 상태머신을 추적하지 않는다.
+> - **`workers[].task` config 필드**: 사용 시 parser가 hard-reject (사용자가 `extra_prompt`로 마이그레이션).
+> - **`inbox.md`, `tasks/<id>.json`, `leader/inbox.md`** state 파일: 더 이상 생성/사용되지 않는다.
+> - **`check-inbox`, `new-task:<id>` tmux trigger 토큰**: 폐기. 남은 트리거는 `new-message:<from>`뿐.
+>
+> 본문의 §1~§7 설명은 초기 설계 의도를 기록하기 위해 그대로 둔다 (역사적 문서로서의 가치). 현재 정상 동작 명세는 `README.md`와 `docs/architecture.md`의 옵션 B 노트를 따른다.
+
 ---
 
 ## 1. 요구사항 요약

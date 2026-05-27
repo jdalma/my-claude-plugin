@@ -313,6 +313,20 @@ test('send-message rejects unknown recipient', async () => {
     }
 });
 
+test('send-message rejects unknown sender (guards against hallucinated from_worker)', async () => {
+    const ctx = setupTeam(); // roster is alice + bob; "ghost" is not a worker
+    try {
+        await assert.rejects(
+            () => runApiSendMessage({
+                team_name: ctx.teamName, from_worker: 'ghost', to_worker: 'bob', body: 'hi',
+            }),
+            /Sender 'ghost' not in team/
+        );
+    } finally {
+        cleanup(ctx);
+    }
+});
+
 test('events.jsonl carries message_id, reply_to, expects_reply', async () => {
     const ctx = setupTeam();
     try {
