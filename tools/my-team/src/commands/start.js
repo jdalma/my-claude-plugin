@@ -271,15 +271,12 @@ export async function runStart(opts) {
         manifest.workers.map((w) => waitForPaneReady(w.pane_id, { timeoutMs: 30000 }))
     );
 
-    // Re-apply pane titles after workers are ready. Worker CLIs (notably
-    // claude / codex) emit OSC title sequences during boot that may have
-    // landed before our `allow-rename off` took effect, overwriting the
-    // initial `-T <worker.name>` we set in createTeamSession. Even with
-    // allow-rename off, a one-shot reset here guarantees the visible title
-    // matches config.workers[].name at the moment the team goes live.
+    // Re-assert @worker_name after workers are ready. The createTeamSession
+    // call already set it, but a re-apply here is cheap insurance against
+    // any race where a worker CLI restart could clear pane-scoped options.
     for (const w of manifest.workers) {
         try {
-            await tmuxExecAsync(['select-pane', '-t', w.pane_id, '-T', w.name]);
+            await tmuxExecAsync(['set-option', '-p', '-t', w.pane_id, '@worker_name', w.name]);
         } catch { /* ignore — title is cosmetic */ }
     }
 

@@ -49,16 +49,18 @@ export async function applyTeamLayout(teamTarget) {
     try {
         await tmuxExecAsync(['set-window-option', '-t', teamTarget, 'pane-border-status', 'top']);
     } catch { /* ignore */ }
+    // Render @worker_name (set per pane) when present, otherwise fall back to
+    // pane_title (used for the leader pane). Worker CLIs continuously emit OSC
+    // title sequences that overwrite pane_title — `allow-rename off` only
+    // protects window names, not pane titles, so we route worker labels
+    // through a pane-scoped user option that the CLI cannot touch.
     try {
         await tmuxExecAsync([
             'set-window-option', '-t', teamTarget,
-            'pane-border-format', ' #{pane_title} ',
+            'pane-border-format', ' #{?@worker_name,#{@worker_name},#{pane_title}} ',
         ]);
     } catch { /* ignore */ }
-    // Worker CLIs (claude/codex/...) emit OSC title sequences that tmux would
-    // otherwise apply to pane title and window name, overwriting the worker
-    // name we set via `select-pane -T`. Disable both at the window level so
-    // our titles stick. Scoped to teamTarget — does not affect other windows.
+    // allow-rename / automatic-rename still useful to keep window name stable.
     try {
         await tmuxExecAsync(['set-window-option', '-t', teamTarget, 'allow-rename', 'off']);
     } catch { /* ignore */ }
@@ -285,10 +287,10 @@ export async function createTeamSession(teamName, workers, options = {}) {
         const paneId = splitResult.stdout.split('\n')[0]?.trim();
         if (paneId) {
             workerPanes.push({ name: w.name, paneId });
-            // Set pane title so the border-status line shows the worker name.
-            // -T sets the per-pane title; pane-border-format renders it.
+            // Store worker name in a pane-scoped user option. pane-border-format
+            // reads @worker_name, which the worker CLI cannot overwrite via OSC.
             try {
-                await tmuxExecAsync(['select-pane', '-t', paneId, '-T', w.name]);
+                await tmuxExecAsync(['set-option', '-p', '-t', paneId, '@worker_name', w.name]);
             } catch { /* ignore — title is cosmetic */ }
         }
     }
