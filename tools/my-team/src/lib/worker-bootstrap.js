@@ -12,8 +12,8 @@
  * the `## Role Context` section of this overlay.
  */
 
-import { mkdir, writeFile } from 'fs/promises';
-import { join, dirname } from 'path';
+import { mkdir } from 'fs/promises';
+import { join } from 'path';
 
 import { sanitizePromptContent } from './prompt-helpers.js';
 import { formatOmcCliInvocation } from './cli-rendering.js';
@@ -29,15 +29,6 @@ function buildTeamStateInstructionPath(teamName, instructionStateRoot, ...teamRe
         ? [instructionStateRoot, 'team', teamName]
         : [instructionStateRoot];
     return buildInstructionPath(...baseParts, ...teamRelativeParts);
-}
-
-export function generateMailboxTriggerMessage(teamName, workerName, count = 1, teamStateRoot = DEFAULT_INSTRUCTION_STATE_ROOT) {
-    const normalizedCount = Number.isFinite(count) ? Math.max(1, Math.floor(count)) : 1;
-    const mailboxPath = buildTeamStateInstructionPath(teamName, teamStateRoot, 'mailbox', `${workerName}.json`);
-    if (teamStateRoot !== DEFAULT_INSTRUCTION_STATE_ROOT) {
-        return `${normalizedCount} new msg(s): check ${mailboxPath}, act and report progress.`;
-    }
-    return `${normalizedCount} new msg(s). Read ${mailboxPath}, act now, report concrete progress.`;
 }
 
 function agentTypeGuidance(agentType) {
@@ -269,13 +260,4 @@ export async function ensureWorkerStateDir(teamName, workerName, stateRoot) {
     await mkdir(workerDir, { recursive: true });
     const mailboxDir = join(stateRoot, 'mailbox');
     await mkdir(mailboxDir, { recursive: true });
-}
-
-export async function writeWorkerOverlay(params) {
-    const { teamName, workerName, cwd } = params;
-    const overlay = generateWorkerOverlay(params);
-    const overlayPath = join(cwd, `.omc/state/team/${teamName}/workers/${workerName}/AGENTS.md`);
-    await mkdir(dirname(overlayPath), { recursive: true });
-    await writeFile(overlayPath, overlay, 'utf-8');
-    return overlayPath;
 }

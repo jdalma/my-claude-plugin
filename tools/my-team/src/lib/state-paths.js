@@ -9,11 +9,13 @@
  */
 
 import { isAbsolute, join } from 'path';
+import { homedir } from 'os';
 
 function resolveTeamRoot(teamName) {
     const envRoot = process.env.MY_TEAM_STATE_ROOT?.trim();
     if (envRoot) return envRoot;
-    return `.omc/state/team/${teamName}`;
+    const base = process.env.MY_TEAM_STATE_ROOT_BASE?.trim() || join(homedir(), '.my-team', 'sessions');
+    return join(base, teamName);
 }
 
 function p(teamName, ...parts) {

@@ -28,14 +28,3 @@ export function formatOmcCliInvocation(commandSuffix) {
     suffix = suffix.replace(/^team\b\s*/, '');
     return `${CLI_BINARY}${suffix ? ' ' + suffix : ''}`.trim();
 }
-
-export function rewriteOmcCliInvocations(text) {
-    if (!text) return text;
-    if (!text.includes('omc ') && !text.includes('team ')) return text;
-    const rewrite = (suffix) => formatOmcCliInvocation(suffix);
-    return text
-        .replace(/`omc ([^`\r\n]+)`/g, (_m, s) => `\`${rewrite(s)}\``)
-        .replace(/(^|\n)([ \t>*-]*)omc ([^\n]+)/g, (_m, lineStart, leader, s) =>
-            `${lineStart}${leader}${rewrite(s)}`
-        );
-}
