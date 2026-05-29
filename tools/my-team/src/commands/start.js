@@ -182,7 +182,7 @@ export async function runStart(opts) {
         }
 
         // 1. state directory
-        await ensureWorkerStateDir(config.team_name, w.name, config.state_root.replace(/\/[^/]+$/, ''));
+        await ensureWorkerStateDir(config.team_name, w.name, config.state_root);
         const workerDir = join(config.state_root, 'workers', w.name);
         await mkdir(workerDir, { recursive: true });
 

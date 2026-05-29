@@ -264,10 +264,10 @@ ${agentTypeGuidance(agentType)}
 ${bootstrapInstructions ? `## Role Context\n${bootstrapInstructions}\n` : ''}`;
 }
 
-export async function ensureWorkerStateDir(teamName, workerName, cwd) {
-    const workerDir = join(cwd, `.omc/state/team/${teamName}/workers/${workerName}`);
+export async function ensureWorkerStateDir(teamName, workerName, stateRoot) {
+    const workerDir = join(stateRoot, 'workers', workerName);
     await mkdir(workerDir, { recursive: true });
-    const mailboxDir = join(cwd, `.omc/state/team/${teamName}/mailbox`);
+    const mailboxDir = join(stateRoot, 'mailbox');
     await mkdir(mailboxDir, { recursive: true });
 }
 
