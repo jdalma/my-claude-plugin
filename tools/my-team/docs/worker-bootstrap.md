@@ -6,7 +6,7 @@
 >
 > **대상 코드**: `src/lib/worker-bootstrap.js`, `src/lib/prompt-helpers.js`, `src/commands/start.js`
 >
-> **관련 다이어그램**: [`diagrams/communication-flow.excalidraw`](diagrams/communication-flow.excalidraw)는 옵션 B 이전(inbox.md 시대)을 묘사한다. peer mailbox 사이클 부분은 그대로 유효.
+> **관련 다이어그램**: peer 메시지 흐름의 현행 시각 자료는 [`worker-message-flow.html`](worker-message-flow.html)(브라우저로 열기). [`diagrams/communication-flow.excalidraw`](diagrams/communication-flow.excalidraw)는 옵션 B 이전(inbox.md 시대)을 묘사한다 — peer mailbox 사이클 부분만 그대로 유효한 구버전.
 
 ---
 
