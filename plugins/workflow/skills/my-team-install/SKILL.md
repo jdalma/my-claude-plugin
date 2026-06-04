@@ -134,7 +134,7 @@ my-team --help | head -5
 
 - `command -v my-team` 출력이 존재함
 - `my-team --version` 이 정상 출력 (예: `0.1.0`)
-- `my-team --help` 가 6개 명령(start/status/msg/add-task/shutdown/monitor + api) 표시
+- `my-team --help` 가 사용자용 명령 4개(start/status/shutdown/monitor) + `api` 서브명령(워커 LLM 전용)을 표시
 - 모드 판정 결과(install / update)와 수행한 단계가 사용자에게 한 줄 보고됨
 - update 모드의 경우 `git pull --ff-only` 가 성공했거나, fast-forward 불가 시 사용자에게 명시적으로 알림
 

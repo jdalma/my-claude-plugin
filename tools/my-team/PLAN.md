@@ -361,7 +361,7 @@ cd ~/IdeaProjects/my-claude-plugin/plugins/teams
 ls bin/my-team src/cli.js src/lib/tmux-session.js  # 핵심 파일 존재 확인
 
 # 2. 헬프
-./bin/my-team --help                                # 6개 명령 표시
+./bin/my-team --help                                # 사용자용 명령 4개(start/status/shutdown/monitor) + api 표시
 ./bin/my-team start --help                          # 옵션 표시
 
 # 3. dry-run
