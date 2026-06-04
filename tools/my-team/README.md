@@ -59,8 +59,13 @@ my-team monitor demo             # tail peer messages in real-time
 # directly. Workers reach each other via `my-team api send-message` (called
 # from inside their AGENTS.md protocol).
 
-my-team shutdown --team demo
+my-team shutdown --team demo     # also clears state (backs up to <state_root>.bak)
 ```
+
+> **Always shut down with `my-team shutdown`, not `tmux kill-session`.** Only
+> `shutdown` clears the team's state. If you kill the tmux session directly,
+> the state dir survives and re-running `start` with the same `team_name` will
+> inherit the previous run's `events.jsonl` / `archive` / `mailbox`.
 
 > **`description` vs `extra_prompt`** — both optional. `description` is a
 > one-liner shown to *other* workers in the Team Roster, so a worker can
@@ -210,7 +215,7 @@ will actually do. High user attention required.
 | `start` | Boot a team from config (or inline `--worker name:agent:cwd`) |
 | `status` | Show team and worker liveness |
 | `monitor` | Tail peer messages in real-time |
-| `shutdown` | Terminate a team |
+| `shutdown` | Terminate a team **and clear its state** — backs up `state_root` to `<state_root>.bak` (one generation), then removes the original so re-running `start` with the same `team_name` starts clean (see "State cleanup" below) |
 | `api send-message` | **[mutating]** Peer message — drops a spool file, appends sender archive, records `sent_pending` |
 | `api mailbox-list` | **[mutating]** List unread inbox — *absorbs the incoming-spool into the mailbox first*. This absorption is the polling side effect: the name says "list" but it writes. Skip the poll and new messages are never absorbed |
 | `api mailbox-mark-delivered` | **[mutating]** Mark consumed — moves the entry to the archive jsonl, removes it from the inbox |
@@ -244,6 +249,27 @@ lifecycle was dropped.
 ├── incoming-spool/<name>/    # one file per inbound message (sender writes)
 └── archive/<name>.jsonl      # processed messages, append-only
 ```
+
+The state dir is keyed **only** by `team_name` (`~/.my-team/sessions/<team>`,
+unless you set `state_root` explicitly). Two runs with the same `team_name`
+therefore share this directory.
+
+### State cleanup
+
+`my-team shutdown` is what clears this directory. It renames `state_root` to
+`<state_root>.bak` (keeping exactly one prior generation) and removes the
+original, so the next `start` with the same `team_name` begins clean instead of
+inheriting the previous run's `events.jsonl` / `archive` / `mailbox`.
+
+- **Use `my-team shutdown`, not `tmux kill-session`.** Killing the tmux session
+  directly runs none of this — the state dir survives and the next run overlaps.
+- If the backup rename fails (e.g. across filesystems), `shutdown` keeps the
+  state untouched and warns rather than deleting without a backup.
+- **Known limitation:** `<state_root>.bak` for a team you never re-run lingers
+  until you delete it manually. Only one generation is kept per team.
+- This handles *sequential* reuse (shut down, then start again). Running two
+  teams from one config **concurrently** is still unsupported — they would
+  share one `state_root`; give each a distinct `team_name` for that.
 
 ## What's borrowed from OMC
 

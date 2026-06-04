@@ -58,9 +58,11 @@ my-team monitor my-feature   # peer 메시지 실시간 tail
 # 4. 도중에 워커한테 추가 지시 → 해당 워커의 tmux pane에 직접 타이핑
 #    워커끼리는 my-team api send-message 호출 (워커 LLM이 AGENTS.md에 따라)
 
-# 5. Shutdown
+# 5. Shutdown (state도 정리: state_root → <state_root>.bak 백업 후 삭제)
 my-team shutdown --team my-feature
 ```
+
+**정리는 반드시 `my-team shutdown`으로**: state를 비우는 건 `shutdown`뿐이다. `tmux kill-session`으로 세션만 죽이면 state 디렉토리가 남아, 같은 `team_name`으로 다시 `start`할 때 이전 run의 `events.jsonl` / `archive` / `mailbox`를 그대로 상속한다.
 
 **도중 작업 지시**: `my-team msg` / `my-team add-task` 명령은 없다. 사용자가 워커한테 추가 일감을 줄 때는 그 워커의 tmux pane에 직접 입력한다. 워커끼리 일감을 위임할 때는 `my-team api send-message`로 peer 메시지를 보낸다.
 
