@@ -211,7 +211,16 @@ will actually do. High user attention required.
 | `status` | Show team and worker liveness |
 | `monitor` | Tail peer messages in real-time |
 | `shutdown` | Terminate a team |
-| `api send-message` / `api mailbox-list` / `api mailbox-mark-delivered` / `api archive-lookup` | Internal peer-messaging API called by worker LLMs (do not call manually) |
+| `api send-message` | **[mutating]** Peer message — drops a spool file, appends sender archive, records `sent_pending` |
+| `api mailbox-list` | **[mutating]** List unread inbox — *absorbs the incoming-spool into the mailbox first*. This absorption is the polling side effect: the name says "list" but it writes. Skip the poll and new messages are never absorbed |
+| `api mailbox-mark-delivered` | **[mutating]** Mark consumed — moves the entry to the archive jsonl, removes it from the inbox |
+| `api archive-lookup` | **[pure]** Look up an archived message by id — read-only |
+
+> Internal peer-messaging API called by worker LLMs (do not call manually). The
+> `[mutating]` / `[pure]` tag marks whether a call has a file-write side effect —
+> `mailbox-list` is the subtle one: it *looks* read-only but absorbs the spool,
+> which is exactly why the self-poll discipline works (and why skipping it loses
+> messages). `status` and `monitor` are also pure (read / watch only).
 
 Run `my-team <cmd> --help` for full options.
 

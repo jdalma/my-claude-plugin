@@ -114,21 +114,25 @@ async function main() {
     const api = program.command('api').description('Internal API used by worker LLMs for peer messaging');
 
     api.command('send-message')
+        .description('[mutating] Send a peer message — drops a spool file, appends sender archive, records sent_pending')
         .requiredOption('--input <json>', 'JSON payload')
         .option('--json', 'JSON output')
         .action(async (opts) => emit(await runApiSendMessage(parseApiInput(opts)), opts.json));
 
     api.command('mailbox-list')
+        .description('[mutating] List unread inbox — absorbs the incoming-spool into the mailbox first (this absorption is the polling side effect: skip the poll and new messages are never absorbed)')
         .requiredOption('--input <json>', 'JSON payload')
         .option('--json', 'JSON output')
         .action(async (opts) => emit(await runApiMailboxList(parseApiInput(opts)), opts.json));
 
     api.command('mailbox-mark-delivered')
+        .description('[mutating] Mark an inbox entry consumed — moves it to the archive jsonl and removes it from the inbox')
         .requiredOption('--input <json>', 'JSON payload')
         .option('--json', 'JSON output')
         .action((opts) => emit(runApiMailboxMarkDelivered(parseApiInput(opts)), opts.json));
 
     api.command('archive-lookup')
+        .description('[pure] Look up an archived message by id — read-only, no side effects')
         .requiredOption('--input <json>', 'JSON payload')
         .option('--json', 'JSON output')
         .action((opts) => emit(runApiArchiveLookup(parseApiInput(opts)), opts.json));
