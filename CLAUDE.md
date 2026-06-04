@@ -6,6 +6,10 @@
 
 등록된 모듈:
 - `plugins/workflow/` — 개인 워크플로우 자산 (도메인 정보 미포함)
+- `plugins/orchestrator/` — v2 6-Phase 멀티 에이전트 오케스트레이션 (Question Debt 기반). marketplace.json에 등록됨.
+
+도구 (마켓플레이스 외):
+- `tools/my-team/` — tmux 멀티프로젝트 워커 오케스트레이션 CLI (npm 패키지, OMC sisyphus에서 fork)
 
 ## 운영 원칙
 
@@ -43,6 +47,16 @@ bash -c 'shopt -s nullglob; src="$HOME/IdeaProjects/my-claude-plugin/plugins/wor
 2. Claude Code에서 `/plugin marketplace add https://github.com/jdalma/my-claude-plugin`
 3. `/plugin install workflow@my-claude-plugin`
 4. `~/.claude/settings.json`에 위 SessionStart 훅 등록
+
+## 자산 표현 계층 우선순위
+
+새 기능을 어떤 형태로 표현할지 고를 때, **위로 갈수록 우선**한다:
+
+1. **Skill / Command** (markdown) — 정적 지식·워크플로우. 런타임 비용 0, 새 세션 rsync로 즉시 반영. 1순위.
+2. **CLI 도구** (`tools/`의 Node 패키지) — markdown으로 표현 못 하는 1급 런타임 능력이 필요할 때만 (예: my-team의 tmux 오케스트레이션).
+3. **훅** (SessionStart 등) — 에이전트 루프·세션 경계에 자동 개입이 *반드시* 필요할 때만. 자동 발동은 디버깅 비용과 오발동 위험을 동반하므로 최후 수단.
+
+> 같은 일을 markdown 스킬로 표현할 수 있으면 CLI 도구나 훅으로 올리지 않는다. (출처: oh-my-openagent의 Skill>MCP>Tool>Hook 원칙 — "런타임 비용 0인 정적 지식 최우선". 본 레포의 경량·명시호출 정체성과 정합.)
 
 ## 커맨드 작성 규칙
 

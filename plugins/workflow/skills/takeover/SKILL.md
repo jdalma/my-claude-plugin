@@ -282,7 +282,7 @@ for file in Relevant Files (최대 8개):
 | 파일 | 생성 | 갱신 | 읽기만 |
 |------|------|------|--------|
 | `task-index.md` | plan / handoff (Step 2.5 신규 슬롯 생성 시) | plan (재진입 시 overwrite/append/abort/fill), slice-tdd (슬라이스 진행 마커 토글 y/n + Decisions 섹션 vault 인용 시), handoff (TODO 섹션 일괄 y/n) | **takeover** |
-| `tdd-state/slice-N.md` | tdd (슬라이스 시작 시) | tdd (RED→GREEN 사이클마다) | handoff, **takeover** |
+| `tdd-state/slice-N.md` | slice-tdd (슬라이스 시작 시) | slice-tdd (RED→GREEN 사이클마다) | handoff, **takeover** |
 
 **takeover는 어느 파일도 수정하지 않는다.** 검증·보고만 한다.
 
