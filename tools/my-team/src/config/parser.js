@@ -14,7 +14,7 @@ import { homedir } from 'os';
 import { validateTeamName } from '../lib/team-name.js';
 
 const VALID_AGENT_TYPES = new Set(['claude', 'codex', 'gemini', 'cursor']);
-const WORKER_NAME_PATTERN = /^[a-zA-Z0-9-]+$/;
+export const WORKER_NAME_PATTERN = /^[a-zA-Z0-9-]+$/;
 
 function expandTilde(p) {
     if (!p) return p;
@@ -109,7 +109,7 @@ export function validateConfig(cfg, { configPath } = {}) {
     };
 }
 
-function validateWorker(w, idx, seen) {
+export function validateWorker(w, idx, seen) {
     const where = `workers[${idx}]`;
     if (!w || typeof w !== 'object') throw new Error(`${where} must be an object`);
 

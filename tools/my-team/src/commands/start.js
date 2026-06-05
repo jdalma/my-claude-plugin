@@ -33,14 +33,14 @@ import {
 import { atomicWriteJson } from '../lib/fs-utils.js';
 
 /** AGENT_TYPE → CLI binary name + install hint. */
-const AGENT_CLI = {
+export const AGENT_CLI = {
     claude: { bin: 'claude', hint: 'npm install -g @anthropic-ai/claude-code' },
     codex: { bin: 'codex', hint: 'npm install -g @openai/codex' },
     gemini: { bin: 'gemini', hint: 'npm install -g @google/gemini-cli' },
     cursor: { bin: 'cursor-agent', hint: 'install cursor-agent CLI' },
 };
 
-function commandExists(cmd) {
+export function commandExists(cmd) {
     try {
         const lookup = process.platform === 'win32' ? 'where' : 'which';
         execFileSync(lookup, [cmd], { stdio: 'ignore' });
@@ -95,7 +95,7 @@ export function resolveConfig(opts, callerCwd) {
 /**
  * Validate that every worker's agent CLI is on PATH (AC-29).
  */
-function validateAgentCLIs(config) {
+export function validateAgentCLIs(config) {
     for (const w of config.workers) {
         const info = AGENT_CLI[w.agent_type];
         if (!info) throw new Error(`Unknown agent_type for worker '${w.name}': ${w.agent_type}`);

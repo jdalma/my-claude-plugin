@@ -319,6 +319,40 @@ export async function createTeamSession(teamName, workers, options = {}) {
 }
 
 /**
+ * Add ONE worker pane to an ALREADY-LIVE team session (mid-session add-worker).
+ *
+ * This is deliberately NOT `createTeamSession`: that function calls
+ * `detectTeamMultiplexerContext()` which reads the CALLER's `env.TMUX`
+ * (tmux-session.js ~line 197). The `add-worker` process runs outside the
+ * team's tmux session, so reusing createTeamSession would spawn a second,
+ * orphan session. Here we split directly off an existing worker pane whose
+ * id we already hold from the manifest — no context detection needed.
+ *
+ * Splits a new pane anchored on `anchorPaneId` at `worker.cwd`, labels it via
+ * the pane-scoped `@worker_name` option (the same option pane-border-format
+ * reads), then re-tiles the whole team window so the new pane fits the grid.
+ *
+ * Returns { paneId } for the freshly created pane.
+ */
+export async function addWorkerPane(sessionName, anchorPaneId, worker, _options = {}) {
+    if (!worker?.cwd) throw new Error(`Worker '${worker?.name}' missing cwd`);
+    const splitResult = await tmuxCmdAsync([
+        'split-window', '-h', '-t', anchorPaneId,
+        '-d', '-P', '-F', '#{pane_id}',
+        '-c', worker.cwd,
+    ]);
+    const paneId = splitResult.stdout.split('\n')[0]?.trim();
+    if (!paneId) {
+        throw new Error(`tmux split-window did not return a pane id for worker '${worker.name}'`);
+    }
+    try {
+        await tmuxExecAsync(['set-option', '-p', '-t', paneId, '@worker_name', worker.name]);
+    } catch { /* ignore — title is cosmetic */ }
+    await applyTeamLayout(sessionName);
+    return { paneId };
+}
+
+/**
  * Spawn a worker CLI in a specific pane.
  */
 export async function spawnWorkerInPane(_sessionName, paneId, config) {

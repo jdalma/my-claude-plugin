@@ -2,7 +2,7 @@
  * `my-team` CLI entry point.
  *
  * Subcommands (user-facing):
- *   start, status, shutdown, monitor
+ *   start, status, shutdown, monitor, add-worker
  *
  * api subcommands (called by worker LLMs from AGENTS.md) — peer messaging only:
  *   api send-message, api mailbox-list, api mailbox-mark-delivered,
@@ -18,6 +18,7 @@ import { runStart } from './commands/start.js';
 import { runStatus } from './commands/status.js';
 import { runShutdown } from './commands/shutdown.js';
 import { runMonitor } from './commands/monitor.js';
+import { runAddWorker } from './commands/add-worker.js';
 
 import { runApiSendMessage } from './commands/api/send-message.js';
 import { runApiMailboxList } from './commands/api/mailbox-list.js';
@@ -108,6 +109,25 @@ async function main() {
         .option('--state-root <path>', 'override state root')
         .action(async (teamName, opts) => {
             await runMonitor(teamName, opts);
+        });
+
+    // add-worker
+    program
+        .command('add-worker')
+        .description('Add one worker to a running team mid-session')
+        .requiredOption('--team <name>', 'team name')
+        .requiredOption('--name <name>', 'worker name')
+        .requiredOption('--agent-type <type>', 'agent type (claude|codex|gemini|cursor)')
+        .requiredOption('--cwd <path>', 'worker working directory')
+        .option('--launch-arg <arg>', 'extra CLI arg for the worker (repeatable; e.g. --launch-arg --dangerously-skip-permissions). Without a permission-bypass flag the worker runs supervised and stalls on its first permission prompt until you answer it in its pane.', (v, prev) => {
+            prev = prev || [];
+            prev.push(v);
+            return prev;
+        })
+        .option('--state-root <path>', 'override state root')
+        .action(async (opts) => {
+            // commander stores repeated --launch-arg under opts.launchArg; add-worker reads opts.launchArgs
+            await runAddWorker({ ...opts, launchArgs: opts.launchArg });
         });
 
     // api ... (peer messaging only)

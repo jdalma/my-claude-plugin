@@ -55,9 +55,12 @@ my-team start                    # auto-discovers ./my-team.json
 my-team status --team demo
 my-team monitor demo             # tail peer messages in real-time
 
-# Mid-session: to give a worker a new task, type into that worker's tmux pane
-# directly. Workers reach each other via `my-team api send-message` (called
-# from inside their AGENTS.md protocol).
+# Mid-session: add a worker to the live team (new pane + registered as a peer).
+my-team add-worker --team demo --name gamma --agent-type gemini --cwd ~/work/project-c
+
+# To give an EXISTING worker a new task, type into its tmux pane directly.
+# Workers reach each other via `my-team api send-message` (called from inside
+# their AGENTS.md protocol).
 
 my-team shutdown --team demo     # also clears state (backs up to <state_root>.bak)
 ```
@@ -214,6 +217,7 @@ will actually do. High user attention required.
 |---------|---------|
 | `start` | Boot a team from config (or inline `--worker name:agent:cwd`) |
 | `status` | Show team and worker liveness |
+| `add-worker` | Add one worker to a **running** team mid-session (`--team --name --agent-type --cwd`) — splits a new pane, registers it in `manifest.workers`, and notifies existing workers. Pass `--launch-arg` (repeatable) for permission-bypass flags; without them the added worker runs supervised and stalls on its first permission prompt |
 | `monitor` | Tail peer messages in real-time |
 | `shutdown` | Terminate a team **and clear its state** — backs up `state_root` to `<state_root>.bak` (one generation), then removes the original so re-running `start` with the same `team_name` starts clean (see "State cleanup" below) |
 | `api send-message` | **[mutating]** Peer message — drops a spool file, appends sender archive, records `sent_pending` |
@@ -229,10 +233,18 @@ will actually do. High user attention required.
 
 Run `my-team <cmd> --help` for full options.
 
-There is intentionally no user→worker CLI command for mid-session messaging.
-To give a worker a new instruction, type into its tmux pane directly. The
-old `my-team msg` / `my-team add-task` commands were removed when task
-lifecycle was dropped.
+**Mid-session messaging** has no user→worker CLI command, by design. To give a
+worker a new instruction, type into its tmux pane directly. The old `my-team
+msg` / `my-team add-task` commands were removed when task lifecycle was dropped.
+
+**Mid-session worker add**, by contrast, *is* a supported command: `my-team
+add-worker` splits a new pane into the running team, registers the worker in
+`manifest.workers` (which is all that's needed for peers to message it — `api
+send-message` enforces roster membership per call), and sends an in-pane notice
+to every existing worker so their live LLM learns the new peer's name. Existing
+workers' `AGENTS.md` rosters are static and are **not** rewritten; the in-pane
+notice is the only runtime-awareness channel (a running worker CLI already
+loaded its `AGENTS.md` at launch, so a disk rewrite would not reach it).
 
 ## State layout
 
