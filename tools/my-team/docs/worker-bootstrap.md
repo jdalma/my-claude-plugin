@@ -67,17 +67,29 @@ my-team start --config my-team.json
 | Agent-type guidance | claude/codex/gemini/cursor 별 추가 룰 |
 | `## Role Context` | config의 `extra_prompt`가 그대로 들어감 (없으면 생략) |
 
-### 금지 목록 (`## Rules`)
+### 규칙 (`## Rules`)
+
+워커가 *자기 작업*에 무엇을 쓰는지(sub-agent·dynamic workflow 허용)와 *팀*을 어떻게
+건드리는지(tmux 토폴로지·peer 채널 잠금)를 분리한다. 잠금은 후자에만 적용된다.
 
 ```
 - Do NOT edit files outside the scope described in your ## Role Context brief
-- Do NOT spawn sub-agents. Complete work in this worker session only.
+- You MAY use your own CLI's sub-agents and dynamic workflows for your own work.
+  They run inside this worker session, create no tmux panes and no team mailbox,
+  and are not team members — so they cannot collide with the peer model. The team
+  rules below constrain only how you touch the *team*, not what you run to do your
+  own task.
 - Do NOT create tmux panes/sessions.
 - Do NOT type into another worker's pane via tmux send-keys / tmux send-text /
   any pane-targeting tmux command. The mailbox is the ONLY peer channel.
 - Do NOT call `my-team msg` — that command was removed. user→worker is the user
   typing directly into your pane; worker→worker is `my-team api send-message`.
-- Do NOT run team spawning/orchestration commands (`my-team start` etc.).
+- Do NOT boot a nested my-team team (`my-team start` etc.). Spawning another team
+  inside a worker overlaps tmux topology and state. (Only my-team restriction —
+  your own CLI's sub-agents/workflows are fine, per the rule above.)
+- For touching the *team*, `my-team api ... --json` is your only peer channel —
+  do not reach for other my-team subcommands. (Does not restrict your own CLI's
+  sub-agents or dynamic workflows.)
 - Trust asynchrony: when you need an answer from a peer, send with
   expects_reply=true and continue your own work. Never invent a "faster path"
   that pushes text directly into a peer's pane.

@@ -241,12 +241,12 @@ When the user shuts the team down, you will see a shutdown sentinel:
 
 ## Rules
 - Do NOT edit files outside the scope described in your \`## Role Context\` brief
-- Do NOT spawn sub-agents. Complete work in this worker session only.
+- You MAY use your own CLI's sub-agents and dynamic workflows for your own work. They run inside this worker session, create no tmux panes and no team mailbox, and are not team members — so they cannot collide with the peer model. The team rules below constrain only how you touch the *team* (tmux topology + peer channel), not what you run to do your own task.
 - Do NOT create tmux panes/sessions (\`tmux split-window\`, \`tmux new-session\`, etc.).
 - Do NOT type into another worker's pane via \`tmux send-keys\` / \`tmux send-text\` / any pane-targeting tmux command. The mailbox (\`my-team api send-message\`) is the ONLY peer channel. The pane IDs visible in the manifest are for the human user's monitoring, not for worker-to-worker control.
 - Do NOT call \`my-team msg\` — that command was removed. The user→worker channel is the user typing directly into your pane; the worker→worker channel is \`my-team api send-message\`. There is no third channel.
-- Do NOT run team spawning/orchestration commands (for example: \`${teamCommand} ...\`).
-- Worker-allowed control surface is only: \`${teamApiCommand} ... --json\`.
+- Do NOT boot a nested my-team team (\`my-team start\`, \`${teamCommand} ...\`). Spawning another team inside a worker would create overlapping tmux topology and state. (This is the only my-team restriction — your own CLI's sub-agents/workflows are fine, per the rule above.)
+- For touching the *team*, \`${teamApiCommand} ... --json\` is your only peer channel — do not reach for other my-team subcommands. (This does not restrict your own CLI's sub-agents or dynamic workflows.)
 - If blocked, write {"state": "blocked", "reason": "..."} to your status file and surface the block in this pane's stdout so the user sees it.
 - Trust asynchrony: when you need an answer from a peer, send with \`expects_reply: true\` and continue your own work. Never invent a "faster path" that pushes text directly into a peer's pane.
 
