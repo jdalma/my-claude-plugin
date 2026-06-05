@@ -144,6 +144,10 @@ export async function runAddWorker(opts, deps = {}) {
         await _spawnWorkerInPane(manifest.session_name, paneId, startConfig);
 
         // ── Step 5: wait for the pane to be ready ──
+        // Best-effort, matching start.js:238 — waitForPaneReady returns false on
+        // timeout (it does not throw), and we deliberately ignore that: we still
+        // commit the worker even if its CLI didn't signal ready within 30s, just
+        // as `start` does for its initial workers. The worker may simply be slow.
         await _waitForPaneReady(paneId, { timeoutMs: 30000 });
 
         // ── Step 6: re-assert label + re-tile (cosmetic; ignore failures) ──
