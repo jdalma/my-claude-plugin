@@ -177,21 +177,21 @@ export async function runAddWorker(opts, deps = {}) {
         throw err;
     }
 
-    // ── Step 8: notifications (best-effort; never roll back past here) ──
+    // ── Step 8: join greeting (the new worker announces itself) ──
+    // D is the only one who can RELIABLY notify the existing team: it sends a
+    // mailbox greeting (not a best-effort in-pane tmux poke) to each existing
+    // peer, so a busy peer still receives it on its next self-poll. We trigger
+    // this through D's startup notice — the one active signal D gets on boot —
+    // because AGENTS.md alone is passive reference and would not make D act.
+    // ACK (expects_reply) gives the user visibility into who has not acknowledged
+    // D yet; it is NOT auto-redelivery. Existing workers reply by the
+    // expects_reply discipline already in their AGENTS.md — no change to them.
     try {
         await _sendToWorker(
             manifest.session_name, paneId,
-            `Team is live. Follow ${stateRoot}/workers/${opts.name}/AGENTS.md for the peer protocol; wait for user input in this pane or peer messages in your mailbox.`
+            `You just joined team '${opts.team}'. First action: read your AGENTS.md roster, then send-message every OTHER worker a short intro with expects_reply=true, and track their replies.`
         );
     } catch { /* warn-only */ }
-    for (const w of manifest.workers) {
-        try {
-            await _sendToWorker(
-                manifest.session_name, w.pane_id,
-                `New peer available: ${opts.name} [${opts.agentType}] — message it via my-team api send-message.`
-            );
-        } catch { /* warn-only */ }
-    }
 
     console.log(`[my-team] Added worker '${opts.name}' to team '${opts.team}' (pane ${paneId}, cwd: ${cwd}, cli: ${AGENT_CLI[opts.agentType].bin}).`);
     return { name: opts.name, pane_id: paneId, overlay_path: overlayPath };

@@ -267,9 +267,9 @@ test('anchors on the first ALIVE worker when an earlier pane is dead', async () 
     } finally { cleanup(ctx); }
 });
 
-// ── In-pane notice to ALL existing workers (decision §0 #1) ──
+// ── Join greeting: D announces itself; existing panes are NOT poked ──
 
-test('notifies each existing worker via in-pane notice', async () => {
+test('triggers the new worker to greet peers via its startup notice (not in-pane pokes to existing workers)', async () => {
     const ctx = setupTeam({ workers: ['alice', 'bob'] });
     const notices = [];
     try {
@@ -277,12 +277,15 @@ test('notifies each existing worker via in-pane notice', async () => {
             sendToWorker: async (_session, paneId, msg) => { notices.push({ paneId, msg }); return true; },
         });
         await runAddWorker(validOpts(), deps);
-        // one startup notice to the new pane (%9) + one peer notice per existing worker (alice %1, bob %2)
-        const peerNotices = notices.filter((n) => /New peer available/.test(n.msg));
-        assert.equal(peerNotices.length, 2, 'one peer notice per existing worker');
-        const targets = peerNotices.map((n) => n.paneId).sort();
-        assert.deepEqual(targets, ['%1', '%2'], 'notices target both existing worker panes');
-        assert.ok(peerNotices.every((n) => /carol/.test(n.msg)), 'notice names the new peer');
+        // Awareness is now D's job: the ONLY sendToWorker call targets the new
+        // pane (%9) and tells D to greet its peers with expects_reply. The old
+        // best-effort in-pane loop over existing panes (%1, %2) is gone.
+        assert.equal(notices.length, 1, 'exactly one notice — to the new pane only');
+        assert.equal(notices[0].paneId, '%9', 'notice targets the new worker pane');
+        assert.match(notices[0].msg, /expects_reply/, 'D is told to request acknowledgement');
+        assert.match(notices[0].msg, /OTHER worker/, 'D greets peers, not itself (avoids self-message throw)');
+        const existingPanes = notices.filter((n) => n.paneId === '%1' || n.paneId === '%2');
+        assert.equal(existingPanes.length, 0, 'existing worker panes are NOT poked in-pane anymore');
     } finally { cleanup(ctx); }
 });
 

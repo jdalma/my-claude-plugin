@@ -238,13 +238,17 @@ worker a new instruction, type into its tmux pane directly. The old `my-team
 msg` / `my-team add-task` commands were removed when task lifecycle was dropped.
 
 **Mid-session worker add**, by contrast, *is* a supported command: `my-team
-add-worker` splits a new pane into the running team, registers the worker in
+add-worker` splits a new pane into the running team and registers the worker in
 `manifest.workers` (which is all that's needed for peers to message it — `api
-send-message` enforces roster membership per call), and sends an in-pane notice
-to every existing worker so their live LLM learns the new peer's name. Existing
-workers' `AGENTS.md` rosters are static and are **not** rewritten; the in-pane
-notice is the only runtime-awareness channel (a running worker CLI already
-loaded its `AGENTS.md` at launch, so a disk rewrite would not reach it).
+send-message` enforces roster membership per call). The new worker then
+introduces itself: its startup notice tells it to `send-message` each existing
+peer with `expects_reply=true`. Going through the mailbox (not a best-effort
+in-pane tmux poke) means a busy peer still receives the greeting on its next
+self-poll, and the ACK lets you see which peers haven't acknowledged the newcomer
+yet (visibility — it does not auto-resend). Existing workers' `AGENTS.md` rosters
+are static and are **not** rewritten (a running worker CLI already loaded its
+`AGENTS.md` at launch, so a disk rewrite would not reach it); they reply to the
+greeting by the `expects_reply` discipline already in their AGENTS.md.
 
 ## State layout
 
