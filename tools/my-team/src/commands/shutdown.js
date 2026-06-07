@@ -7,7 +7,7 @@ import { unlink, rm, rename } from 'fs/promises';
 import { existsSync } from 'fs';
 import { homedir } from 'os';
 import { normalize, sep } from 'path';
-import { loadManifest, manifestPathForTeam } from './_manifest.js';
+import { manifestPathForTeam, resolveTeamManifest } from './_manifest.js';
 import { setStateRoot } from '../lib/state-root.js';
 import { killTeamSession, killWorkerPanes } from '../lib/tmux-session.js';
 
@@ -64,7 +64,12 @@ export async function backupAndRemoveStateRoot(stateRoot) {
 
 export async function runShutdown(opts) {
     if (!opts.team) throw new Error('--team is required');
-    const manifest = loadManifest(opts.team, opts.stateRoot);
+    // Resolve --team as EITHER a team name OR a tmux session name (what
+    // `tmux ls` shows). Adopt the canonical team_name so the sentinel path
+    // (killWorkerPanes) and the unsafe-wipe manifest path key off the real team
+    // name, not the session-name input.
+    const { manifest, teamName } = resolveTeamManifest(opts.team, opts.stateRoot);
+    opts.team = teamName;
     process.env.MY_TEAM_STATE_ROOT = manifest.state_root;
     setStateRoot(manifest.state_root);
 
