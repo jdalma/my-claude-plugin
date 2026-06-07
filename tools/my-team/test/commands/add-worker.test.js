@@ -146,6 +146,37 @@ test('rejects sanitized name collision (50-char truncation)', async () => {
     } finally { cleanup(ctx); }
 });
 
+// ── --team accepts a tmux session name, not just the team name ──
+
+test('resolves --team given a tmux session name (with :window suffix)', async () => {
+    // The fixture session_name is 'test-session'; pass it (with a :0 suffix, as
+    // a manifest stores it) as --team and confirm it resolves to team t1: the
+    // worker is appended and the greeting embeds the t1 overlay path.
+    const ctx = setupTeam({ workers: ['alice'] });
+    const notices = [];
+    try {
+        const deps = okDeps({
+            sendToWorker: async (_s, paneId, msg) => { notices.push({ paneId, msg }); return true; },
+        });
+        await runAddWorker(validOpts({ team: 'test-session:0' }), deps);
+        const m = readManifest(ctx);
+        assert.ok(m.workers.some((w) => w.name === 'carol'), 'worker appended via session-name resolve');
+        // Canonical team name (t1) — not the session name — drives the overlay path.
+        const expectedOverlay = join(ctx.stateRoot, 'workers', 'carol', 'AGENTS.md');
+        assert.ok(notices[0]?.msg.includes(expectedOverlay), 'greeting uses canonical-team overlay path');
+    } finally { cleanup(ctx); }
+});
+
+test('errors clearly when --team matches no team dir and no session name', async () => {
+    const ctx = setupTeam({ workers: ['alice'] });
+    try {
+        await assert.rejects(
+            () => runAddWorker(validOpts({ team: 'my-team-nope-deadbeef' }), okDeps()),
+            /No team matched|running/i
+        );
+    } finally { cleanup(ctx); }
+});
+
 test('rejects when cap (10 workers) would be exceeded', async () => {
     const ten = Array.from({ length: 10 }, (_, i) => `w${i}`);
     const ctx = setupTeam({ workers: ten });
@@ -284,6 +315,14 @@ test('triggers the new worker to greet peers via its startup notice (not in-pane
         assert.equal(notices[0].paneId, '%9', 'notice targets the new worker pane');
         assert.match(notices[0].msg, /expects_reply/, 'D is told to request acknowledgement');
         assert.match(notices[0].msg, /OTHER worker/, 'D greets peers, not itself (avoids self-message throw)');
+        // The notice MUST carry the absolute overlay path. The worker boots in
+        // its own cwd with nothing wiring the overlay in, so a bare "your
+        // AGENTS.md" leaves it unable to find its roster (the bug this fixes).
+        const expectedOverlay = join(ctx.stateRoot, 'workers', 'carol', 'AGENTS.md');
+        assert.ok(
+            notices[0].msg.includes(expectedOverlay),
+            `notice must embed the absolute overlay path (${expectedOverlay})`
+        );
         const existingPanes = notices.filter((n) => n.paneId === '%1' || n.paneId === '%2');
         assert.equal(existingPanes.length, 0, 'existing worker panes are NOT poked in-pane anymore');
     } finally { cleanup(ctx); }

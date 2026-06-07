@@ -444,11 +444,17 @@ async function paneInCopyMode(paneId) {
 /**
  * Send a short trigger message to a worker pane via tmux send-keys.
  * Robust against busy panes / copy-mode / trust prompts.
- * Returns false on failure (does not throw). Message must be < 200 chars.
+ * Returns false on failure (does not throw). Message must be <= 500 chars.
+ *
+ * The cap is 500 (was 200) because a worker's join/startup notice embeds the
+ * absolute path to its AGENTS.md overlay, and that path scales with team name
+ * (<=50) + worker name (unbounded by WORKER_NAME_PATTERN) + an arbitrary
+ * --state-root. The worst realistic notice is ~400 chars; 500 leaves margin
+ * while staying short enough for a single safe tmux send-keys -l injection.
  */
 export async function sendToWorker(_sessionName, paneId, message) {
-    if (message.length > 200) {
-        console.warn(`[tmux-session] sendToWorker: message rejected (${message.length} chars exceeds 200 char limit)`);
+    if (message.length > 500) {
+        console.warn(`[tmux-session] sendToWorker: message rejected (${message.length} chars exceeds 500 char limit)`);
         return false;
     }
     try {

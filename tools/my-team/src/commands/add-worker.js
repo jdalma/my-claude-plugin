@@ -21,7 +21,7 @@
 import { join } from 'path';
 import { writeFile } from 'fs/promises';
 
-import { loadManifest, manifestPathForTeam } from './_manifest.js';
+import { loadManifest, manifestPathForTeam, resolveTeamManifest } from './_manifest.js';
 import { WORKER_NAME_PATTERN, validateWorker } from '../config/parser.js';
 import { AGENT_CLI, validateAgentCLIs } from './start.js';
 import { sanitizeName } from '../lib/team-name.js';
@@ -56,7 +56,16 @@ export async function runAddWorker(opts, deps = {}) {
     // be undefined and slip through to a crash at spawn).
     const newWorker = { name: opts.name, cwd: opts.cwd, agent_type: opts.agentType };
 
-    const manifest = loadManifest(opts.team, opts.stateRoot);
+    // Resolve --team as EITHER a team name OR a tmux session name (what
+    // `tmux ls` shows). resolveTeamManifest scans manifests by session_name
+    // when the value is not a team dir. CRITICAL: adopt the canonical team
+    // name it returns — every downstream step (overlay teamName, MY_TEAM_WORKER
+    // env, greeting, and the Step 7 reload via opts.team) must key off the real
+    // team name, not the session-name input. Without this, a session-name input
+    // would split a pane and then fail the commit-point reload (dir not found),
+    // rolling back and killing the just-spawned pane.
+    const { manifest, teamName } = resolveTeamManifest(opts.team, opts.stateRoot);
+    opts.team = teamName;
 
     // Liveness: the team must actually be live. Anchor the new pane on the
     // first ALIVE worker pane — not blindly workers[0], which may have crashed
@@ -186,11 +195,29 @@ export async function runAddWorker(opts, deps = {}) {
     // ACK (expects_reply) gives the user visibility into who has not acknowledged
     // D yet; it is NOT auto-redelivery. Existing workers reply by the
     // expects_reply discipline already in their AGENTS.md — no change to them.
+    //
+    // The notice embeds the ABSOLUTE overlayPath (same as start.js:259), not a
+    // bare "your AGENTS.md": the worker CLI boots in its own cwd and nothing
+    // wires the overlay (which lives under state_root, far from cwd) into it, so
+    // without the explicit path the worker cannot find its roster and falls back
+    // to an unrelated team source. overlayPath is built from runtime values
+    // (state_root + worker name) — no session/team name is hardcoded.
+    const greeting =
+        `You just joined team '${opts.team}'. First action: read ${overlayPath} `
+        + 'for the roster + peer protocol, then introduce yourself to every OTHER '
+        + 'worker via send-message with expects_reply, as that file describes.';
     try {
-        await _sendToWorker(
-            manifest.session_name, paneId,
-            `You just joined team '${opts.team}'. First action: read your AGENTS.md roster, then send-message every OTHER worker a short intro with expects_reply=true, and track their replies.`
-        );
+        const sent = await _sendToWorker(manifest.session_name, paneId, greeting);
+        if (sent === false) {
+            // sendToWorker rejects (returns false) past its char cap or on a
+            // busy/copy-mode pane. Surface it: a silently-dropped greeting means
+            // the worker never learns its roster path — the exact failure this
+            // command exists to prevent.
+            console.warn(
+                `[my-team] join greeting was NOT delivered to '${opts.name}' (pane ${paneId}). `
+                + `The worker may not know its AGENTS.md path — point it to ${overlayPath} manually.`
+            );
+        }
     } catch { /* warn-only */ }
 
     console.log(`[my-team] Added worker '${opts.name}' to team '${opts.team}' (pane ${paneId}, cwd: ${cwd}, cli: ${AGENT_CLI[opts.agentType].bin}).`);
