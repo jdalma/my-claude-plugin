@@ -277,9 +277,13 @@ export async function createTeamSession(teamName, workers, options = {}) {
     }
 
     // === CORE CHANGE: per-worker cwd ===
-    // Split direction alternates h/v so tiled layout (applied below) has
-    // something to work with even before re-layout. Final geometry is
-    // determined by `select-layout tiled`.
+    // Split direction alternates h/v so tiled layout has something to work with.
+    // CRITICAL: re-tile after EVERY split, not just once at the end. A chain
+    // split (each pane carved out of the previous one) halves the same lineage
+    // each step — 24 rows → 12 → 6 → 3 → "no space for new pane" around the 7th
+    // pane, even though the window has ample room for the final grid. Re-tiling
+    // after each split lands the next split on a healthy grid cell instead of a
+    // degenerate sliver, so e.g. 8 workers + host (9 panes) fit even at 80x24.
     for (let i = 0; i < workers.length; i++) {
         const w = workers[i];
         if (!w?.cwd) throw new Error(`Worker '${w?.name}' missing cwd`);
@@ -293,6 +297,10 @@ export async function createTeamSession(teamName, workers, options = {}) {
         const paneId = splitResult.stdout.split('\n')[0]?.trim();
         if (paneId) {
             workerPanes.push({ name: w.name, paneId });
+            // Re-tile immediately so the next split has a full-size cell to halve.
+            try {
+                await tmuxExecAsync(['select-layout', '-t', teamTarget, 'tiled']);
+            } catch { /* ignore — applyTeamLayout below re-tiles as well */ }
             // Store worker name in a pane-scoped user option. pane-border-format
             // reads @worker_name, which the worker CLI cannot overwrite via OSC.
             try {
@@ -382,6 +390,36 @@ function paneHasTrustPrompt(captured) {
         tail.some((l) => /Yes,\s*continue|No,\s*quit|Press enter to continue/i.test(l));
 }
 
+/**
+ * True when the worker CLI is showing a TOOL-PERMISSION modal — the numbered
+ * "Do you want to … ? / ❯ 1. Yes / 2. … / 3. No" dialog Claude Code raises
+ * before running a tool (edit/overwrite/run/fetch/…). This is NOT the
+ * directory-trust prompt (see paneHasTrustPrompt) and NOT a normal input line.
+ *
+ * Why this matters for messaging: while this modal is up, the input line does
+ * not accept text and a bare Enter SELECTS the highlighted option (e.g. "1.
+ * Yes"). So sending a worker a message during a permission modal both loses the
+ * message AND silently approves whatever the worker was asking about. sendTo
+ * Worker must wait for the modal to clear instead of typing into it.
+ *
+ * Detection uses the version-stable invariants observed across Read/Edit/Write
+ * permission modals: a "Do you want to …?" question line, a "❯ N. Yes" / "N.
+ * No" numbered menu, and the "Esc to cancel" footer. We require the menu plus
+ * either the question or the footer so a stray "Do you want to" inside ordinary
+ * transcript text cannot false-positive.
+ */
+export function paneHasPermissionPrompt(captured) {
+    const lines = captured.split('\n').map((l) => l.replace(/\r/g, '').trim()).filter((l) => l.length > 0);
+    const tail = lines.slice(-14);
+    const hasNumberedYes = tail.some((l) => /^[❯>]?\s*1\.\s*Yes\b/i.test(l));
+    const hasNumberedNo = tail.some((l) => /^\s*\d+\.\s*No\b/i.test(l));
+    const hasMenu = hasNumberedYes && hasNumberedNo;
+    if (!hasMenu) return false;
+    const hasQuestion = tail.some((l) => /Do you want to .+\?/i.test(l));
+    const hasFooter = tail.some((l) => /Esc to cancel/i.test(l));
+    return hasQuestion || hasFooter;
+}
+
 function paneIsBootstrapping(captured) {
     const lines = captured.split('\n').map((l) => l.replace(/\r/g, '').trim()).filter((l) => l.length > 0);
     return lines.some((l) =>
@@ -421,7 +459,10 @@ export async function waitForPaneReady(paneId, opts = {}) {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
         const captured = await capturePaneAsync(paneId);
-        if (paneLooksReady(captured) && !paneHasActiveTask(captured)) return true;
+        // A permission modal ("❯ 1. Yes") starts with ❯, so paneLooksReady
+        // mistakes it for an idle prompt. Treat it as not-ready: messaging into
+        // it would lose the text and the Enter would select an option.
+        if (paneLooksReady(captured) && !paneHasActiveTask(captured) && !paneHasPermissionPrompt(captured)) return true;
         await sleep(pollIntervalMs);
     }
     console.warn(`[tmux-session] waitForPaneReady: pane ${paneId} timed out after ${timeoutMs}ms`);
@@ -430,6 +471,45 @@ export async function waitForPaneReady(paneId, opts = {}) {
 
 function paneTailContainsLiteralLine(captured, text) {
     return normalizeTmuxCapture(captured).includes(normalizeTmuxCapture(text));
+}
+
+/**
+ * True if `message` is still sitting UNSENT in the worker's input line.
+ *
+ * Why not paneTailContainsLiteralLine: once a message is submitted, the worker
+ * CLI echoes it into the transcript (e.g. "❯ <message>" scrollback, or the
+ * agent quoting it back). A whole-screen substring match then reports the
+ * message as "still there" forever — so sendToWorker returns false on a
+ * delivery that actually succeeded and keeps firing pointless Enters.
+ *
+ * The input line is the LAST prompt-marker line on screen (❯ / › / >) plus the
+ * wrapped continuation rows beneath it (a long line that overflowed the pane
+ * width). We reconstruct only that region and check whether the message text
+ * survives there. Transcript echoes above the final prompt are ignored.
+ */
+export function messageStillInInputLine(captured, message) {
+    const rows = captured.replace(/\r/g, '').split('\n').map((l) => l.replace(/\s+$/u, ''));
+    // Find the last line that opens with a prompt marker.
+    let promptIdx = -1;
+    for (let i = rows.length - 1; i >= 0; i--) {
+        if (/^\s*[›>❯]\s?/u.test(rows[i])) { promptIdx = i; break; }
+    }
+    if (promptIdx === -1) {
+        // No prompt marker visible (e.g. a modal/transcript fills the tail);
+        // fall back to the legacy whole-screen check rather than guess.
+        return paneTailContainsLiteralLine(captured, message);
+    }
+    // Collect the prompt line + following non-empty rows until a UI boundary
+    // (border line of ─/═, or a status/footer line). Those rows are the
+    // wrapped remainder of what the user is still typing.
+    const region = [rows[promptIdx].replace(/^\s*[›>❯]\s?/u, '')];
+    for (let i = promptIdx + 1; i < rows.length; i++) {
+        const line = rows[i];
+        if (line.trim() === '') break;
+        if (/^[\s─═-]+$/u.test(line)) break;
+        region.push(line);
+    }
+    return normalizeTmuxCapture(region.join(' ')).includes(normalizeTmuxCapture(message));
 }
 
 async function paneInCopyMode(paneId) {
@@ -442,8 +522,26 @@ async function paneInCopyMode(paneId) {
 }
 
 /**
+ * Block until a tool-permission modal in `paneId` clears, or the timeout
+ * elapses. We intentionally send NO keys while it is up — a stray Enter would
+ * select an option (approving/denying whatever the worker asked). The user or
+ * the worker itself owns that decision; we just wait for it to be made.
+ *
+ * Returns true once the modal is gone, false if it was still up at the
+ * deadline (caller should then refuse to send rather than type into it).
+ */
+async function waitForPermissionPromptClear(paneId, timeoutMs = 30_000, pollIntervalMs = 300) {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+        if (!paneHasPermissionPrompt(await capturePaneAsync(paneId))) return true;
+        await sleep(pollIntervalMs);
+    }
+    return false;
+}
+
+/**
  * Send a short trigger message to a worker pane via tmux send-keys.
- * Robust against busy panes / copy-mode / trust prompts.
+ * Robust against busy panes / copy-mode / trust prompts / permission modals.
  * Returns false on failure (does not throw). Message must be <= 500 chars.
  *
  * The cap is 500 (was 200) because a worker's join/startup notice embeds the
@@ -463,6 +561,16 @@ export async function sendToWorker(_sessionName, paneId, message) {
         };
         if (await paneInCopyMode(paneId)) return false;
 
+        // A tool-permission modal is up: typing text does nothing and Enter
+        // selects an option. Wait for the worker/user to answer it before we
+        // touch the pane; bail if it never clears so we never approve by proxy.
+        if (paneHasPermissionPrompt(await capturePaneAsync(paneId))) {
+            if (!await waitForPermissionPromptClear(paneId)) {
+                console.warn(`[tmux-session] sendToWorker: pane ${paneId} has an unanswered permission modal; not sending`);
+                return false;
+            }
+        }
+
         const initialCapture = await capturePaneAsync(paneId);
         const paneBusy = paneHasActiveTask(initialCapture);
         if (paneHasTrustPrompt(initialCapture)) {
@@ -474,6 +582,13 @@ export async function sendToWorker(_sessionName, paneId, message) {
 
         for (let round = 0; round < 6; round++) {
             await sleep(100);
+            // The worker may have raised a permission modal between rounds (e.g.
+            // it started acting on the text we just typed). Sending Enter now
+            // would pick a modal option, not submit our line — wait it out.
+            if (paneHasPermissionPrompt(await capturePaneAsync(paneId))) {
+                if (!await waitForPermissionPromptClear(paneId)) return false;
+                continue;
+            }
             if (round === 0 && paneBusy) {
                 await sendKey('Tab'); await sleep(80); await sendKey('C-m');
             } else {
@@ -481,7 +596,9 @@ export async function sendToWorker(_sessionName, paneId, message) {
             }
             await sleep(140);
             const check = await capturePaneAsync(paneId);
-            if (!paneTailContainsLiteralLine(check, message)) return true;
+            // Submitted once the message leaves the INPUT line — not merely once
+            // it disappears from the whole screen (the transcript keeps an echo).
+            if (!messageStillInInputLine(check, message)) return true;
             await sleep(140);
         }
 
@@ -489,7 +606,7 @@ export async function sendToWorker(_sessionName, paneId, message) {
         await sendKey('C-m'); await sleep(120); await sendKey('C-m'); await sleep(140);
         const final = await capturePaneAsync(paneId);
         if (!final || final.trim() === '') return false;
-        return !paneTailContainsLiteralLine(final, message);
+        return !messageStillInInputLine(final, message);
     } catch {
         return false;
     }
