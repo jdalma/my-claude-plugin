@@ -287,9 +287,9 @@ inheriting the previous run's `events.jsonl` / `archive` / `mailbox`.
   teams from one config **concurrently** is still unsupported — they would
   share one `state_root`; give each a distinct `team_name` for that.
 
-## What's borrowed from OMC
+## Attribution
 
-See `PLAN.md` Appendix A. Briefly:
+Adapted modules are listed in `PLAN.md` Appendix A. Briefly:
 
 - **Borrowed verbatim** — `tmux-utils.js`, `tmux-comm.js` (low-level), `fs-utils.js`, `team-name.js`
 - **Modified** — `tmux-session.js` (per-worker cwd in `createTeamSession`), `worker-bootstrap.js` (task lifecycle / inbox.md removed), `state-paths.js` (slimmed to mailbox/archive/spool only)

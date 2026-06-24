@@ -6,7 +6,7 @@ disable-model-invocation: true
 
 # /plan — Vertical Slice Planner
 
-OMC만 의존. 외부 플러그인 의존 X. 사용자 입력 받아 다음 4단계 진행.
+외부 플러그인 의존 없음 (CLI-중립). 사용자 입력 받아 다음 4단계 진행.
 
 ## ⛔ 호출 규칙
 
@@ -50,17 +50,27 @@ publish 위치를 정하기 위해 feature-name (kebab-case slug)을 먼저 확�
 - 외부 종속(spec/OMS 등)은 port 뒤 **가장 얇은 브리지**로 막고 합의 안건 등록. **ADR/위키로 격상 금지** (결정이 굳기 전 문서화는 재작업을 부른다).
 - 빈 칸·미열거가 압박 장치다 — 표에 없는 가정 = 아직 안 드러낸 가정.
 
-> 출처: vault `Decision - Question Debt soft hard 복합 기준`
+> 같은 영역에서 이미 내린 결정이 있으면 `features/<feature-name>/task-index.md`의 Decisions 섹션을 먼저 참조해 중복 판단을 피한다.
 
 ## Step 2: 모호함 해소 (게이트)
 
 ```
 hard 결정 0개  → 즉시 Step 3
-hard 결정 1-3개 → 직접 grill (한 번에 1질문, 추천답 동봉, 코드베이스 우선 탐색)
-hard 결정 4+개 → omc:deep-interview Skill 위임 (mathematical ambiguity gating)
+hard 결정 1-3개 → 직접 grill
+hard 결정 4+개 → 컴포넌트 분해 → 회전 grill
 ```
 
-vault decision 검색 — 같은 영역 기존 결정 있으면 인용 (사용자 재질문 회피).
+**직접 grill 공통 규칙** (모든 케이스):
+- 한 번에 1질문, 추천답을 동봉한다.
+- 답을 찾을 땐 코드베이스를 먼저 탐색한다 (grep·기존 결정 우선, 사용자 재질문 회피).
+- 같은 영역에서 이미 내린 결정이 있으면 `features/<feature-name>/task-index.md`의 Decisions 섹션을 인용한다.
+
+**hard 4+개 — 컴포넌트 분해 → 회전 grill**:
+한 번에 4개 이상이면 질문이 뒤엉키므로, grill 전에 먼저 구조를 잡는다.
+
+1. **컴포넌트 분해**: hard 결정들을 top-level 컴포넌트(1-6개)로 묶고, "이 토폴로지가 맞나"를 사용자에게 1질문으로 확정한다.
+2. **약한 차원 우선 + 회전**: 각 컴포넌트의 goal / constraints / criteria 중 *가장 모호한 지점*부터 grill한다. 한 컴포넌트만 깊게 파지 말고, 라운드마다 다른 컴포넌트로 회전해 형제 컴포넌트가 방치되지 않게 한다.
+3. **종료 기준**: 모든 활성 컴포넌트가 goal / constraints / criteria에서 충분히 명확해지면 grill을 끝낸다.
 
 ## Step 3: Vertical Slice 분해
 
@@ -126,7 +136,7 @@ plan_input: [원래 요청 한 줄 요약]
 # Task Index — [기능 이름]
 
 ## Open Questions (resolved)
-- [질문1] → [결정] (vault: [참조] 또는 grill 결과)
+- [질문1] → [결정] (출처: 기존 Decisions 참조 또는 grill 결과)
 
 ## Slices (dependency order)
 - [ ] 1. **[tracer bullet]** [한 줄 설명]
@@ -159,7 +169,7 @@ plan_input: [원래 요청 한 줄 요약]
 **항목 표기 컨벤션**: 각 항목은 `[<상태>][<출처>]` 두 태그를 머리에 박는다.
 
 상태 태그:
-- `[resolved]` — 확정된 결정 (vault 인용 또는 grill 결과)
+- `[resolved]` — 확정된 결정 (기존 Decisions 인용 또는 grill 결과)
 - `[pending]` — 미해결, 다음 슬라이스 또는 plan 재호출 시 처리 (예: slice-tdd가 slice 분해 중 발견한 추가 후보)
 - `[trap]` — 함정·실패 패턴 (handoff Traps to Avoid가 인용)
 
@@ -170,8 +180,8 @@ plan_input: [원래 요청 한 줄 요약]
 > behavior 단위(예: B3, B2.guard)는 출처에 박지 않는다. behavior 단위 결정은 `tdd-state/slice-N.md`의 `## Cited decisions` / `## Cycle log`에 이미 자동 누적되므로 여기 중복 기록할 필요 없다. task-index.md의 Decisions는 *"어느 슬라이스 작업 중에 나온 수명 긴 결정인가"*만 추적한다.
 
 **예시**:
-- [resolved][plan] OAuth provider: Google 채택 (Step 2 hard 모호성 해소, vault: `Decision - OAuth provider 선택`)
-- [resolved][slice-2] 결제 환불 기한: 14일 (vault: `Decision - 환불 기한`)
+- [resolved][plan] OAuth provider: Google 채택 (Step 2 hard 모호성 해소, grill 결과)
+- [resolved][slice-2] 결제 환불 기한: 14일 (기존 Decisions 인용)
 - [resolved][slice-2] 클라이언트 캐시 TTL: 5분 (직접 grill, 합리적 기본값)
 - [pending][slice-3] OAuth scope 결정 — Google API 가이드 확인 필요
 - [trap][slice-1] FooService.refresh는 lock 없이 병렬 호출 시 race 발생
@@ -211,12 +221,9 @@ frontmatter의 `feature_name`은 항상 포함한다. takeover의 cross-branch �
 >
 > 세션 종료 시 `/handoff` 명시 호출 → 다음 세션은 `/takeover` 명시 호출로 인수.
 
-## Hard Dependencies (모두 OMC)
+## Dependencies
 
-- `omc:deep-interview` (Step 2의 hard 4+ 케이스)
-- `mcp__vault-decision__advise` (Step 1, 2의 vault 조회)
-
-설치 안 되어 있으면: *"omc 플러그인 설치하세요: /oh-my-claudecode:setup"* 안내 후 중단.
+외부 플러그인 의존 없음 (CLI-중립). hard 모호성 해소(Step 2)와 기존 결정 참조(Step 1·2)는 plan 본문과 `features/<feature-name>/task-index.md`의 Decisions 섹션만으로 동작한다.
 
 ## Done When
 
@@ -237,7 +244,7 @@ frontmatter의 `feature_name`은 항상 포함한다. takeover의 cross-branch �
 
 | 파일 | 생성 | 갱신 | 읽기만 |
 |------|------|------|--------|
-| `task-index.md` | **plan** / handoff (Step 2.5 신규 슬롯 생성 시) | **plan** (재진입 시 overwrite/append/abort/fill), slice-tdd (슬라이스 진행 마커 토글 y/n + Decisions 섹션 vault 인용 시), handoff (TODO 섹션 일괄 y/n) | takeover |
+| `task-index.md` | **plan** / handoff (Step 2.5 신규 슬롯 생성 시) | **plan** (재진입 시 overwrite/append/abort/fill), slice-tdd (슬라이스 진행 마커 토글 y/n + Decisions 섹션 인용 시), handoff (TODO 섹션 일괄 y/n) | takeover |
 | `tdd-state/slice-N.md` | slice-tdd (슬라이스 시작 시) | slice-tdd (RED→GREEN 사이클마다) | handoff, takeover |
 
 이 매트릭스를 벗어난 수정은 금지. plan은 `tdd-state/`를 만들지 않는다 (slice-tdd가 슬라이스 시작 시 생성).
@@ -246,10 +253,10 @@ frontmatter의 `feature_name`은 항상 포함한다. takeover의 cross-branch �
 
 ## Anti-Patterns
 
-- ❌ 사용자에게 hard 4+ 질문을 직접 grill (deep-interview 위임 안 함)
+- ❌ hard 4+를 컴포넌트 분해·회전 없이 한 컴포넌트만 깊게 grill (형제 컴포넌트 방치)
 - ❌ 모호함 미해소 상태로 슬라이싱 진입
 - ❌ horizontal slice 생성
-- ❌ vault 조회 생략 (같은 결정 반복 질문)
+- ❌ 기존 결정 참조 생략 (같은 결정 반복 질문)
 - ❌ slice-tdd 핸드오프 안내 누락
 - ❌ `features/` 디렉토리 무단 생성 (사용자 허락 없이)
 - ❌ feature-name을 사용자 확인 없이 결정

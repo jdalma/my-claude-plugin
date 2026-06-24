@@ -9,7 +9,7 @@
 - `plugins/orchestrator/` — v2 6-Phase 멀티 에이전트 오케스트레이션 (Question Debt 기반). marketplace.json에 등록됨.
 
 도구 (마켓플레이스 외):
-- `tools/my-team/` — tmux 멀티프로젝트 워커 오케스트레이션 CLI (npm 패키지, OMC sisyphus에서 fork)
+- `tools/my-team/` — tmux 멀티프로젝트 워커 오케스트레이션 CLI (npm 패키지)
 
 ## 운영 원칙
 

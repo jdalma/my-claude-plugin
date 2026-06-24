@@ -99,7 +99,7 @@ git diff main --stat
 
 **탐지 대상 (반드시 Claude의 `Glob` 도구 사용 — 셸 `**` glob은 zsh에서 `NOMATCH`로 실패할 수 있음):**
 - `docs/**/TODO*.md`, `docs/**/ROADMAP*.md`, `docs/**/PLAN*.md`
-- `.omc/plans/*.md`
+- `docs/plans/*.md`, `plans/*.md`
 - 레포 루트의 `TODO.md`, `ROADMAP.md`
 
 **탐지 결과 처리:**

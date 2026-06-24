@@ -5,7 +5,7 @@ description: plan이 산출한 features/<feature-name>/task-index.md의 특정 �
 
 # slice-tdd — Vertical Slice Implementation Skill
 
-OMC 의존만. 다른 플러그인 의존 X (필요한 원칙은 번들 .md로 흡수).
+외부 플러그인 의존 없음(CLI-중립). 필요한 원칙은 번들 .md로 흡수.
 
 > 본 스킬은 이전 이름이 `tdd`였다. 트리거 충돌(다른 플러그인의 `tdd` 키워드/스킬과 겹침)을 피하기 위해 `slice-tdd`로 변경됨. 외부 문서·세션 메모에서 "tdd 스킬"이라는 표기가 보이면 이 스킬을 가리키는 것으로 해석한다.
 
@@ -32,9 +32,9 @@ slice-tdd는 **어떤 단계에서도** `git commit` / `git add` / `git push`를
 
 세부 게이트는 *Step 5.6* 참조.
 
-## Vault Decision 인용 (언제든)
+## 기존 결정 인용 (언제든)
 
-이 스킬은 **`/plan`과 마찬가지로 Vault decision을 자유롭게 인용**할 수 있다. 별도의 정해진 시점 없이 다음 상황에서 즉시 `mcp__vault-decision__advise` 또는 관련 도구를 호출:
+이 스킬은 **`/plan`이 `task-index.md`의 `## Decisions` 섹션에 남긴 기존 결정을 자유롭게 인용**할 수 있다. 별도의 정해진 시점 없이 다음 상황에서 즉시 해당 섹션을 참조:
 
 - Step 0에서 *test seam·real vs mock 결정*에 동일 영역 기존 결정이 있을 때
 - Step 1에서 behavior 표현·경계 결정 시 (예: "401/403 구분 정책")
@@ -42,10 +42,10 @@ slice-tdd는 **어떤 단계에서도** `git commit` / `git add` / `git push`를
 - Step 4 refactor에서 *모듈 경계·네이밍* 결정 시
 - 가정 흔들림 → `/plan` 재진입 직전 (재진입 비용 회피용 마지막 점검)
 
-인용 시 결과를 `features/<feature-name>/task-index.md`의 `## Decisions` 섹션에 `[resolved][slice-<현재 슬라이스 번호>]` 표기와 출처(vault 경로 또는 grill 결과)로 기록한다. 같은 결정을 두 번 토론하지 않는다.
+새 결정이 생기면 `features/<feature-name>/task-index.md`의 `## Decisions` 섹션에 `[resolved][slice-<현재 슬라이스 번호>]` 표기와 출처로 기록한다. 같은 결정을 두 번 토론하지 않는다.
 
 표기 예시:
-- `[resolved][slice-2] 결제 환불 기한: 14일 (vault: Decision - 환불 기한)`
+- `[resolved][slice-2] 결제 환불 기한: 14일`
 - `[trap][slice-1] FooService.refresh는 lock 없이 병렬 호출 시 race`
 
 > behavior 단위(B1, B2.guard 등)는 출처에 넣지 않는다 — `tdd-state/slice-N.md`의 `## Cited decisions` / `## Cycle log`에 이미 자동 누적되므로 task-index.md에는 슬라이스 단위까지만 추적한다.
@@ -125,8 +125,6 @@ Iron Law: **실패하는 테스트 없이 프로덕션 코드를 짜지 않는�
 
 이번 메시지에서 검증 명령을 *직접 실행*해 그 출력(exit code·실패 수 포함)을 읽기 전에는 "완료"를 주장하지 않는다. 증거 없는 완료 주장은 검증 실패와 같다 — "통과할 것" "잘 됐을 듯"은 증거가 아니다. 5단계 Gate Function과 흔한 실패 표는 `verification.md`.
 
-선택적: `omc:verify` Skill 호출로 외부 검증 게이트 추가.
-
 ### Step 5.5 — 슬라이스 완료 시 task-index.md 진행 마커 토글 (사용자 확인)
 
 해당 슬라이스의 모든 leaf가 GREEN + verification 통과 시점에서, `features/<feature-name>/task-index.md`의 *해당 슬라이스 항목 마커*를 `[~]→[x]`로 토글하는 변경을 사용자에게 제안한다.
@@ -194,21 +192,11 @@ Iron Law: **실패하는 테스트 없이 프로덕션 코드를 짜지 않는�
 
 세션 종료 시 `/handoff` 명시 호출 → `task-index.md`의 *TODO 섹션* 일괄 동기화 + `.claude/handoff/` 세션 dump 생성. 다음 세션은 `/takeover`로 인수.
 
-## 실행 방식 — 메뉴 (사용자 *명시* 선택 시에만)
+## 실행 방식
 
-이 스킬은 *워크플로우만* 명세한다. 자동으로 어느 실행기도 호출하지 않는다.
+이 스킬은 *워크플로우만* 명세한다 — 수동으로 RED→GREEN 사이클을 직접 진행한다.
 
-사용자가 명시적으로 *"ralph로 돌려줘"* 류 요청 시에만 다음 메뉴 참조:
-
-| 방식 | 사용자가 이렇게 요청할 때 |
-|------|------------------------|
-| **수동** (기본) | 명시 요청 없음 — 그냥 RED→GREEN 진행 |
-| **`omc:ralph`** | "이 슬라이스 ralph로 돌려" |
-| **`omc:ultrawork`** | "behavior들 병렬로 돌려" |
-| **`omc:autopilot`** | "슬라이스 전체 autopilot으로" |
-
-🚫 **자동 escalate 금지** — LLM이 *"이게 적합해 보이니 ralph 호출"* 하면 안 됨.
-📋 vault `OMC 스킬 역할별 화이트리스트` 결정 준수. 위험 도구 자동 호출은 명시적 차단 대상.
+🚫 **자동 escalate 금지** — LLM이 *"이게 적합해 보이니"* 라며 다른 자동화 도구를 임의로 호출하면 안 됨. 위험 도구의 자동 호출은 사용자 명시 요청이 없는 한 차단 대상이다.
 
 ## 상태 관리
 
@@ -250,9 +238,8 @@ started: <date>
   - [ ] handler maps to 409
   - [ ] no audit log on rejection
 
-## Cited decisions (vault·local)
-- vault: `Decision - 비관적 락 정책` → 비관적 락 채택
-- local: `features/<feature-name>/task-index.md` `## Decisions` 섹션 `[resolved]` 항목
+## Cited decisions
+- `features/<feature-name>/task-index.md` `## Decisions` 섹션 `[resolved]` 항목 (예: 비관적 락 채택)
 
 ## Cycle log
 - 2026-05-09 14:32 — RED B2.guard.invalid → GREEN
@@ -292,14 +279,7 @@ Last cycle: <timestamp>
 
 ## Dependencies
 
-**Hard**: 없음. 워크플로우 명세만 제공하므로 외부 도구 의존 X.
-
-**Optional integrations** (사용자 명시 호출 시에만):
-- `omc:verify` — Step 5 외부 검증 게이트 보강
-- `omc:trace` — 디버깅 발생 시 가설 경쟁
-- 실행기 4종 (수동/`omc:ralph`/`omc:ultrawork`/`omc:autopilot`)
-
-⚠️ optional은 자동 호출 X. 사용자가 명시 요청할 때만 사용.
+**Hard**: 없음. 워크플로우 명세만 제공하므로 외부 도구·플러그인 의존 X (CLI-중립). 검증·디버깅·실행은 모두 수동으로 직접 수행한다.
 
 ## 번들 문서
 
@@ -327,7 +307,7 @@ Last cycle: <timestamp>
 
 | 파일 | 생성 | 갱신 | 읽기만 |
 |------|------|------|--------|
-| `task-index.md` | plan / handoff (Step 2.5 신규 슬롯 생성 시) | plan (재진입 시 overwrite/append/abort/fill), **slice-tdd** (슬라이스 진행 마커 토글 y/n + Decisions 섹션 vault 인용 시), handoff (TODO 섹션 일괄 y/n) | takeover |
+| `task-index.md` | plan / handoff (Step 2.5 신규 슬롯 생성 시) | plan (재진입 시 overwrite/append/abort/fill), **slice-tdd** (슬라이스 진행 마커 토글 y/n + Decisions 섹션 기존 결정 인용 시), handoff (TODO 섹션 일괄 y/n) | takeover |
 | `tdd-state/slice-N.md` | **slice-tdd** (슬라이스 시작 시) | **slice-tdd** (RED→GREEN 사이클마다) | handoff, takeover |
 
 이 매트릭스를 벗어난 수정은 금지. 특히 takeover는 어느 파일도 수정하지 않는다.

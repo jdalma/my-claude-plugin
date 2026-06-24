@@ -6,7 +6,7 @@ aliases: []
 
 # my-team Skill
 
-Spawn coordinated CLI workers (claude / codex / gemini / cursor) across multiple project directories. Adapts the OMC `team` tmux pane mechanism, lifts its single-cwd constraint, and keeps mailbox-based worker-to-worker communication.
+Spawn coordinated CLI workers (claude / codex / gemini / cursor) across multiple project directories. Each worker runs in its own tmux pane at its own project cwd, with mailbox-based worker-to-worker communication.
 
 ## ⚠️ Prerequisite — CLI 설치 확인
 
@@ -66,22 +66,18 @@ my-team shutdown --team my-feature
 
 **도중 작업 지시**: `my-team msg` / `my-team add-task` 명령은 없다. 사용자가 워커한테 추가 일감을 줄 때는 그 워커의 tmux pane에 직접 입력한다. 워커끼리 일감을 위임할 때는 `my-team api send-message`로 peer 메시지를 보낸다.
 
-## When to use vs OMC `team`
+## When to use
 
-- **`/oh-my-claudecode:team`** — single repo, native Claude Code subagents
-- **`/oh-my-claudecode:omc-teams`** — single repo cwd, external CLI workers
-- **`my-team`** — **multiple unrelated repos**, external CLI workers, per-worker cwd
+Reach for `my-team` when **multiple unrelated repos** need to be edited and discussed by separate external CLI workers in one coordinated session, each rooted at its own `cwd`.
 
-## Key differences from OMC
+## Defining characteristics
 
-| Feature | OMC `omc team` | `my-team` |
-|---------|----------------|-----------|
-| Per-worker cwd | ❌ single cwd | ✅ each worker's `cwd` |
-| Git worktree mgmt | optional `OMC_TEAM_WORKTREE_MODE` | ❌ (user-owned) |
-| Task lifecycle (claim/transition) | full | ❌ removed; my-team tracks no tasks |
-| User→worker channel | inbox.md + `omc team msg` | user types directly into the worker's pane |
-| State root | `~/.claude/teams/` | `~/.my-team/sessions/<team>/` |
-| CLI prefix | `omc team api ...` | `my-team api ...` |
+- **Per-worker cwd** — each worker runs at its own `cwd`; a single team can span multiple unrelated repos.
+- **No git worktree management** — worktrees are user-owned; my-team does not create or integrate them.
+- **No task lifecycle** — my-team tracks no shared task objects (no claim/transition); roles are fixed at spawn.
+- **User→worker channel** — the user types directly into the worker's tmux pane (no message CLI command).
+- **State root** — `~/.my-team/sessions/<team>/`.
+- **Peer-symmetric** — no leader/orchestrator worker; workers communicate peer-to-peer via mailbox.
 
 ## Worker AGENTS.md
 
@@ -119,4 +115,4 @@ my-team은 **peer-to-peer 모델**이다. leader/orchestrator 워커도, task li
 | `MY_TEAM_NO_RC` | (unset) | if `1`, workers skip sourcing zshrc/bashrc |
 | `MY_TEAM_SHELL_READY_TIMEOUT_MS` | `30000` | how long to wait for a worker CLI prompt |
 
-See PLAN.md for the full 31-criterion acceptance set, OMC borrowing manifest, and design rationale.
+See PLAN.md for the full 31-criterion acceptance set and design rationale.
