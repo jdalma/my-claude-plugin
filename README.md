@@ -26,3 +26,14 @@
 ## 로컬 동기화
 
 레포 변경 후 로컬 캐시(`~/.claude/plugins/cache/.../workflow/<hash>/`)에 반영하려면 새 Claude Code 세션을 열거나 SessionStart 훅으로 rsync한다. 자세한 동기화 패턴은 `CLAUDE.md` 참조.
+
+## CLI-중립 스킬 (codex/gemini 공유, 선택)
+
+CLI-중립인 스킬(A등급)은 `plugins/workflow/skills/<name>/SKILL.md`를 변환 없이 그대로 복사하면 codex/gemini에서도 동작한다. 적격 여부는 `/portability-check`로 먼저 확인한다(A=적격, C=부적격). 적격 디렉토리를 외부 sync 도구에 넘기는 등록 예시(prefix 권장값 `my`):
+
+```
+# sync 도구 설정에 한 줄 (로컬에서만, git 비추적)
+<repo>/plugins/workflow/skills | my | cli-neutral
+```
+
+실제 복사·prefix 부여·codex 배치는 sync 도구의 책임이며 이 레포는 깨끗한 SSOT 디렉토리만 제공한다.
