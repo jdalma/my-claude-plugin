@@ -19,7 +19,7 @@ disable-model-invocation: true
 
 세션이 끝날 때 두 가지를 동시에 한다:
 
-1. **세션 dump**: 다음 세션이 hypothesis로 다룰 수 있는 형태로 작업 상태를 `.claude/handoff/`에 떨어뜨린다.
+1. **세션 dump**: 다음 세션이 hypothesis로 다룰 수 있는 형태로 작업 상태를 `docs/handoffs/`에 떨어뜨린다.
 2. **features/ 동기화**: 연결된 `features/<feature-name>/task-index.md`의 *TODO 섹션*에서 이번 세션이 완료한 항목을 체크하고, 새로 발견한 슬라이스 외 작업을 추가한다. 또한 `task-index.md`와 *현재 진행 중인* `tdd-state/slice-N.md`를 Relevant Files에 자동 포함한다 (plan/slice-tdd가 만든 자산).
 
 handoff 문서는 **fact가 아닌 hypothesis** — 다음 세션은 이 문서를 그대로 믿지 않고 코드와 대조 검증한다 (`takeover` 스킬이 그 역할).
@@ -90,22 +90,24 @@ pwd
 
 ```bash
 # 3. 동일 브랜치/날짜의 기존 handoff 존재 여부 확인
-ls .claude/handoff/$(date +%Y-%m-%d)-*.md 2>/dev/null
+ls docs/handoffs/$(date +%Y-%m-%d)-*.md 2>/dev/null
 ```
 
 기존 파일이 있으면 사용자에게 **overwrite vs append vs 새 파일** 선택을 묻는다.
 
 ## 출력 위치
 
-`.claude/handoff/<YYYY-MM-DD>-<branch-slug-or-noname>.md`
+`docs/handoffs/<YYYY-MM-DD>-<HHMMSS>-<branch-slug-or-noname>.md`
 
+- `<YYYY-MM-DD>`: 날짜 prefix (`date +%Y-%m-%d`). takeover가 글롭/정렬로 찾도록 **항상 맨 앞**에 둔다.
+- `<HHMMSS>`: 시각 (`date +%H%M%S`). 같은 날 여러 handoff가 충돌하지 않도록 시·분·초로 구분.
 - `branch-slug`: 슬래시(`/`)를 하이픈(`-`)으로 변환. 예: `fix/skills-subskill-chaining` → `fix-skills-subskill-chaining`
 - git repo가 아니면 branch 부분 대신 작업 디렉토리 베이스명 사용
 - 디렉토리 없으면 생성
-- `.claude/handoff/`는 `.gitignore`되어야 함 (절대 경로·사용자 선호·secret 노출 방지). 디렉토리 생성 시 `.gitignore`에 추가되어 있는지 확인하고 없으면 추가:
+- `docs/handoffs/`는 `.gitignore`되어야 함 (절대 경로·사용자 선호·secret 노출 방지). 디렉토리 생성 시 `.gitignore`에 추가되어 있는지 확인하고 없으면 추가:
   ```
-  .claude/handoff/
-  !.claude/handoff/.gitkeep
+  docs/handoffs/
+  !docs/handoffs/.gitkeep
   ```
 
 ## 출력 문서 템플릿
@@ -174,7 +176,7 @@ relevant_files_count: 6
 
 ## Prompt for New Chat
 \`\`\`
-다음 단계로 .claude/handoff/2026-05-04-fix-skills-subskill-chaining.md 를 먼저 Read 도구로 읽어라.
+다음 단계로 docs/handoffs/2026-05-04-153012-fix-skills-subskill-chaining.md 를 먼저 Read 도구로 읽어라.
 그 다음 CLAUDE.md를 읽고, 이미 거기서 다룬 내용은 재진술하지 마라.
 "Relevant Files"의 파일들을 실제 Read 도구로 읽고, 이 문서의 주장(라인 번호 포함)을 코드와 대조해 검증하라.
 features/<feature-name>/ 디렉토리가 있다면 task-index.md와 진행 중인 tdd-state/slice-N.md도 hypothesis로 검증하라.
@@ -262,7 +264,7 @@ features/<feature-name>/ 디렉토리가 있다면 task-index.md와 진행 중�
    - "Open Work"는 출력 문서의 `## Observed State` / `## Blocked By` / `## Candidate Next Action` 3개 섹션을 묶어 부르는 *논리 그룹명*이다 (실제 마크다운 헤더 아님).
    - 위 3개 섹션의 모든 문장이 "Implement", "Add", "Fix", "Do" 등 명령형 동사로 시작하는지 검사
    - 명령형이면 상태 서술형으로 재작성
-6. **`.claude/handoff/<YYYY-MM-DD>-<branch-slug>.md` 작성**
+6. **`docs/handoffs/<YYYY-MM-DD>-<HHMMSS>-<branch-slug>.md` 작성**
 7. **task-index.md TODO 섹션 변경 후보 사용자 확인 + 적용** (Step 2에서 features/ 슬롯을 찾은 경우만)
    - 다음 형식으로 사용자에게 변경 후보 제시:
      ```
@@ -335,12 +337,12 @@ handoff는 `task-index.md`의 *TODO 섹션*만 수정한다 (Step 2.5의 신규 
 
 ## Done When
 
-- `.claude/handoff/<YYYY-MM-DD>-<branch-slug>.md` 가 작성됨
+- `docs/handoffs/<YYYY-MM-DD>-<HHMMSS>-<branch-slug>.md` 가 작성됨
 - frontmatter에 `head_commit`, `merge_base_with_main` 포함됨 (git repo인 경우)
 - Relevant Files 개수가 8개 이하
 - "Open Work" 그룹(=`## Observed State` / `## Blocked By` / `## Candidate Next Action` 3섹션)이 모두 출력 문서에 존재
 - 위 3섹션의 모든 문장이 명령형 동사("Implement", "Add", "Fix", "Do")로 시작하지 않음
-- `.gitignore`에 `.claude/handoff/` 포함됨
+- `.gitignore`에 `docs/handoffs/` 포함됨
 - 연결된 features/ 슬롯이 있었다면 사용자 확인 후 task-index.md TODO 섹션이 갱신되었거나, 미적용 사실이 handoff 문서에 기록됨
 - handoff 문서에 `## TODO Impact` 섹션 존재 (task-index.md 없으면 "(연결된 task-index.md 없음)" 명시)
 - frontmatter `feature_name`이 항상 존재 (Step 2.5 y/rename 선택 시 신규 슬롯명, skip 선택 시 `(skipped)`로 명시 박음)

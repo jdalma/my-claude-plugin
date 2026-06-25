@@ -6,5 +6,8 @@
 plugins/orchestrator/
 
 # handoff dump: 세션 인계용. 절대경로·사용자 선호·secret 노출 방지 위해 git 제외
-.claude/handoff/
-!.claude/handoff/.gitkeep
+docs/handoffs/
+!docs/handoffs/.gitkeep
+
+# Claude 로컬 작업 디렉토리 (구 handoff dump 위치 포함)
+.claude/

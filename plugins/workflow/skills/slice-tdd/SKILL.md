@@ -190,7 +190,7 @@ Iron Law: **실패하는 테스트 없이 프로덕션 코드를 짜지 않는�
 - ❌ 사용자 자율 위임 발언("알아서 해줘")으로 게이트 우회
 - ❌ amend / force-push / `--no-verify` 사용
 
-세션 종료 시 `/handoff` 명시 호출 → `task-index.md`의 *TODO 섹션* 일괄 동기화 + `.claude/handoff/` 세션 dump 생성. 다음 세션은 `/takeover`로 인수.
+세션 종료 시 `/handoff` 명시 호출 → `task-index.md`의 *TODO 섹션* 일괄 동기화 + `docs/handoffs/` 세션 dump 생성. 다음 세션은 `/takeover`로 인수.
 
 ## 실행 방식
 

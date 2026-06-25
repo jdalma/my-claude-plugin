@@ -10,7 +10,7 @@ disable-model-invocation: true
 
 이 스킬은 **사용자가 `/takeover`를 명시적으로 호출했을 때만** 동작한다.
 
-- ❌ 새 세션 첫 턴에 `.claude/handoff/` 발견했다고 자동 제안 금지
+- ❌ 새 세션 첫 턴에 `docs/handoffs/` 발견했다고 자동 제안 금지
 - ❌ "어제 이어서" 같은 의도만으로 자동 실행 금지
 - ❌ "takeover를 실행할까요?" 식 선제 권유 금지
 - ✅ 사용자가 명시적으로 `/takeover` 또는 "takeover 스킬 실행해" 등 지명한 경우만 실행
@@ -71,14 +71,16 @@ current_feature=$(ls features/*/task-index.md 2>/dev/null | head -1 | xargs -I {
 
 # 2. 1차 검색 — feature_name으로 frontmatter grep (cross-branch)
 if [ -n "$current_feature" ]; then
-  grep -l "^feature_name: ${current_feature}$" .claude/handoff/*.md 2>/dev/null | xargs ls -t 2>/dev/null
+  grep -l "^feature_name: ${current_feature}$" docs/handoffs/*.md 2>/dev/null | xargs ls -t 2>/dev/null
 fi
 
 # 3. 2차 fallback — 브랜치 슬러그 매칭
-ls -t .claude/handoff/*-<current-branch-slug>.md 2>/dev/null | head -5
+#    파일명이 <YYYY-MM-DD>-<HHMMSS>-<branch-slug>.md 라 슬러그는 여전히 끝에 위치 → *-<slug>.md 유효
+ls -t docs/handoffs/*-<current-branch-slug>.md 2>/dev/null | head -5
 
 # 4. 3차 fallback — 모든 handoff에서 최근 N개
-ls -t .claude/handoff/*.md 2>/dev/null | head -5
+#    ls -t는 mtime 기준. 파일명 prefix가 날짜+시각(HHMMSS)이라 사전순=시간순과도 일치 (최신 우선 유지)
+ls -t docs/handoffs/*.md 2>/dev/null | head -5
 ```
 
 - 정확히 1개 매칭: 자동 선택 + 사용자에게 알림
@@ -89,15 +91,15 @@ ls -t .claude/handoff/*.md 2>/dev/null | head -5
 
 ```
 [feature: auth-bug-fix]
-  1. 2026-05-04-fix-auth-bug.md (최신)
-  2. 2026-05-03-fix-auth-bug.md
-  3. 2026-04-28-feature-auth-init.md (다른 브랜치, 같은 feature)
+  1. 2026-05-04-153012-fix-auth-bug.md (최신)
+  2. 2026-05-03-091500-fix-auth-bug.md
+  3. 2026-04-28-142233-feature-auth-init.md (다른 브랜치, 같은 feature)
 
 [feature: payment]
-  4. 2026-05-04-feature-payment.md
+  4. 2026-05-04-110045-feature-payment.md
 
 [feature 미지정 (legacy/ad-hoc, feature_name: (skipped) 또는 누락)]
-  5. 2026-04-15-fix-typo.md
+  5. 2026-04-15-163344-fix-typo.md
 
 선택 (번호):
 ```
@@ -195,7 +197,7 @@ for file in Relevant Files (최대 8개):
 ```markdown
 ## Takeover 검증 결과
 
-**Handoff 문서 (선택됨)**: `.claude/handoff/2026-05-04-fix-skills-subskill-chaining.md`
+**Handoff 문서 (선택됨)**: `docs/handoffs/2026-05-04-143022-fix-skills-subskill-chaining.md`
 **연결 features/**: `features/handoff-skill/`
 **작성 시점**: 2026-05-04 → 현재 1일 경과
 
@@ -204,9 +206,9 @@ for file in Relevant Files (최대 8개):
 
 | 날짜 | 브랜치 | 파일 | 상태 |
 |---|---|---|---|
-| 2026-04-28 | feature/handoff-init | 2026-04-28-feature-handoff-init.md | 과거 (검증 안 함) |
-| 2026-05-01 | feature/handoff-init | 2026-05-01-feature-handoff-init.md | 과거 (검증 안 함) |
-| 2026-05-04 | fix/skills-subskill-chaining | 2026-05-04-fix-skills-subskill-chaining.md | ⬅ CURRENT (Step 3·4 검증 대상) |
+| 2026-04-28 | feature/handoff-init | 2026-04-28-101500-feature-handoff-init.md | 과거 (검증 안 함) |
+| 2026-05-01 | feature/handoff-init | 2026-05-01-093020-feature-handoff-init.md | 과거 (검증 안 함) |
+| 2026-05-04 | fix/skills-subskill-chaining | 2026-05-04-143022-fix-skills-subskill-chaining.md | ⬅ CURRENT (Step 3·4 검증 대상) |
 
 - 표는 같은 `feature_name` 가진 handoff 모두를 cross-branch로 묶음
 - 과거 handoff는 *읽지 않음* (참조만). 검증은 CURRENT만.
@@ -263,8 +265,8 @@ for file in Relevant Files (최대 8개):
 
 | 상황 | 행동 |
 |------|------|
-| `.claude/handoff/` 디렉토리 자체 없음 + features/ 슬롯도 없음 | "handoff·features/ 슬롯 모두 없음. 새 기능이면 `/plan`을 호출하세요. takeover로 할 일 없음." |
-| `.claude/handoff/` 없음 + `features/<name>/` 슬롯은 있음 | 슬롯 자체를 hypothesis로 검증 (Step 3.5만 수행). 보고에 *"handoff 누락 — 직전 세션이 handoff 없이 종료된 것으로 보임. features/ 슬롯이 stale일 가능성 높음"* 명시. 다음 명시 호출 예시는 `/plan` 재호출 또는 `slice-tdd로 슬라이스 #N 이어서` |
+| `docs/handoffs/` 디렉토리 자체 없음 + features/ 슬롯도 없음 | "handoff·features/ 슬롯 모두 없음. 새 기능이면 `/plan`을 호출하세요. takeover로 할 일 없음." |
+| `docs/handoffs/` 없음 + `features/<name>/` 슬롯은 있음 | 슬롯 자체를 hypothesis로 검증 (Step 3.5만 수행). 보고에 *"handoff 누락 — 직전 세션이 handoff 없이 종료된 것으로 보임. features/ 슬롯이 stale일 가능성 높음"* 명시. 다음 명시 호출 예시는 `/plan` 재호출 또는 `slice-tdd로 슬라이스 #N 이어서` |
 | handoff 파일 frontmatter 손상 | 손상 사실 보고하고 본문만 읽어 hypothesis로 사용 |
 | `head_commit` 필드 누락 (구버전 handoff or non-git) | git 기반 검증 건너뛰고 날짜 기반 약한 검증으로 fallback |
 | Relevant Files가 모두 삭제됨 | "이 handoff는 stale 가능성 매우 높음. 새 세션으로 시작 권장" |
