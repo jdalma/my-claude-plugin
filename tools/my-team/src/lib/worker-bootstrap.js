@@ -142,6 +142,25 @@ Talk to other workers via CLI API:
 - Mark a message consumed (moves it to archive): \`${mailboxDeliveredCommand}\`
 - Resolve a reply_to that is not in sent_pending: \`${archiveLookupCommand}\`
 
+### Messaging a worker in ANOTHER team (cross-team)
+
+Workers in other running teams are reachable by adding \`to_session\` — the tmux
+session name the user sees in \`tmux ls\` (e.g. \`my-team-payments-k3f9x2a1\`). Without
+\`to_session\` the recipient is looked up in your own team, exactly as before.
+
+- Send across teams: \`${formatOmcCliInvocation(`team api send-message --input "{\\"team_name\\":\\"${teamName}\\",\\"from_worker\\":\\"${workerName}\\",\\"to_session\\":\\"<tmux-session-name>\\",\\"to_worker\\":\\"<worker-in-that-team>\\",\\"body\\":\\"<message>\\"}" --json`)}\`
+
+Rules:
+- **Only the user can give you a session name.** You have no way to discover
+  other teams on your own, and you MUST NOT run \`tmux ls\` to go looking — other
+  teams are outside your scope unless the user points you at one.
+- A message you *receive* from another team carries \`from_session\` and
+  \`from_team\`. To reply, pass that \`from_session\` back as \`to_session\` (plus
+  \`reply_to\`). Reply without \`to_session\` and it is addressed inside your own
+  team, so the asker never gets it.
+- A wrong or dead session name is a hard error, not a silent drop — read the
+  error, it lists the live sessions.
+
 ### All worker-to-worker messaging is ASYNCHRONOUS
 
 There is no blocking send. You **never stop your own work to wait** for a

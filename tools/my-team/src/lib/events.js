@@ -23,7 +23,8 @@ export function eventsLogPath(stateRoot) {
     return join(stateRoot, 'events.jsonl');
 }
 
-export async function appendMessageEvent(stateRoot, { from, to, body, message_id, reply_to, expects_reply }) {
+export async function appendMessageEvent(stateRoot, event) {
+    const { from, to, body, message_id, reply_to, expects_reply, ...extra } = event;
     const entry = {
         ts: new Date().toISOString(),
         type: 'message',
@@ -33,6 +34,11 @@ export async function appendMessageEvent(stateRoot, { from, to, body, message_id
         message_id: message_id ?? null,
         reply_to: reply_to ?? null,
         expects_reply: Boolean(expects_reply),
+        // Cross-team sends add from_team / to_team / from_session / to_session.
+        // Kept open rather than whitelisted so the timeline records which teams
+        // a message crossed — a same-team send passes none of these and its
+        // event shape is unchanged.
+        ...extra,
     };
     const line = JSON.stringify(entry) + '\n';
     const path = eventsLogPath(stateRoot);

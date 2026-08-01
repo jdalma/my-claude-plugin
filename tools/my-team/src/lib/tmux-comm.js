@@ -135,8 +135,17 @@ export function appendArchive(teamName, workerName, cwd, entry) {
  * Drop a message into the recipient's incoming-spool. One file per message,
  * so concurrent senders never collide.
  */
-function dropSpoolMessage(teamName, toWorker, cwd, message) {
-    const path = spoolFile(teamName, toWorker, message.message_id, cwd);
+function dropSpoolMessage(teamName, toWorker, cwd, message, recipientStateRoot) {
+    // `recipientStateRoot` bypasses TeamPaths entirely and is REQUIRED for
+    // cross-team delivery: TeamPaths.root() honours the MY_TEAM_STATE_ROOT env
+    // var ahead of its teamName argument, and every worker process has that var
+    // pinned to its OWN team. Composing the recipient path through TeamPaths
+    // would therefore write into the SENDER's directory — where the recipient
+    // never looks — and the send would report success. Passing the recipient's
+    // state root (read from its own manifest) is the only correct addressing.
+    const path = recipientStateRoot
+        ? join(recipientStateRoot, 'incoming-spool', toWorker, `${message.message_id}.json`)
+        : spoolFile(teamName, toWorker, message.message_id, cwd);
     ensureDirWithMode(dirname(path));
     atomicWriteJson(path, message);
 }
@@ -184,6 +193,12 @@ export async function absorbIncomingSpool(teamName, workerName, cwd) {
             reply_to: payload.reply_to ?? null,
             expects_reply: Boolean(payload.expects_reply),
             created_at: payload.created_at,
+            // Cross-team origin. Must survive absorption: the recipient has no
+            // other way to learn which session the sender lives in, and a reply
+            // without `to_session` would be addressed inside the recipient's own
+            // team and never reach the asker.
+            ...(payload.from_session ? { from_session: payload.from_session } : {}),
+            ...(payload.from_team ? { from_team: payload.from_team } : {}),
         };
         if (payload.reply_to && mailbox.sent_pending[payload.reply_to]) {
             // A peer answered a question I had pending — resolve it.
@@ -250,7 +265,8 @@ export async function queueDirectMessage(
     toPaneId,
     cwd,
     replyTo = null,
-    expectsReply = false
+    expectsReply = false,
+    crossTeam = null
 ) {
     const messageId = newMessageId();
     const createdAt = new Date().toISOString();
@@ -262,6 +278,13 @@ export async function queueDirectMessage(
         reply_to: replyTo ?? null,
         expects_reply: Boolean(expectsReply),
         created_at: createdAt,
+        // Cross-team only. `from_session` is what lets the recipient reply:
+        // it has no other way to learn which session the sender lives in, and
+        // without it a reply would be addressed within the recipient's own team
+        // and never reach the asker.
+        ...(crossTeam
+            ? { from_session: crossTeam.fromSession, from_team: teamName, to_team: crossTeam.toTeam }
+            : {}),
     };
 
     // 1. If we expect a reply, track it on our own sent_pending FIRST so a
@@ -283,7 +306,7 @@ export async function queueDirectMessage(
     appendArchive(teamName, fromWorker, cwd, { ...message, direction: 'out' });
 
     // 3. Drop into recipient's spool (commits delivery).
-    dropSpoolMessage(teamName, toWorker, cwd, message);
+    dropSpoolMessage(teamName, toWorker, cwd, message, crossTeam?.toStateRoot);
 
     // 4. Notify the recipient via tmux (best-effort).
     await sendTmuxTrigger(toPaneId, 'new-message', fromWorker);

@@ -129,3 +129,57 @@ export function isTmuxAvailable() {
 export function quoteShellArg(value) {
     return `'${value.replace(/'/g, `'\"'\"'`)}'`;
 }
+
+/**
+ * Resolve a live pane from a tmux session name + worker name.
+ *
+ * Cross-team messaging addresses a recipient by the tmux session name the user
+ * sees in `tmux ls`, not by team name. That is deliberate: a manifest is keyed
+ * by team name and gets overwritten when the same team is started again, so two
+ * concurrent sessions of one team share a single manifest and the older
+ * session's pane ids are lost. tmux itself is the only source that always knows
+ * which panes are actually alive, so we ask tmux.
+ *
+ * Each worker pane carries its name in the pane-scoped `@worker_name` option
+ * (set by createTeamSession and re-asserted in start.js), so a single
+ * `list-panes -a` gives us the full session/pane/worker mapping.
+ *
+ * Returns the pane id, or throws with the live alternatives listed — a dead or
+ * mistyped session must fail loudly rather than silently spool a message that
+ * nobody will ever read.
+ */
+export async function resolvePaneBySessionWorker(sessionName, workerName) {
+    const target = sessionName.split(':')[0];
+    let stdout;
+    try {
+        ({ stdout } = await tmuxCmdAsync([
+            'list-panes', '-a', '-F', '#{session_name}\t#{pane_id}\t#{@worker_name}',
+        ]));
+    } catch (err) {
+        throw new Error(`Cannot list tmux panes (is the tmux server running?): ${err.message}`);
+    }
+
+    const rows = stdout.split('\n')
+        .map((line) => line.split('\t'))
+        .filter((cols) => cols.length >= 2 && cols[0])
+        .map(([session, paneId, worker]) => ({ session, paneId, worker: (worker ?? '').trim() }));
+
+    const inSession = rows.filter((r) => r.session === target);
+    if (inSession.length === 0) {
+        const sessions = [...new Set(rows.map((r) => r.session))].filter((s) => s.startsWith('my-team-'));
+        throw new Error(
+            `tmux session '${sessionName}' not found or has no panes. ` +
+            `Live my-team sessions: ${sessions.length ? sessions.join(', ') : '(none)'}.`
+        );
+    }
+
+    const hit = inSession.find((r) => r.worker === workerName);
+    if (!hit) {
+        const names = inSession.map((r) => r.worker).filter(Boolean);
+        throw new Error(
+            `Worker '${workerName}' not found in tmux session '${sessionName}'. ` +
+            `Workers in that session: ${names.length ? names.join(', ') : '(none — panes have no @worker_name)'}.`
+        );
+    }
+    return hit.paneId;
+}
