@@ -7,9 +7,14 @@
  *   1. user → worker: the user types directly into the worker's tmux pane.
  *   2. worker ↔ worker: `my-team api send-message` (mailbox + archive).
  *
- * There is no leader/orchestrator role and no task state machine. A worker's
- * initial work brief lives in its config `extra_prompt` and is rendered into
- * the `## Role Context` section of this overlay.
+ * There is no task state machine. A worker's initial work brief lives in its
+ * config `extra_prompt` and is rendered into the `## Role Context` section of
+ * this overlay.
+ *
+ * Team roles (optional, config `role` field): a team may declare
+ * 'orchestrator' / 'worker' roles. Orchestrators initiate/delegate and are the
+ * team's cross-team gateway; workers are reply-only (enforced in
+ * send-message). Teams without roles keep the original peer-symmetric model.
  */
 
 import { mkdir } from 'fs/promises';
@@ -62,10 +67,56 @@ function agentTypeGuidance(agentType) {
     }
 }
 
+/**
+ * Role-specific protocol section. `workerRole` is null (legacy peer team),
+ * 'orchestrator', or 'worker'. The worker-side restrictions listed here are
+ * not just prompt guidance — send-message enforces them and returns an error
+ * on violation.
+ */
+function roleGuidance(workerRole, orchestratorNames) {
+    const orchList = orchestratorNames.length > 0 ? orchestratorNames.join(', ') : '(none)';
+    if (workerRole === 'orchestrator') {
+        return [
+            '## Team Role: ORCHESTRATOR',
+            'You hold the initiative in this team. You delegate work to your workers, integrate their results, and you are the only role allowed to message OTHER teams (cross-team). Inbound messages from other teams land on you: analyze, delegate if needed, then reply to the asker.',
+            '',
+            'Delegation discipline:',
+            '- Delegate in ticket form: goal + inputs (file paths) + expected deliverable + "reply to this message when done". One message = one deliverable.',
+            '- Batch related questions into ONE message per topic; keep different topics in separate messages so reply_to correlation stays clean.',
+            '- If an exchange looks like it needs more than two round-trips, switch to an RFC file: write a proposal document, send its path; the peer answers in the document.',
+            '- Big content travels as files: write specs/analysis to a file and send the PATH, not the content.',
+            '- At the end of every work cycle, review `sent_pending` from mailbox-list; surface long-outstanding questions in this pane so the user can intervene.',
+            '- Worker-to-worker coordination goes through you by default. Only when a pair needs tight back-and-forth, explicitly delegate: message BOTH workers naming each other, and have the initiating worker send with expects_reply so the other can reply directly.',
+            '',
+            'Cross-team Q&A quality (context survives as documents, not summaries):',
+            '- A cross-team question travels as a document containing: background (why you ask, what the answer feeds into), the question, what you already know/assume, and the expected answer format. Include paths to your own relevant docs/code — the answering team can read them directly.',
+            '- Before asking another team, read its published docs (its PM keeps them under its project docs/) — ask only what the docs cannot answer.',
+            '- Answers must cite evidence: file:line, schema, or document paths the asker can open and verify. An answer without evidence is incomplete — ask for the citation.',
+            '- When relaying a worker\'s findings to another team, attach the original document path and ADD your synthesis on top — never replace the original with your summary (each summarization hop loses context).',
+            '- After answering a cross-team question, append the Q&A to your team docs (FAQ/decisions log) so repeated questions get consistent answers across worker restarts.',
+        ].join('\n');
+    }
+    if (workerRole === 'worker') {
+        return [
+            '## Team Role: WORKER',
+            'You are a specialist worker. You do NOT initiate conversations: you act on messages from your orchestrator(s) and on user input in this pane.',
+            `- Allowed sends (CLI-enforced): to an orchestrator of your own team (${orchList}) — reports, results, questions — and replies (reply_to set) to any message you received.`,
+            '- Cross-team messaging is blocked for your role. If something concerns another team, report it to your orchestrator and let it relay.',
+            '- Big content travels as files: write results to a file and send the PATH, not the content.',
+            '- Evidence discipline: results and answers must cite file:line, schema, or document paths so the recipient can open and verify them directly. A claim without a citation is incomplete.',
+        ].join('\n');
+    }
+    return '';
+}
+
 export function generateWorkerOverlay(params) {
     const { teamName, workerName, agentType, bootstrapInstructions } = params;
+    const workerRole = params.workerRole ?? null;
     const instructionStateRoot = params.instructionStateRoot ?? DEFAULT_INSTRUCTION_STATE_ROOT;
     const teamRoster = Array.isArray(params.teamRoster) ? params.teamRoster : [];
+    const orchestratorNames = teamRoster
+        .filter((p) => p.teamRole === 'orchestrator')
+        .map((p) => p.name);
 
     const heartbeatPath = buildTeamStateInstructionPath(teamName, instructionStateRoot, 'workers', workerName, 'heartbeat.json');
     const statusPath = buildTeamStateInstructionPath(teamName, instructionStateRoot, 'workers', workerName, 'status.json');
@@ -83,9 +134,10 @@ export function generateWorkerOverlay(params) {
             .map((peer) => {
                 const isSelf = peer.name === workerName;
                 const selfTag = isSelf ? ' (you)' : '';
+                const roleTag = peer.teamRole === 'orchestrator' ? ' [ORCHESTRATOR]' : '';
                 const role = peer.role ? sanitizePromptContent(peer.role, 200).split('\n')[0].trim() : '';
                 const roleSuffix = role ? ` — ${role}` : '';
-                return `- **${peer.name}**${selfTag} [${peer.agentType}]${roleSuffix}`;
+                return `- **${peer.name}**${selfTag} [${peer.agentType}]${roleTag}${roleSuffix}`;
             })
             .join('\n')
         : '- (roster unavailable)';
@@ -123,10 +175,11 @@ ${rosterList}
   {"pid":<pid>,"last_turn_at":"<ISO timestamp>","turn_count":<n>,"alive":true}
   \`\`\`
 
-## Message Protocol
+${workerRole ? `${roleGuidance(workerRole, orchestratorNames)}
+
+` : ''}## Message Protocol
 Talk to the user: surface output in this pane via your normal stdout. Permission
-or confirmation requests use your CLI's native prompt — there is no orchestrator
-or leader role in this team, every worker (including you) is a peer.
+or confirmation requests use your CLI's native prompt.${workerRole ? ' This team uses\nORCHESTRATOR/WORKER roles — see your Team Role section above; send-message\nenforces those routing rules.' : ' There is no orchestrator\nor leader role in this team, every worker (including you) is a peer.'}
 
 **Hard rule for peer messaging**: the ONLY allowed channel to another worker is
 \`my-team api send-message\`. You MUST NOT call \`tmux send-keys\`, \`tmux send-text\`,
@@ -144,22 +197,28 @@ Talk to other workers via CLI API:
 
 ### Messaging a worker in ANOTHER team (cross-team)
 
-Workers in other running teams are reachable by adding \`to_session\` — the tmux
-session name the user sees in \`tmux ls\` (e.g. \`my-team-payments-k3f9x2a1\`). Without
-\`to_session\` the recipient is looked up in your own team, exactly as before.
+Workers in other running teams are reachable by adding \`to_team\` — the target
+TEAM NAME (stable across restarts, e.g. \`payments\`). Without \`to_team\` the
+recipient is looked up in your own team, exactly as before.
 
-- Send across teams: \`${formatOmcCliInvocation(`team api send-message --input "{\\"team_name\\":\\"${teamName}\\",\\"from_worker\\":\\"${workerName}\\",\\"to_session\\":\\"<tmux-session-name>\\",\\"to_worker\\":\\"<worker-in-that-team>\\",\\"body\\":\\"<message>\\"}" --json`)}\`
+- Send across teams: \`${formatOmcCliInvocation(`team api send-message --input "{\\"team_name\\":\\"${teamName}\\",\\"from_worker\\":\\"${workerName}\\",\\"to_team\\":\\"<team-name>\\",\\"to_worker\\":\\"<worker-in-that-team>\\",\\"body\\":\\"<message>\\"}" --json`)}\`
+- Legacy alternative: \`to_session\` with the tmux session name from \`tmux ls\`
+  (e.g. \`my-team-payments-k3f9x2a1\`). Prefer \`to_team\` — session names change on
+  every restart. Never set both.
 
 Rules:
-- **Only the user can give you a session name.** You have no way to discover
-  other teams on your own, and you MUST NOT run \`tmux ls\` to go looking — other
-  teams are outside your scope unless the user points you at one.
-- A message you *receive* from another team carries \`from_session\` and
-  \`from_team\`. To reply, pass that \`from_session\` back as \`to_session\` (plus
-  \`reply_to\`). Reply without \`to_session\` and it is addressed inside your own
+- **Only message teams your Role Context or the user names.** You MUST NOT run
+  \`tmux ls\` or scan for other teams on your own — other teams are outside your
+  scope unless you were pointed at one.
+- If the target team declares roles, cross-team messages must address one of
+  its ORCHESTRATORS (send-message rejects other recipients). If your own team
+  declares roles, only orchestrators may send cross-team.
+- A message you *receive* from another team carries \`from_team\` and
+  \`from_session\`. To reply, pass that \`from_team\` back as \`to_team\` (plus
+  \`reply_to\`). Reply without it and the reply is addressed inside your own
   team, so the asker never gets it.
-- A wrong or dead session name is a hard error, not a silent drop — read the
-  error, it lists the live sessions.
+- A wrong or dead team/session name is a hard error, not a silent drop — read
+  the error message.
 
 ### All worker-to-worker messaging is ASYNCHRONOUS
 

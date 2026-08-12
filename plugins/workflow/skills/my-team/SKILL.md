@@ -77,7 +77,7 @@ Reach for `my-team` when **multiple unrelated repos** need to be edited and disc
 - **No task lifecycle** — my-team tracks no shared task objects (no claim/transition); roles are fixed at spawn.
 - **User→worker channel** — the user types directly into the worker's tmux pane (no message CLI command).
 - **State root** — `~/.my-team/sessions/<team>/`.
-- **Peer-symmetric** — no leader/orchestrator worker; workers communicate peer-to-peer via mailbox.
+- **Peer-symmetric by default, roles optional** — with no `role` fields, workers communicate peer-to-peer via mailbox. A config may declare `role: "orchestrator" | "worker"` per worker: orchestrators initiate/delegate and are the team's cross-team gateway; workers are reply-only (send-message가 위반을 거부한다). Role 선언 시 orchestrator 최소 1명 필수.
 
 ## Worker AGENTS.md
 
@@ -85,7 +85,9 @@ Each worker gets a per-worker `AGENTS.md` overlay under `<state_root>/workers/<n
 
 ## Communication channels
 
-my-team은 **peer-to-peer 모델**이다. leader/orchestrator 워커도, task lifecycle도 없다. 채널은 두 개뿐이다.
+my-team은 기본이 **peer-to-peer 모델**이다 (task lifecycle 없음). 채널은 두 개뿐이다. `role` 필드를 선언한 팀에서는 발신 토폴로지가 orchestrator 중심으로 제한된다(worker는 자기 팀 orchestrator에게 발신·reply만 가능, cross-team은 orchestrator끼리만).
+
+**Cross-team**: `api send-message`에 `"to_team":"<팀이름>"`을 추가하면 다른 실행 중인 팀의 워커에게 팀 이름으로 메시지를 보낼 수 있다(세션명 불필요, 재시작에도 안정). role 팀의 인바운드는 orchestrator만 받는다. legacy `to_session`도 유지되지만 둘을 동시에 쓰면 에러.
 
 | Channel | Surface | Notify |
 |---------|---------|--------|

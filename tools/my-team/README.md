@@ -83,6 +83,50 @@ my-team shutdown --team demo     # also clears state (backs up to <state_root>.b
 > carry `workers[].task` are rejected with an explicit error — move the
 > subject/description into `extra_prompt`.
 
+## Worker roles (orchestrator / worker)
+
+Optionally declare a `role` per worker to switch a team from the default
+peer-symmetric model to a hub-and-spoke topology:
+
+```jsonc
+{
+  "team_name": "shop",
+  "workers": [
+    { "name": "pm",  "agent_type": "claude", "cwd": "~/work/shop-docs",
+      "role": "orchestrator" },          // initiates, delegates, cross-team gateway
+    { "name": "dev", "agent_type": "claude", "cwd": "~/work/shop-api" }
+    // role omitted → defaults to "worker" once any role is declared
+  ]
+}
+```
+
+Semantics (config-declared, **enforced by `api send-message`**, and rendered
+into each worker's AGENTS.md so the LLM knows its lane):
+
+- **orchestrator** — holds the initiative: delegates work, integrates results,
+  and is the only role allowed to message other teams. Inbound cross-team
+  messages must address an orchestrator (the team's gateway). Its AGENTS.md
+  carries a delegation discipline (ticket-form delegation, topic batching,
+  RFC-file escalation, `sent_pending` review).
+- **worker** — reply-only: may initiate messages **to its own team's
+  orchestrators**, may reply (`reply_to` set) to anything it received, and may
+  self-notify. Fresh worker→worker initiation and any cross-team send are
+  rejected by the CLI.
+- Declaring roles requires **at least one orchestrator**; multiple
+  orchestrators are fine (two-hub teams). A config with no `role` fields keeps
+  the original peer-symmetric behaviour, guard-free.
+
+## Cross-team addressing (`to_team`)
+
+`api send-message` reaches another running team by **team name**:
+`{"to_team": "payments", "to_worker": "pm", ...}`. The recipient team's
+manifest (keyed by team name) supplies its state root and current tmux
+session; tmux stays authoritative for liveness, so a dead team fails loudly.
+Team names are stable across restarts — workers no longer need per-boot
+session names. The legacy `to_session` (tmux session name from `tmux ls`)
+still works; never set both. Replies to a cross-team message pass the incoming
+`from_team` back as `to_team` (plus `reply_to`).
+
 ## Worker launch flags
 
 Each worker's `launch_args` (optional `string[]`) is appended verbatim to the
@@ -217,10 +261,10 @@ will actually do. High user attention required.
 |---------|---------|
 | `start` | Boot a team from config (or inline `--worker name:agent:cwd`) |
 | `status` | Show team and worker liveness |
-| `add-worker` | Add one worker to a **running** team mid-session (`--team --name --agent-type --cwd`) — splits a new pane, registers it in `manifest.workers`, and notifies existing workers. Pass `--launch-arg` (repeatable) for permission-bypass flags; without them the added worker runs supervised and stalls on its first permission prompt |
+| `add-worker` | Add one worker to a **running** team mid-session (`--team --name --agent-type --cwd`, optional `--role orchestrator\|worker` — defaults to `worker` in a role-declaring team) — splits a new pane, registers it in `manifest.workers`, and notifies existing workers. Pass `--launch-arg` (repeatable) for permission-bypass flags; without them the added worker runs supervised and stalls on its first permission prompt |
 | `monitor` | Tail peer messages in real-time |
 | `shutdown` | Terminate a team **and clear its state** — backs up `state_root` to `<state_root>.bak` (one generation), then removes the original so re-running `start` with the same `team_name` starts clean (see "State cleanup" below) |
-| `api send-message` | **[mutating]** Peer message — drops a spool file, appends sender archive, records `sent_pending` |
+| `api send-message` | **[mutating]** Peer message — drops a spool file, appends sender archive, records `sent_pending`. `to_team` reaches another team by name (role guard applies) |
 | `api mailbox-list` | **[mutating]** List unread inbox — *absorbs the incoming-spool into the mailbox first*. This absorption is the polling side effect: the name says "list" but it writes. Skip the poll and new messages are never absorbed |
 | `api mailbox-mark-delivered` | **[mutating]** Mark consumed — moves the entry to the archive jsonl, removes it from the inbox |
 | `api archive-lookup` | **[pure]** Look up an archived message by id — read-only |

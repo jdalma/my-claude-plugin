@@ -14,6 +14,7 @@ import { homedir } from 'os';
 import { validateTeamName } from '../lib/team-name.js';
 
 const VALID_AGENT_TYPES = new Set(['claude', 'codex', 'gemini', 'cursor']);
+const VALID_ROLES = new Set(['orchestrator', 'worker']);
 export const WORKER_NAME_PATTERN = /^[a-zA-Z0-9-]+$/;
 
 function expandTilde(p) {
@@ -98,6 +99,22 @@ export function validateConfig(cfg, { configPath } = {}) {
 
     const seen = new Set();
     const normalizedWorkers = workers.map((w, i) => validateWorker(w, i, seen));
+
+    // Role mode is all-or-nothing per team: if ANY worker declares a role,
+    // undeclared workers default to 'worker' and at least one orchestrator is
+    // required (a role team with no initiator would deadlock — every worker
+    // waiting for an orchestrator that does not exist). A config with no roles
+    // at all stays in the legacy peer-symmetric mode.
+    if (normalizedWorkers.some((w) => w.role !== null)) {
+        for (const w of normalizedWorkers) {
+            if (w.role === null) w.role = 'worker';
+        }
+        if (!normalizedWorkers.some((w) => w.role === 'orchestrator')) {
+            throw new Error(
+                "Config uses worker roles but has no 'orchestrator'. Mark at least one worker as role: 'orchestrator', or remove all role fields for peer-symmetric mode."
+            );
+        }
+    }
 
     return {
         team_name,
@@ -184,6 +201,20 @@ export function validateWorker(w, idx, seen) {
         );
     }
 
+    // role (optional): 'orchestrator' initiates/delegates and is the team's
+    // cross-team gateway; 'worker' is reply-only (enforced in send-message).
+    // Absent → null (legacy peer mode; validateConfig may default it to
+    // 'worker' when the team declares roles elsewhere).
+    let role = null;
+    if (w.role !== undefined) {
+        if (!VALID_ROLES.has(w.role)) {
+            throw new Error(
+                `${where}.role must be one of ${[...VALID_ROLES].join('|')}. Got: ${JSON.stringify(w.role)}`
+            );
+        }
+        role = w.role;
+    }
+
     // env (optional)
     let env = {};
     if (w.env !== undefined) {
@@ -223,6 +254,7 @@ export function validateWorker(w, idx, seen) {
         name: w.name,
         cwd: expandedCwd,
         agent_type: w.agent_type,
+        role,
         description,
         extra_prompt: extraPrompt,
         env,

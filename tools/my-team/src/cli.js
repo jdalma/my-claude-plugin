@@ -119,6 +119,7 @@ async function main() {
         .requiredOption('--name <name>', 'worker name')
         .requiredOption('--agent-type <type>', 'agent type (claude|codex|gemini|cursor)')
         .requiredOption('--cwd <path>', 'worker working directory')
+        .option('--role <role>', "team role: orchestrator|worker. In a role-declaring team, omitting this defaults to 'worker'")
         .option('--launch-arg <arg>', 'extra CLI arg for the worker (repeatable; e.g. --launch-arg --dangerously-skip-permissions). Without a permission-bypass flag the worker runs supervised and stalls on its first permission prompt until you answer it in its pane.', (v, prev) => {
             prev = prev || [];
             prev.push(v);
@@ -134,7 +135,7 @@ async function main() {
     const api = program.command('api').description('Internal API used by worker LLMs for peer messaging');
 
     api.command('send-message')
-        .description('[mutating] Send a peer message — drops a spool file, appends sender archive, records sent_pending. Add "to_session":"<tmux session name>" to reach a worker in another running team.')
+        .description('[mutating] Send a peer message — drops a spool file, appends sender archive, records sent_pending. Add "to_team":"<team name>" (or legacy "to_session":"<tmux session name>") to reach a worker in another running team.')
         .requiredOption('--input <json>', 'JSON payload')
         .option('--json', 'JSON output')
         .action(async (opts) => emit(await runApiSendMessage(parseApiInput(opts)), opts.json));

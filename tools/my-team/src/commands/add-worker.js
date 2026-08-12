@@ -55,6 +55,7 @@ export async function runAddWorker(opts, deps = {}) {
     // snake_case w.agent_type, so map explicitly (a bare opts.agent_type would
     // be undefined and slip through to a crash at spawn).
     const newWorker = { name: opts.name, cwd: opts.cwd, agent_type: opts.agentType };
+    if (opts.role !== undefined) newWorker.role = opts.role;
 
     // Resolve --team as EITHER a team name OR a tmux session name (what
     // `tmux ls` shows). resolveTeamManifest scans manifests by session_name
@@ -107,6 +108,12 @@ export async function runAddWorker(opts, deps = {}) {
     );
     const cwd = validated.cwd;
 
+    // Role: in a role-declaring team, an added worker without --role defaults
+    // to 'worker' (same rule as validateConfig). In a legacy peer team it
+    // stays null so no guard activates.
+    const teamUsesRoles = manifest.workers.some((w) => w.role === 'orchestrator' || w.role === 'worker');
+    const workerRole = validated.role ?? (teamUsesRoles ? 'worker' : null);
+
     // Agent CLI on PATH. validateAgentCLIs iterates config.workers, so wrap.
     validateAgentCLIs({ workers: [newWorker] });
 
@@ -118,13 +125,14 @@ export async function runAddWorker(opts, deps = {}) {
     // the manifest (only start-time config had them), so they render with empty
     // role text — an accepted limitation of the no-rewrite design.
     const teamRoster = [
-        ...manifest.workers.map((w) => ({ name: w.name, agentType: w.agent_type, role: '' })),
-        { name: opts.name, agentType: opts.agentType, role: '' },
+        ...manifest.workers.map((w) => ({ name: w.name, agentType: w.agent_type, role: '', teamRole: w.role ?? null })),
+        { name: opts.name, agentType: opts.agentType, role: '', teamRole: workerRole },
     ];
     const overlay = generateWorkerOverlay({
         teamName: opts.team,
         workerName: opts.name,
         agentType: opts.agentType,
+        workerRole,
         bootstrapInstructions: '',
         instructionStateRoot: stateRoot,
         cwd,
@@ -177,6 +185,7 @@ export async function runAddWorker(opts, deps = {}) {
             pane_id: paneId,
             cwd,
             agent_type: opts.agentType,
+            role: workerRole,
             overlay_path: overlayPath,
         });
         atomicWriteJson(manifestPathForTeam(opts.team, opts.stateRoot), fresh);

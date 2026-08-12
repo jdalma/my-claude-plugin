@@ -172,6 +172,7 @@ export async function runStart(opts) {
         name: peer.name,
         agentType: peer.agent_type,
         role: peer.description || peer.extra_prompt || '',
+        teamRole: peer.role ?? null,
     }));
 
     for (let i = 0; i < config.workers.length; i++) {
@@ -191,6 +192,7 @@ export async function runStart(opts) {
             teamName: config.team_name,
             workerName: w.name,
             agentType: w.agent_type,
+            workerRole: w.role ?? null,
             bootstrapInstructions: w.extra_prompt,
             instructionStateRoot: config.state_root,
             cwd: w.cwd,
@@ -231,6 +233,8 @@ export async function runStart(opts) {
             pane_id: pane.paneId,
             cwd: w.cwd,
             agent_type: w.agent_type,
+            // Persisted so send-message can enforce role routing per call.
+            role: w.role ?? null,
             overlay_path: overlayPath,
         });
     }

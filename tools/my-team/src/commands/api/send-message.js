@@ -3,27 +3,39 @@
  *
  * Input JSON:
  *   { team_name, from_worker, to_worker, body, reply_to?, expects_reply?,
- *     to_session? }
+ *     to_team?, to_session? }
  *
  * `to_worker` must be a worker name in the team. The legacy
  * `leader-fixed` recipient is no longer supported: peer-to-peer model
  * (user observes each pane directly) means workers report to the user
  * via their pane stdout, not via a leader channel.
  *
- * ## Cross-team delivery (`to_session`)
+ * ## Cross-team delivery (`to_team` / `to_session`)
  *
- * With `to_session` set, the recipient is looked up in ANOTHER running team,
- * addressed by the tmux session name shown in `tmux ls`
- * (e.g. "my-team-payments-k3f9x2a1"). Omit it and behaviour is byte-identical to
- * before — same-team delivery, unchanged for every existing worker.
+ * With `to_team` set, the recipient is looked up in ANOTHER running team,
+ * addressed by its stable TEAM NAME (the manifest at
+ * ~/.my-team/sessions/<team>/manifest.json is keyed by it). `to_session` is
+ * the legacy form addressed by the tmux session name shown in `tmux ls`
+ * (e.g. "my-team-payments-k3f9x2a1"); it survives for configs written before
+ * `to_team` existed. Setting both is an error. Omit both and behaviour is
+ * byte-identical to before — same-team delivery.
  *
- * Why the session name and not a team name: a manifest lives at
- * ~/.my-team/sessions/<team>/manifest.json, one per TEAM. Starting the same
- * team twice overwrites it, so two concurrent sessions of one team share a
- * single manifest and the older session's pane ids are gone. Only tmux knows
- * which panes are actually alive, so the recipient's pane is resolved from
- * tmux (via each pane's `@worker_name` option) and a dead or mistyped session
- * fails loudly instead of spooling a message nobody will read.
+ * Either way, tmux stays authoritative for LIVENESS: the recipient's pane is
+ * resolved from tmux (via each pane's `@worker_name` option) against the
+ * session recorded in the target manifest, so a dead team fails loudly
+ * instead of spooling a message nobody will read. A manifest always points at
+ * the NEWEST run of its team, which is exactly the run `to_team` should reach.
+ *
+ * ## Role guard (teams with orchestrator/worker roles)
+ *
+ * When manifests carry worker roles, this command enforces the routing rules
+ * the AGENTS.md overlay describes:
+ *   - role 'worker' senders may only message their own team's orchestrators,
+ *     or reply (`reply_to` set) to any message they received; cross-team
+ *     sends are rejected.
+ *   - cross-team messages into a role-declaring team must address one of its
+ *     orchestrators (the team's gateway).
+ * Legacy manifests without roles are untouched — fully peer-symmetric.
  */
 
 import { existsSync, readFileSync, readdirSync } from 'fs';
@@ -85,15 +97,32 @@ function findManifestBySession(sessionName) {
  * tmux server, so the one tmux-touching call is swappable while the disk side
  * (spool / archive / events) runs for real.
  */
+function rolesOf(manifest) {
+    const roles = new Map();
+    for (const w of manifest.workers ?? []) roles.set(sanitizeName(w.name), w.role ?? null);
+    return roles;
+}
+
+function orchestratorsOf(manifest) {
+    return (manifest.workers ?? []).filter((w) => w.role === 'orchestrator').map((w) => w.name);
+}
+
+function teamUsesRoles(manifest) {
+    return (manifest.workers ?? []).some((w) => w.role === 'orchestrator' || w.role === 'worker');
+}
+
 export async function runApiSendMessage(input, deps = {}) {
     const resolvePane = deps.resolvePaneBySessionWorker ?? resolvePaneBySessionWorker;
-    const { team_name, from_worker, to_worker, body, reply_to, expects_reply, to_session } = input ?? {};
+    const { team_name, from_worker, to_worker, body, reply_to, expects_reply, to_team, to_session } = input ?? {};
     if (!team_name) throw new Error('team_name is required');
     if (!from_worker) throw new Error('from_worker is required');
     if (!to_worker) throw new Error('to_worker is required');
     if (typeof body !== 'string' || !body) throw new Error('body is required');
     if (expects_reply !== undefined && typeof expects_reply !== 'boolean') {
         throw new Error('expects_reply must be a boolean when provided');
+    }
+    if (to_team && to_session) {
+        throw new Error('Set either to_team (team name, preferred) or to_session (tmux session name), not both.');
     }
     if (to_worker === 'leader-fixed') {
         throw new Error(
@@ -106,9 +135,11 @@ export async function runApiSendMessage(input, deps = {}) {
     const safeTo = sanitizeName(to_worker);
     const expectsReply = Boolean(expects_reply);
 
-    // Same-team only: with to_session set, an identically-named worker in
-    // another session is a different worker entirely, so a reply can resolve.
-    if (!to_session && safeFrom === safeTo && expectsReply) {
+    const isCrossTeam = Boolean(to_team || to_session);
+
+    // Same-team only: with to_team/to_session set, an identically-named worker
+    // in another team is a different worker entirely, so a reply can resolve.
+    if (!isCrossTeam && safeFrom === safeTo && expectsReply) {
         throw new Error(
             `Self-message with expects_reply=true is not supported (from_worker === to_worker === "${safeFrom}"). ` +
             `Self-replies cannot resolve sent_pending because the same worker owns both sides; ` +
@@ -134,27 +165,49 @@ export async function runApiSendMessage(input, deps = {}) {
             `Known workers: ${manifest.workers.map((w) => w.name).join(', ')}.`
         );
     }
-    // Recipient resolution. Same-team (no to_session) keeps the original path
-    // untouched: roster lookup + the pane id recorded in our own manifest.
-    // Cross-team resolves the recipient's state_root from ITS manifest and its
-    // pane from tmux — see the module header for why those come from different
-    // sources.
+
+    // Role guard, sender side: a role-'worker' sender never crosses team
+    // boundaries — its orchestrator is the team's gateway.
+    const senderRole = sender.role ?? null;
+    if (isCrossTeam && senderRole === 'worker') {
+        const orchs = orchestratorsOf(manifest);
+        throw new Error(
+            `Worker '${from_worker}' has role 'worker' and cannot send cross-team messages. ` +
+            `Report to your orchestrator (${orchs.join(', ') || 'none configured'}) and let it relay.`
+        );
+    }
+
+    // Recipient resolution. Same-team (no to_team/to_session) keeps the
+    // original path untouched: roster lookup + the pane id recorded in our own
+    // manifest. Cross-team resolves the recipient's state_root from ITS
+    // manifest and its pane from tmux — see the module header for why those
+    // come from different sources.
     let recipientPaneId;
     let crossTeam = null;
-    if (to_session) {
-        const targetManifest = findManifestBySession(to_session);
+    if (isCrossTeam) {
+        const targetManifest = to_team ? loadManifest(to_team) : findManifestBySession(to_session);
         const targetWorker = targetManifest.workers?.find((w) => sanitizeName(w.name) === safeTo);
         if (!targetWorker) {
             const names = (targetManifest.workers ?? []).map((w) => w.name).join(', ');
             throw new Error(
-                `Recipient '${to_worker}' not in team '${targetManifest.team_name}' (session '${to_session}'). ` +
+                `Recipient '${to_worker}' not in team '${targetManifest.team_name}'` +
+                `${to_session ? ` (session '${to_session}')` : ''}. ` +
                 `Known workers: ${names || '(none)'}.`
+            );
+        }
+        // Role guard, recipient side: a role-declaring team accepts inbound
+        // cross-team messages only through its orchestrators (gateway).
+        if (teamUsesRoles(targetManifest) && targetWorker.role !== 'orchestrator') {
+            const orchs = orchestratorsOf(targetManifest);
+            throw new Error(
+                `Cross-team messages into team '${targetManifest.team_name}' must address one of its ` +
+                `orchestrators (${orchs.join(', ') || 'none configured'}), not '${to_worker}'.`
             );
         }
         // tmux is authoritative for liveness: this throws if the session is
         // gone, which is exactly what we want — a spool file written for a dead
         // session would sit unread forever with the send reporting success.
-        recipientPaneId = await resolvePane(to_session, targetWorker.name);
+        recipientPaneId = await resolvePane(stripWindowSuffix(targetManifest.session_name), targetWorker.name);
         crossTeam = {
             toTeam: targetManifest.team_name,
             toStateRoot: targetManifest.state_root,
@@ -165,6 +218,21 @@ export async function runApiSendMessage(input, deps = {}) {
         const recipient = manifest.workers.find((w) => sanitizeName(w.name) === safeTo);
         if (!recipient) {
             throw new Error(`Recipient '${to_worker}' not in team '${team_name}'`);
+        }
+        // Role guard, same-team: a role-'worker' sender may message its
+        // orchestrators freely, message itself (self-notification), or REPLY
+        // (reply_to set) to anyone — covering orchestrator-delegated direct
+        // collaboration. Fresh worker→worker initiation is rejected.
+        if (
+            senderRole === 'worker' && safeFrom !== safeTo && !reply_to
+            && (recipient.role ?? null) !== 'orchestrator'
+        ) {
+            const orchs = orchestratorsOf(manifest);
+            throw new Error(
+                `Worker '${from_worker}' has role 'worker' and may only initiate messages to an orchestrator ` +
+                `(${orchs.join(', ') || 'none configured'}), or reply (set reply_to) to a message it received. ` +
+                `Route work for '${to_worker}' through an orchestrator.`
+            );
         }
         recipientPaneId = recipient.pane_id;
     }
