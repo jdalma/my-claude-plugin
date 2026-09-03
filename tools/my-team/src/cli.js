@@ -135,7 +135,7 @@ async function main() {
     const api = program.command('api').description('Internal API used by worker LLMs for peer messaging');
 
     api.command('send-message')
-        .description('[mutating] Send a peer message — drops a spool file, appends sender archive, records sent_pending. Add "to_team":"<team name>" (or legacy "to_session":"<tmux session name>") to reach a worker in another running team.')
+        .description('[mutating] Send a peer message — drops a spool file, appends sender archive, records sent_pending. Add "to_team":"<team name>" to reach a worker in another running team.')
         .requiredOption('--input <json>', 'JSON payload')
         .option('--json', 'JSON output')
         .action(async (opts) => emit(await runApiSendMessage(parseApiInput(opts)), opts.json));

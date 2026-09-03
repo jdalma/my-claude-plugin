@@ -202,9 +202,8 @@ TEAM NAME (stable across restarts, e.g. \`payments\`). Without \`to_team\` the
 recipient is looked up in your own team, exactly as before.
 
 - Send across teams: \`${formatOmcCliInvocation(`team api send-message --input "{\\"team_name\\":\\"${teamName}\\",\\"from_worker\\":\\"${workerName}\\",\\"to_team\\":\\"<team-name>\\",\\"to_worker\\":\\"<worker-in-that-team>\\",\\"body\\":\\"<message>\\"}" --json`)}\`
-- Legacy alternative: \`to_session\` with the tmux session name from \`tmux ls\`
-  (e.g. \`my-team-payments-k3f9x2a1\`). Prefer \`to_team\` — session names change on
-  every restart. Never set both.
+- Prefer \`to_team\` for every cross-team send — team names are stable across
+  restarts; tmux session names are not addressable.
 
 Rules:
 - **Only message teams your Role Context or the user names.** You MUST NOT run
@@ -213,9 +212,8 @@ Rules:
 - If the target team declares roles, cross-team messages must address one of
   its ORCHESTRATORS (send-message rejects other recipients). If your own team
   declares roles, only orchestrators may send cross-team.
-- A message you *receive* from another team carries \`from_team\` and
-  \`from_session\`. To reply, pass that \`from_team\` back as \`to_team\` (plus
-  \`reply_to\`). Reply without it and the reply is addressed inside your own
+- A message you *receive* from another team carries \`from_team\`. To reply,
+  pass that back as \`to_team\` (plus \`reply_to\`). Reply without it and the reply is addressed inside your own
   team, so the asker never gets it.
 - A wrong or dead team/session name is a hard error, not a silent drop — read
   the error message.

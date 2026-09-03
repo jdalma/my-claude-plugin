@@ -83,8 +83,7 @@ test('to_team delivers into the target team spool by TEAM NAME (no session name 
         const spool = readSpool(ctx.teamB.stateRoot, 'pm-b');
         assert.equal(spool.length, 1);
         assert.equal(spool[0].from_team, 'team-a');
-        assert.equal(spool[0].from_session, ctx.teamA.sessionName,
-            'to_team messages still carry from_session so legacy repliers work');
+        assert.equal(spool[0].from_session, undefined, 'session names are no longer carried');
     } finally {
         cleanup(ctx);
     }
@@ -99,22 +98,6 @@ test('to_team rejects an unknown team with a clear error', async () => {
                 to_team: 'team-nope', to_worker: 'ghost', body: 'hi',
             }, paneDeps),
             /Team 'team-nope' manifest not found/
-        );
-    } finally {
-        cleanup(ctx);
-    }
-});
-
-test('setting both to_team and to_session is rejected', async () => {
-    const ctx = setup();
-    try {
-        await assert.rejects(
-            () => runApiSendMessage({
-                team_name: 'team-a', from_worker: 'pm-a',
-                to_team: 'team-b', to_session: ctx.teamB.sessionName,
-                to_worker: 'pm-b', body: 'hi',
-            }, paneDeps),
-            /not both/
         );
     } finally {
         cleanup(ctx);

@@ -193,11 +193,9 @@ export async function absorbIncomingSpool(teamName, workerName, cwd) {
             reply_to: payload.reply_to ?? null,
             expects_reply: Boolean(payload.expects_reply),
             created_at: payload.created_at,
-            // Cross-team origin. Must survive absorption: the recipient has no
-            // other way to learn which session the sender lives in, and a reply
-            // without `to_session` would be addressed inside the recipient's own
-            // team and never reach the asker.
-            ...(payload.from_session ? { from_session: payload.from_session } : {}),
+            // Cross-team origin. Must survive absorption: a reply without
+            // `to_team` would be addressed inside the recipient's own team and
+            // never reach the asker.
             ...(payload.from_team ? { from_team: payload.from_team } : {}),
         };
         if (payload.reply_to && mailbox.sent_pending[payload.reply_to]) {
@@ -278,13 +276,10 @@ export async function queueDirectMessage(
         reply_to: replyTo ?? null,
         expects_reply: Boolean(expectsReply),
         created_at: createdAt,
-        // Cross-team only. `from_session` is what lets the recipient reply:
-        // it has no other way to learn which session the sender lives in, and
-        // without it a reply would be addressed within the recipient's own team
-        // and never reach the asker.
-        ...(crossTeam
-            ? { from_session: crossTeam.fromSession, from_team: teamName, to_team: crossTeam.toTeam }
-            : {}),
+        // Cross-team only. `from_team` is what lets the recipient reply back
+        // with `to_team`; without it a reply would be addressed within the
+        // recipient's own team and never reach the asker.
+        ...(crossTeam ? { from_team: teamName, to_team: crossTeam.toTeam } : {}),
     };
 
     // 1. If we expect a reply, track it on our own sent_pending FIRST so a

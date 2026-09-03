@@ -34,7 +34,7 @@ export async function appendMessageEvent(stateRoot, event) {
         message_id: message_id ?? null,
         reply_to: reply_to ?? null,
         expects_reply: Boolean(expects_reply),
-        // Cross-team sends add from_team / to_team / from_session / to_session.
+        // Cross-team sends add from_team / to_team.
         // Kept open rather than whitelisted so the timeline records which teams
         // a message crossed — a same-team send passes none of these and its
         // event shape is unchanged.

@@ -122,10 +122,9 @@ into each worker's AGENTS.md so the LLM knows its lane):
 `{"to_team": "payments", "to_worker": "pm", ...}`. The recipient team's
 manifest (keyed by team name) supplies its state root and current tmux
 session; tmux stays authoritative for liveness, so a dead team fails loudly.
-Team names are stable across restarts — workers no longer need per-boot
-session names. The legacy `to_session` (tmux session name from `tmux ls`)
-still works; never set both. Replies to a cross-team message pass the incoming
-`from_team` back as `to_team` (plus `reply_to`).
+Team names are stable across restarts, so tmux session names are not part of
+the contract (the old `to_session` field is rejected). Replies to a cross-team
+message pass the incoming `from_team` back as `to_team` (plus `reply_to`).
 
 ## Worker launch flags
 

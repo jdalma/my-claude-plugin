@@ -1,5 +1,5 @@
 /**
- * Cross-team send-message tests (`to_session`).
+ * Cross-team send-message tests (`to_team`).
  *
  * The regression these guard against: TeamPaths.root() reads MY_TEAM_STATE_ROOT
  * ahead of its teamName argument, and every worker process has that var pinned
@@ -76,11 +76,12 @@ test('cross-team send lands in the RECIPIENT team spool, not the sender root', a
     try {
         const result = await runApiSendMessage({
             team_name: 'team-a', from_worker: 'alice',
-            to_session: ctx.teamB.sessionName, to_worker: 'bob',
+            to_team: 'team-b', to_worker: 'bob',
             body: 'cross-team hello',
         }, paneDeps());
         assert.equal(result.ok, true);
         assert.equal(result.delivered_to_team, 'team-b');
+        assert.equal(result.delivered_to_session, undefined, 'session names are no longer part of the contract');
 
         const bSpool = readSpool(ctx.teamB.stateRoot, 'bob');
         assert.equal(bSpool.length, 1, 'message must land in team-b spool');
@@ -94,18 +95,17 @@ test('cross-team send lands in the RECIPIENT team spool, not the sender root', a
     }
 });
 
-test('cross-team message carries from_session so the recipient can reply back', async () => {
+test('cross-team message carries from_team so the recipient can reply back', async () => {
     const ctx = setupTwoTeams();
     try {
         await runApiSendMessage({
             team_name: 'team-a', from_worker: 'alice',
-            to_session: ctx.teamB.sessionName, to_worker: 'bob',
+            to_team: 'team-b', to_worker: 'bob',
             body: 'need an answer', expects_reply: true,
         }, paneDeps());
         const [msg] = readSpool(ctx.teamB.stateRoot, 'bob');
-        assert.equal(msg.from_session, ctx.teamA.sessionName,
-            'without from_session the recipient cannot address a reply back');
-        assert.equal(msg.from_team, 'team-a');
+        assert.equal(msg.from_team, 'team-a', 'without from_team the recipient cannot address a reply back');
+        assert.equal(msg.from_session, undefined, 'session names are no longer carried');
         assert.equal(msg.expects_reply, true);
     } finally {
         cleanup(ctx);
@@ -117,13 +117,15 @@ test('cross-team send mirrors the event into BOTH team logs', async () => {
     try {
         const r = await runApiSendMessage({
             team_name: 'team-a', from_worker: 'alice',
-            to_session: ctx.teamB.sessionName, to_worker: 'bob', body: 'ping',
+            to_team: 'team-b', to_worker: 'bob', body: 'ping',
         }, paneDeps());
         const aEvents = readEvents(ctx.teamA.stateRoot);
         const bEvents = readEvents(ctx.teamB.stateRoot);
         assert.equal(aEvents.length, 1);
         assert.equal(bEvents.length, 1, 'recipient monitor must see the message too');
         assert.equal(aEvents[0].message_id, r.message_id);
+        assert.equal(aEvents[0].to_team, 'team-b');
+        assert.equal(aEvents[0].to_session, undefined);
         assert.equal(bEvents[0].message_id, r.message_id);
         assert.equal(bEvents[0].from_team, 'team-a');
     } finally {
@@ -131,14 +133,14 @@ test('cross-team send mirrors the event into BOTH team logs', async () => {
     }
 });
 
-test('same-name worker in another session is a distinct peer (expects_reply allowed)', async () => {
+test('same-name worker in another team is a distinct peer (expects_reply allowed)', async () => {
     const ctx = setupTwoTeams();
     try {
         // Both teams have a worker literally named "shared". Cross-team, this is
         // not a self-message, so the self-reply guard must not fire.
         const r = await runApiSendMessage({
             team_name: 'team-a', from_worker: 'shared',
-            to_session: ctx.teamB.sessionName, to_worker: 'shared',
+            to_team: 'team-b', to_worker: 'shared',
             body: 'question for my namesake', expects_reply: true,
         }, paneDeps());
         assert.equal(r.expects_reply, true);
@@ -154,7 +156,7 @@ test('cross-team send rejects a worker missing from the target team', async () =
         await assert.rejects(
             () => runApiSendMessage({
                 team_name: 'team-a', from_worker: 'alice',
-                to_session: ctx.teamB.sessionName, to_worker: 'ghost', body: 'hi',
+                to_team: 'team-b', to_worker: 'ghost', body: 'hi',
             }, paneDeps()),
             /not in team 'team-b'/
         );
@@ -163,16 +165,18 @@ test('cross-team send rejects a worker missing from the target team', async () =
     }
 });
 
-test('cross-team send rejects an unknown session instead of spooling silently', async () => {
+test('the removed to_session field is rejected, not silently treated as same-team', async () => {
     const ctx = setupTwoTeams();
     try {
         await assert.rejects(
             () => runApiSendMessage({
                 team_name: 'team-a', from_worker: 'alice',
-                to_session: 'my-team-nope-zzz999', to_worker: 'bob', body: 'hi',
+                to_session: ctx.teamB.sessionName, to_worker: 'shared', body: 'hi',
             }, paneDeps()),
-            /No team manifest found for tmux session/
+            /to_session.*removed.*to_team/
         );
+        assert.equal(readSpool(ctx.teamA.stateRoot, 'shared').length, 0,
+            'a legacy to_session send must not be delivered to the same-name worker in the sender team');
     } finally {
         cleanup(ctx);
     }
@@ -184,7 +188,7 @@ test('a dead tmux session fails the send (no silent unread spool)', async () => 
         await assert.rejects(
             () => runApiSendMessage({
                 team_name: 'team-a', from_worker: 'alice',
-                to_session: ctx.teamB.sessionName, to_worker: 'bob', body: 'hi',
+                to_team: 'team-b', to_worker: 'bob', body: 'hi',
             }, paneDeps(async () => { throw new Error("tmux session 'x' not found or has no panes."); })),
             /not found or has no panes/
         );
@@ -195,18 +199,18 @@ test('a dead tmux session fails the send (no silent unread spool)', async () => 
     }
 });
 
-test('same-team send is unchanged when to_session is omitted', async () => {
+test('same-team send is unchanged when to_team is omitted', async () => {
     const ctx = setupTwoTeams();
     try {
         const r = await runApiSendMessage({
             team_name: 'team-a', from_worker: 'alice', to_worker: 'shared', body: 'local',
         }, paneDeps());
         assert.equal(r.delivered_to, 'shared');
-        assert.equal(r.delivered_to_session, undefined, 'same-team result must carry no cross-team fields');
+        assert.equal(r.delivered_to_team, undefined, 'same-team result must carry no cross-team fields');
         assert.equal(readSpool(ctx.teamA.stateRoot, 'shared').length, 1);
         assert.equal(readSpool(ctx.teamB.stateRoot, 'shared').length, 0);
         const [msg] = readSpool(ctx.teamA.stateRoot, 'shared');
-        assert.equal(msg.from_session, undefined, 'same-team messages carry no session metadata');
+        assert.equal(msg.from_team, undefined, 'same-team messages carry no team metadata');
     } finally {
         cleanup(ctx);
     }

@@ -87,7 +87,7 @@ Each worker gets a per-worker `AGENTS.md` overlay under `<state_root>/workers/<n
 
 my-team은 기본이 **peer-to-peer 모델**이다 (task lifecycle 없음). 채널은 두 개뿐이다. `role` 필드를 선언한 팀에서는 발신 토폴로지가 orchestrator 중심으로 제한된다(worker는 자기 팀 orchestrator에게 발신·reply만 가능, cross-team은 orchestrator끼리만).
 
-**Cross-team**: `api send-message`에 `"to_team":"<팀이름>"`을 추가하면 다른 실행 중인 팀의 워커에게 팀 이름으로 메시지를 보낼 수 있다(세션명 불필요, 재시작에도 안정). role 팀의 인바운드는 orchestrator만 받는다. legacy `to_session`도 유지되지만 둘을 동시에 쓰면 에러.
+**Cross-team**: `api send-message`에 `"to_team":"<팀이름>"`을 추가하면 다른 실행 중인 팀의 워커에게 팀 이름으로 메시지를 보낼 수 있다(세션명 불필요, 재시작에도 안정). role 팀의 인바운드는 orchestrator만 받는다. 옛 `to_session` 필드는 거부된다.
 
 | Channel | Surface | Notify |
 |---------|---------|--------|
