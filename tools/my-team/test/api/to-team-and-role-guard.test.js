@@ -122,16 +122,15 @@ test('to_team with a dead tmux session fails the send (liveness stays tmux-autho
 
 // ── role guard: sender side ──
 
-test('role worker cannot initiate to a sibling worker (must route via orchestrator)', async () => {
+test('role worker CAN initiate to a sibling worker (same-team peer messaging is open; roles gate cross-team only)', async () => {
     const ctx = setup();
     try {
-        await assert.rejects(
-            () => runApiSendMessage({
-                team_name: 'team-a', from_worker: 'dev-a', to_worker: 'aux-a', body: 'psst',
-            }, paneDeps),
-            /may only initiate messages to an orchestrator \(pm-a\)/
-        );
-        assert.equal(readSpool(ctx.teamA.stateRoot, 'aux-a').length, 0);
+        const r = await runApiSendMessage({
+            team_name: 'team-a', from_worker: 'dev-a', to_worker: 'aux-a', body: 'does your change touch OrderService?',
+            expects_reply: true,
+        }, paneDeps);
+        assert.equal(r.ok, true);
+        assert.equal(readSpool(ctx.teamA.stateRoot, 'aux-a').length, 1);
     } finally {
         cleanup(ctx);
     }

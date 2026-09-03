@@ -27,18 +27,13 @@
  * ## Role guard (teams with orchestrator/worker roles)
  *
  * When manifests carry worker roles, this command enforces the routing rules
- * the AGENTS.md overlay describes:
- *   - role 'worker' senders may only message their own team's orchestrators,
- *     or reply (`reply_to` set) to any message they received; cross-team
- *     sends are rejected.
+ * the AGENTS.md overlay describes — cross-team only; inside a team every
+ * worker may message every other:
+ *   - role 'worker' senders cannot send cross-team.
  *   - cross-team messages into a role-declaring team must address one of its
  *     orchestrators (the team's gateway).
  * Legacy manifests without roles are untouched — fully peer-symmetric.
  */
-
-import { existsSync, readFileSync, readdirSync } from 'fs';
-import { join } from 'path';
-import { homedir } from 'os';
 
 import { loadManifest } from '../_manifest.js';
 import { setStateRoot } from '../../lib/state-root.js';
@@ -173,21 +168,9 @@ export async function runApiSendMessage(input, deps = {}) {
         if (!recipient) {
             throw new Error(`Recipient '${to_worker}' not in team '${team_name}'`);
         }
-        // Role guard, same-team: a role-'worker' sender may message its
-        // orchestrators freely, message itself (self-notification), or REPLY
-        // (reply_to set) to anyone — covering orchestrator-delegated direct
-        // collaboration. Fresh worker→worker initiation is rejected.
-        if (
-            senderRole === 'worker' && safeFrom !== safeTo && !reply_to
-            && (recipient.role ?? null) !== 'orchestrator'
-        ) {
-            const orchs = orchestratorsOf(manifest);
-            throw new Error(
-                `Worker '${from_worker}' has role 'worker' and may only initiate messages to an orchestrator ` +
-                `(${orchs.join(', ') || 'none configured'}), or reply (set reply_to) to a message it received. ` +
-                `Route work for '${to_worker}' through an orchestrator.`
-            );
-        }
+        // No same-team role guard: peers in one team may talk freely (workers
+        // sharing a repo must be able to check whether their changes collide).
+        // Roles gate only the cross-team paths above.
         recipientPaneId = recipient.pane_id;
     }
 

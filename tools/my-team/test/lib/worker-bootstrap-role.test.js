@@ -41,7 +41,7 @@ test('worker overlay carries the evidence discipline', () => {
     assert.match(text, /must cite file:line/);
 });
 
-test('worker overlay is reply-only and names its orchestrators', () => {
+test('worker overlay names its orchestrators and blocks cross-team', () => {
     const text = overlayFor('dev', 'worker');
     assert.match(text, /## Team Role: WORKER/);
     assert.match(text, /\(pm\)/, 'must name the orchestrator(s)');

@@ -13,8 +13,9 @@
  *
  * Team roles (optional, config `role` field): a team may declare
  * 'orchestrator' / 'worker' roles. Orchestrators initiate/delegate and are the
- * team's cross-team gateway; workers are reply-only (enforced in
- * send-message). Teams without roles keep the original peer-symmetric model.
+ * team's cross-team gateway; workers may message any same-team peer but cannot
+ * send cross-team (enforced in send-message). Teams without roles keep the
+ * original peer-symmetric model.
  */
 
 import { mkdir } from 'fs/promises';
@@ -99,8 +100,8 @@ function roleGuidance(workerRole, orchestratorNames) {
     if (workerRole === 'worker') {
         return [
             '## Team Role: WORKER',
-            'You are a specialist worker. You do NOT initiate conversations: you act on messages from your orchestrator(s) and on user input in this pane.',
-            `- Allowed sends (CLI-enforced): to an orchestrator of your own team (${orchList}) — reports, results, questions — and replies (reply_to set) to any message you received.`,
+            `You are a specialist worker. Work arrives from your orchestrator(s) (${orchList}) and from user input in this pane; report results back to the orchestrator that asked.`,
+            '- You may message any worker in your own team directly. Do so when your work might collide with theirs (same repo, same files, shared contracts) — ask before you both touch the same thing.',
             '- Cross-team messaging is blocked for your role. If something concerns another team, report it to your orchestrator and let it relay.',
             '- Big content travels as files: write results to a file and send the PATH, not the content.',
             '- Evidence discipline: results and answers must cite file:line, schema, or document paths so the recipient can open and verify them directly. A claim without a citation is incomplete.',

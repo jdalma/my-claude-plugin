@@ -108,10 +108,10 @@ into each worker's AGENTS.md so the LLM knows its lane):
   messages must address an orchestrator (the team's gateway). Its AGENTS.md
   carries a delegation discipline (ticket-form delegation, topic batching,
   RFC-file escalation, `sent_pending` review).
-- **worker** — reply-only: may initiate messages **to its own team's
-  orchestrators**, may reply (`reply_to` set) to anything it received, and may
-  self-notify. Fresh worker→worker initiation and any cross-team send are
-  rejected by the CLI.
+- **worker** — takes tickets from its orchestrator(s) and reports back, but
+  may message **any worker in its own team** directly (workers sharing a repo
+  must be able to check whether their changes collide). Only cross-team sends
+  are rejected for this role.
 - Declaring roles requires **at least one orchestrator**; multiple
   orchestrators are fine (two-hub teams). A config with no `role` fields keeps
   the original peer-symmetric behaviour, guard-free.
