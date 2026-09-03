@@ -52,7 +52,7 @@ my-team start --config my-team.json
 |------|------|
 | `# Team Worker Protocol` (헤더) | peer-to-peer 모델 한 줄 선언 + user는 pane으로, peer는 mailbox로 본다 |
 | `## Identity` | team_name, worker name, agent_type, `OMC_TEAM_WORKER` env |
-| `## Team Roster` | 모든 워커 한 줄씩: `- **name** [agent_type] — role`. role은 config의 `description` (없으면 `extra_prompt` 첫 줄) |
+| `## Team Roster` | 모든 워커 한 줄씩: `- **name** [agent_type] — role`. role은 config의 `description` (없으면 `extra_prompt` 첫 줄). 부팅 스냅샷이며, 최신 로스터는 `mailbox-list` 응답의 `roster`가 권위 있다고 명시 |
 | `## Liveness` | `status.json` / `heartbeat.json` 갱신 안내 |
 | `## Message Protocol` | **hard rule**: peer 통신은 오직 `api send-message`. `tmux send-keys` 금지, `my-team msg` 금지 |
 | `## Message Protocol > Talk to other workers via CLI API` | 6개 명령 한 줄씩 (send-message 1-way / send-message expects_reply / 답장 / mailbox-list / mark-delivered / archive-lookup) |

@@ -235,6 +235,9 @@ export async function runStart(opts) {
             agent_type: w.agent_type,
             // Persisted so send-message can enforce role routing per call.
             role: w.role ?? null,
+            // Persisted so the roster served by mailbox-list / api roster and
+            // add-worker's overlay carry the same one-liner peers saw at boot.
+            description: (w.description || w.extra_prompt || '').split('\n')[0].trim(),
             overlay_path: overlayPath,
         });
     }

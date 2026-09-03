@@ -78,3 +78,9 @@ test('overlay carries no dead protocol: no shutdown-ack ritual, no to_session ad
         assert.doesNotMatch(text, /from_session/);
     }
 });
+
+test('overlay tells workers the roster is a boot snapshot refreshed by mailbox-list, and how to read another team', () => {
+    const text = overlayFor('pm', 'orchestrator');
+    assert.match(text, /mailbox-list.*roster|roster.*mailbox-list/s, 'live roster arrives with every mailbox-list');
+    assert.match(text, /api roster/, 'cross-team roster lookup command');
+});

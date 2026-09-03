@@ -24,6 +24,7 @@ import { runApiSendMessage } from './commands/api/send-message.js';
 import { runApiMailboxList } from './commands/api/mailbox-list.js';
 import { runApiMailboxMarkDelivered } from './commands/api/mailbox-mark-delivered.js';
 import { runApiArchiveLookup } from './commands/api/archive-lookup.js';
+import { runApiRoster } from './commands/api/roster.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -119,6 +120,7 @@ async function main() {
         .requiredOption('--agent-type <type>', 'agent type (claude|codex|gemini|cursor)')
         .requiredOption('--cwd <path>', 'worker working directory')
         .option('--role <role>', "team role: orchestrator|worker. In a role-declaring team, omitting this defaults to 'worker'")
+        .option('--description <text>', 'one-liner peers see in the roster (what to ask this worker for)')
         .option('--launch-arg <arg>', 'extra CLI arg for the worker (repeatable; e.g. --launch-arg --dangerously-skip-permissions). Without a permission-bypass flag the worker runs supervised and stalls on its first permission prompt until you answer it in its pane.', (v, prev) => {
             prev = prev || [];
             prev.push(v);
@@ -156,6 +158,12 @@ async function main() {
         .requiredOption('--input <json>', 'JSON payload')
         .option('--json', 'JSON output')
         .action((opts) => emit(runApiArchiveLookup(parseApiInput(opts)), opts.json));
+
+    api.command('roster')
+        .description('[pure] Current workers of a team (name, agent_type, role, description) — the registry other teams address by team name')
+        .requiredOption('--input <json>', 'JSON payload: {"team_name":"<team>"}')
+        .option('--json', 'JSON output')
+        .action(async (opts) => emit(await runApiRoster(parseApiInput(opts)), opts.json));
 
     try {
         await program.parseAsync(process.argv);

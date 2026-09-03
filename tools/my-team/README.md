@@ -264,9 +264,10 @@ will actually do. High user attention required.
 | `monitor` | Tail peer messages in real-time |
 | `shutdown` | Terminate a team immediately **and clear its state** — backs up `state_root` to `<state_root>.bak` (one generation), then removes the original so re-running `start` with the same `team_name` starts clean (see "State cleanup" below) |
 | `api send-message` | **[mutating]** Peer message — drops a spool file, appends sender archive, records `sent_pending`. `to_team` reaches another team by name (role guard applies) |
-| `api mailbox-list` | **[mutating]** List unread inbox — *absorbs the incoming-spool into the mailbox first*. This absorption is the polling side effect: the name says "list" but it writes. Skip the poll and new messages are never absorbed |
+| `api mailbox-list` | **[mutating]** List unread inbox plus the team's current `roster` — *absorbs the incoming-spool into the mailbox first*. This absorption is the polling side effect: the name says "list" but it writes. Skip the poll and new messages are never absorbed |
 | `api mailbox-mark-delivered` | **[mutating]** Mark consumed — moves the entry to the archive jsonl, removes it from the inbox |
 | `api archive-lookup` | **[pure]** Look up an archived message by id — read-only |
+| `api roster` | **[pure]** Current workers of a team by team name (`{"team_name":"<team>"}`) — name, agent_type, role, description. The manifest is the registry; this is how an orchestrator reads another team's roster before addressing it |
 
 > Internal peer-messaging API called by worker LLMs (do not call manually). The
 > `[mutating]` / `[pure]` tag marks whether a call has a file-write side effect —
@@ -289,9 +290,12 @@ peer with `expects_reply=true`. Going through the mailbox (not a best-effort
 in-pane tmux poke) means a busy peer still receives the greeting on its next
 self-poll, and the ACK lets you see which peers haven't acknowledged the newcomer
 yet (visibility — it does not auto-resend). Existing workers' `AGENTS.md` rosters
-are static and are **not** rewritten (a running worker CLI already loaded its
-`AGENTS.md` at launch, so a disk rewrite would not reach it); they reply to the
-greeting by the `expects_reply` discipline already in their AGENTS.md.
+are a boot snapshot and are **not** rewritten (a running worker CLI already
+loaded its `AGENTS.md` at launch, so a disk rewrite would not reach it). Instead
+every `api mailbox-list` response carries the current `roster` from the
+manifest, so a running worker learns the newcomer's name, role and description
+on its next self-poll. `start` and `add-worker` both persist `description` in
+the manifest for that purpose.
 
 ## State layout
 

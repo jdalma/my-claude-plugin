@@ -390,3 +390,48 @@ test('defaults launchArgs to empty array when not provided', async () => {
         assert.deepEqual(spawned.launchArgs, [], 'launchArgs defaults to []');
     } finally { cleanup(ctx); }
 });
+
+test('--description is persisted in the manifest and existing peers\' descriptions reach the new roster', async () => {
+    const ctx = setupTeam();
+    try {
+        // start.js persisted alice's description; add-worker must render it.
+        const manifestPath = join(ctx.stateRoot, 'manifest.json');
+        const m = JSON.parse(readFileSync(manifestPath, 'utf-8'));
+        m.workers[0].description = 'alice owns the API';
+        writeFileSync(manifestPath, JSON.stringify(m), 'utf-8');
+
+        await runAddWorker(validOpts({ description: 'carol reviews PRs' }), okDeps());
+
+        const carol = readManifest(ctx).workers.find((w) => w.name === 'carol');
+        assert.equal(carol.description, 'carol reviews PRs');
+
+        const body = readFileSync(join(ctx.stateRoot, 'workers', 'carol', 'AGENTS.md'), 'utf-8');
+        assert.match(body, /\*\*alice\*\* \[claude\] — alice owns the API/, 'peer description from manifest');
+        assert.match(body, /\*\*carol\*\* \(you\) \[claude\] — carol reviews PRs/);
+    } finally {
+        cleanup(ctx);
+    }
+});
+
+test('--description is stored as one line, like start does', async () => {
+    const ctx = setupTeam();
+    try {
+        await runAddWorker(validOpts({ description: 'first line\nsecond line' }), okDeps());
+        assert.equal(readManifest(ctx).workers.find((w) => w.name === 'carol').description, 'first line');
+    } finally {
+        cleanup(ctx);
+    }
+});
+
+// ── --worktree: real git repo in tmp, tmux still stubbed ──
+import { execSync } from 'child_process';
+import { realpathSync } from 'fs';
+
+function makeRepo() {
+    // realpath: macOS tmpdir is a symlink (/var → /private/var) and git reports the resolved path.
+    const repo = realpathSync(mkdtempSync(join(tmpdir(), 'my-team-repo-')));
+    execSync('git init -q -b main && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m init', { cwd: repo });
+    return repo;
+}
+const git = (cwd, args) => execSync(`git ${args}`, { cwd, encoding: 'utf-8' }).trim();
+

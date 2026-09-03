@@ -14,7 +14,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readdirSync, rmSync } from 'fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
@@ -258,6 +258,29 @@ test('mailbox-list sanitizer strips traversal characters before path resolution'
         const result = await runApiMailboxList({ team_name: ctx.teamName, worker: '../etc' });
         assert.equal(result.ok, true);
         assert.equal(result.worker, 'etc');
+    } finally {
+        cleanup(ctx);
+    }
+});
+
+test('mailbox-list returns the live team roster from the manifest on every call', async () => {
+    const ctx = setupTeam({ mailbox: null });
+    try {
+        // add-worker appended a peer after this worker booted; its AGENTS.md
+        // roster is stale, the manifest is not.
+        const manifestPath = join(ctx.stateRoot, 'manifest.json');
+        const m = JSON.parse(readFileSync(manifestPath, 'utf-8'));
+        m.workers[0].agent_type = 'claude';
+        m.workers[0].role = 'orchestrator';
+        m.workers[0].description = 'PM hub';
+        m.workers.push({ name: 'newbie', pane_id: '%5', agent_type: 'codex', role: 'worker', description: 'joined late' });
+        writeFileSync(manifestPath, JSON.stringify(m), 'utf-8');
+
+        const res = await runApiMailboxList({ team_name: ctx.teamName, worker: ctx.worker });
+        assert.deepEqual(res.roster, [
+            { name: 'alice', agent_type: 'claude', role: 'orchestrator', description: 'PM hub' },
+            { name: 'newbie', agent_type: 'codex', role: 'worker', description: 'joined late' },
+        ]);
     } finally {
         cleanup(ctx);
     }

@@ -21,6 +21,19 @@ function stripWindowSuffix(name) {
     return typeof name === 'string' ? name.split(':')[0] : name;
 }
 
+/**
+ * The roster as workers may see it: identity + role text only. Pane ids and
+ * paths stay out — they are the user's monitoring surface, not a peer channel.
+ */
+export function rosterOf(manifest) {
+    return (manifest.workers ?? []).map((w) => ({
+        name: w.name,
+        agent_type: w.agent_type,
+        role: w.role ?? null,
+        description: w.description ?? '',
+    }));
+}
+
 export function manifestPathForTeam(teamName, stateRoot) {
     if (stateRoot) return join(stateRoot, 'manifest.json');
     return join(defaultBase(), teamName, 'manifest.json');

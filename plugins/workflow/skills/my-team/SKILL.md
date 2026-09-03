@@ -81,7 +81,7 @@ Reach for `my-team` when **multiple unrelated repos** need to be edited and disc
 
 ## Worker AGENTS.md
 
-Each worker gets a per-worker `AGENTS.md` overlay under `<state_root>/workers/<name>/AGENTS.md`. The worker's `extra_prompt` (its initial work brief) renders into the `## Role Context` section; peers see only the one-line `description` field via the `## Team Roster`.
+Each worker gets a per-worker `AGENTS.md` overlay under `<state_root>/workers/<name>/AGENTS.md`. The worker's `extra_prompt` (its initial work brief) renders into the `## Role Context` section; peers see only the one-line `description` field via the `## Team Roster`. 그 로스터는 부팅 스냅샷이다 — `add-worker`로 합류한 워커는 기존 워커가 매 사이클 호출하는 `api mailbox-list` 응답의 `roster`로 전달된다(`description`은 manifest에 저장됨). 다른 팀 명단은 `api roster --input '{"team_name":"<팀>"}'`로 읽는다(지시받은 팀만, 스캔 금지).
 
 ## Communication channels
 

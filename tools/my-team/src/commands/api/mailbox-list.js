@@ -8,7 +8,7 @@
  * Input JSON:
  *   { team_name, worker, unread_only? = true }
  *
- * Returns: { ok: true, worker, messages: [...], sent_pending: [...] }
+ * Returns: { ok: true, worker, messages: [...], sent_pending: [...], roster: [...] }
  *
  *   - messages: inbox map projected to an array, sorted by created_at asc.
  *     Object key order is NOT a contract — use the array.
@@ -16,10 +16,14 @@
  *     filtered out.
  *   - sent_pending: the sender-side pending map projected to an array,
  *     sorted by sent_at asc.
+ *   - roster: the team's CURRENT members from the manifest. A running worker
+ *     only ever read its AGENTS.md roster at boot; add-worker changes the
+ *     team after that, and this field is how the change reaches it — on the
+ *     poll it already makes every cycle.
  */
 
 import { readFileSync, existsSync } from 'fs';
-import { loadManifest } from '../_manifest.js';
+import { loadManifest, rosterOf } from '../_manifest.js';
 import { setStateRoot } from '../../lib/state-root.js';
 import { TeamPaths } from '../../lib/state-paths.js';
 import { absorbIncomingSpool } from '../../lib/tmux-comm.js';
@@ -46,7 +50,7 @@ export async function runApiMailboxList(input) {
     const mailboxFile = resolveTeamPath(teamName, worker, parentDir, TeamPaths.mailbox);
 
     if (!existsSync(mailboxFile)) {
-        return { ok: true, worker, messages: [], sent_pending: [] };
+        return { ok: true, worker, messages: [], sent_pending: [], roster: rosterOf(manifest) };
     }
 
     let raw;
@@ -74,5 +78,5 @@ export async function runApiMailboxList(input) {
     const sentPending = Object.values(sentPendingMap).slice();
     sentPending.sort((a, b) => String(a.sent_at ?? '').localeCompare(String(b.sent_at ?? '')));
 
-    return { ok: true, worker, messages: filtered, sent_pending: sentPending };
+    return { ok: true, worker, messages: filtered, sent_pending: sentPending, roster: rosterOf(manifest) };
 }

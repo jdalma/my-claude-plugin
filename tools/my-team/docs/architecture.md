@@ -244,7 +244,7 @@ monitor와 audit 용도 통합 로그. `send-message` API가 호출되면 한 �
 - **fail-safe 순서.** 검증(부작용 0) → state dir + 새 워커 AGENTS.md → 페인 split → CLI spawn → ready 대기 → 라벨/레이아웃 재assert → **manifest reload + append (커밋 포인트)** → D에게 인사 트리거 startup notice. 페인 split 이후 어떤 실패든 새 페인만 kill하고 manifest는 건드리지 않는다. 호스트(leader) 페인은 절대 kill하지 않는다.
 - **권한 플래그(`--launch-arg`).** start의 `launch_args`와 동등하게, add-worker도 `--launch-arg`(반복)로 권한 우회 플래그(예: `--dangerously-skip-permissions`)를 워커 CLI에 forward한다. **이 플래그가 없으면 추가된 워커는 supervised 모드**로 떠서 첫 권한 프롬프트에서 멈춘다 — 사용자가 해당 pane에서 응답해야 진행된다. 자율 워커를 원하면 `--launch-arg`로 우회 플래그를 넘긴다. (start과 달리 `--env`/`--description`/`--extra-prompt`은 의도적으로 제외 — 최소 표면.)
 - **cwd 정규화.** `--cwd ~/foo` 같은 tilde 경로는 `validateWorker`가 절대경로로 확장한 값이 tmux split-window와 manifest에 저장된다(start과 동일 표현). literal `~`가 새는 일은 없다.
-- **한계 (lossy roster).** `description`/`extra_prompt`는 manifest에 저장되지 않으므로(`start.js`가 안 넣음), 새 워커의 roster에 기존 peer들의 role 텍스트는 빈 문자열로 렌더된다. 이름·agent_type은 정상.
+- **동적 로스터.** `start`와 `add-worker`가 워커의 `description`(없으면 `extra_prompt` 첫 줄)을 manifest에 저장한다. `api mailbox-list`는 응답마다 manifest 기준 `roster`(name/agent_type/role/description)를 동봉하므로, 부팅 후 합류한 워커도 기존 워커의 다음 self-poll에 로스터로 도달한다. AGENTS.md의 로스터는 부팅 스냅샷임을 본문에 명시한다. 다른 팀의 로스터는 `api roster --input '{"team_name":"<팀>"}'`(pure)로 읽는다 — 지시받은 팀만 조회하며, 팀 탐색(스캔) 금지 규칙은 유지된다.
 
 ## 8. 빠진 기능 / 한계
 

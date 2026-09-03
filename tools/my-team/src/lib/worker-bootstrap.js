@@ -164,6 +164,10 @@ outside your own scope but matches a peer's role, send that peer a message
 instead of solving it yourself — that is what the roster is for.
 ${rosterList}
 
+This list is the snapshot taken when you booted. Workers can join later via
+add-worker, so the authoritative roster is the \`roster\` array returned by
+every \`mailbox-list\` call — trust that over this list when they differ.
+
 ## Liveness
 - **Status**: Write to ${statusPath}:
   \`\`\`json
@@ -205,10 +209,14 @@ recipient is looked up in your own team, exactly as before.
 - Prefer \`to_team\` for every cross-team send — team names are stable across
   restarts; tmux session names are not addressable.
 
+- Look up that team's current workers (names, roles, one-line descriptions):
+  \`${formatOmcCliInvocation('team api roster --input "{\\"team_name\\":\\"<team-name>\\"}" --json')}\`
+
 Rules:
 - **Only message teams your Role Context or the user names.** You MUST NOT run
   \`tmux ls\` or scan for other teams on your own — other teams are outside your
-  scope unless you were pointed at one.
+  scope unless you were pointed at one. \`api roster\` is for a team you were
+  already pointed at, not for discovery.
 - If the target team declares roles, cross-team messages must address one of
   its ORCHESTRATORS (send-message rejects other recipients). If your own team
   declares roles, only orchestrators may send cross-team.
@@ -234,9 +242,11 @@ original \`message_id\`; \`mailbox-list\` automatically removes the matching
 \`sent_pending\` entry when it absorbs an incoming reply, so your outstanding
 questions list stays accurate without any manual bookkeeping.
 
-\`mailbox-list\` returns \`{ ok, worker, messages, sent_pending }\`:
+\`mailbox-list\` returns \`{ ok, worker, messages, sent_pending, roster }\`:
 - \`messages\` is your inbox (unread by default), sorted by \`created_at\`
   ascending. **Do not rely on object key order** — always iterate the array.
+- \`roster\` is the team's current members (name, agent_type, role,
+  description) — authoritative over the boot-time list above.
 - \`sent_pending\` is the questions you have sent with \`expects_reply: true\`
   that are still awaiting an answer.
 

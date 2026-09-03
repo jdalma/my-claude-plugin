@@ -56,6 +56,7 @@ export async function runAddWorker(opts, deps = {}) {
     // be undefined and slip through to a crash at spawn).
     const newWorker = { name: opts.name, cwd: opts.cwd, agent_type: opts.agentType };
     if (opts.role !== undefined) newWorker.role = opts.role;
+    if (opts.description !== undefined) newWorker.description = opts.description;
 
     // Resolve --team as EITHER a team name OR a tmux session name (what
     // `tmux ls` shows). resolveTeamManifest scans manifests by session_name
@@ -121,12 +122,12 @@ export async function runAddWorker(opts, deps = {}) {
     const stateRoot = manifest.state_root;
     await ensureWorkerStateDir(opts.team, opts.name, stateRoot);
 
-    // New roster = existing workers + the newcomer. Existing roles are not in
-    // the manifest (only start-time config had them), so they render with empty
-    // role text — an accepted limitation of the no-rewrite design.
+    // New roster = existing workers + the newcomer. Descriptions come from the
+    // manifest (start persists them), so the newcomer sees real peer roles.
+    const description = (validated.description ?? '').split('\n')[0].trim(); // one line, same as start
     const teamRoster = [
-        ...manifest.workers.map((w) => ({ name: w.name, agentType: w.agent_type, role: '', teamRole: w.role ?? null })),
-        { name: opts.name, agentType: opts.agentType, role: '', teamRole: workerRole },
+        ...manifest.workers.map((w) => ({ name: w.name, agentType: w.agent_type, role: w.description ?? '', teamRole: w.role ?? null })),
+        { name: opts.name, agentType: opts.agentType, role: description, teamRole: workerRole },
     ];
     const overlay = generateWorkerOverlay({
         teamName: opts.team,
@@ -186,6 +187,7 @@ export async function runAddWorker(opts, deps = {}) {
             cwd,
             agent_type: opts.agentType,
             role: workerRole,
+            description,
             overlay_path: overlayPath,
         });
         atomicWriteJson(manifestPathForTeam(opts.team, opts.stateRoot), fresh);
