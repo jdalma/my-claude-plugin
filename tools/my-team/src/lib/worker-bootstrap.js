@@ -174,6 +174,9 @@ every \`mailbox-list\` call — trust that over this list when they differ.
   {"state": "idle", "updated_at": "<ISO timestamp>"}
   \`\`\`
   States: "idle" | "working" | "blocked" | "done" | "failed"
+  \`my-team status\` shows this file to the user next to your stuck mail
+  (spool/unread/pending), so a "blocked" state with a reason is how you make
+  a stall visible without the user opening your pane.
 - **Heartbeat**: Update ${heartbeatPath} every few minutes:
   \`\`\`json
   {"pid":<pid>,"last_turn_at":"<ISO timestamp>","turn_count":<n>,"alive":true}

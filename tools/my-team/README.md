@@ -259,8 +259,8 @@ will actually do. High user attention required.
 | Command | Purpose |
 |---------|---------|
 | `start` | Boot a team from config (or inline `--worker name:agent:cwd`) |
-| `status` | Show team and worker liveness |
 | `add-worker` | Add one worker to a **running** team mid-session (`--team --name --agent-type --cwd`, optional `--role orchestrator\|worker` — defaults to `worker` in a role-declaring team) — splits a new pane, registers it in `manifest.workers`, and notifies existing workers. Pass `--launch-arg` (repeatable) for permission-bypass flags; without them the added worker runs supervised and stalls on its first permission prompt |
+| `status` | Per worker: tmux liveness, self-reported `state` (+ `reason` when blocked), and stuck mail — `spool` (never absorbed), `unread` (absorbed, not consumed), `pending` (questions awaiting a reply, with the oldest age). A worker that stalled without saying so shows up here without opening its pane |
 | `monitor` | Tail peer messages in real-time |
 | `shutdown` | Terminate a team immediately **and clear its state** — backs up `state_root` to `<state_root>.bak` (one generation), then removes the original so re-running `start` with the same `team_name` starts clean (see "State cleanup" below) |
 | `api send-message` | **[mutating]** Peer message — drops a spool file, appends sender archive, records `sent_pending`. `to_team` reaches another team by name (role guard applies) |
@@ -305,7 +305,7 @@ the manifest for that purpose.
 ├── events.jsonl              # peer message audit log
 ├── workers/<name>/
 │   ├── AGENTS.md             # per-worker system prompt overlay
-│   ├── status.json
+│   ├── status.json           # worker-written {state, reason}; shown by `status`
 │   └── heartbeat.json
 ├── mailbox/<name>.json       # peer mailbox (read by recipient)
 ├── incoming-spool/<name>/    # one file per inbound message (sender writes)

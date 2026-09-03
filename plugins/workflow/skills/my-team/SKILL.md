@@ -52,7 +52,7 @@ EOF
 my-team start --config ./my-team.json
 
 # 3. Inspect
-my-team status --team my-feature
+my-team status --team my-feature   # 워커별 state/blocked 사유 + spool/unread/pending 으로 멈춘 워커 식별
 my-team monitor my-feature   # peer 메시지 실시간 tail
 
 # 4. 도중에 워커한테 추가 지시 → 해당 워커의 tmux pane에 직접 타이핑
