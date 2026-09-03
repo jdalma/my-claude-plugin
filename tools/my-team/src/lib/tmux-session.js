@@ -14,7 +14,6 @@
 
 import { existsSync } from 'fs';
 import { join, basename, isAbsolute, win32 } from 'path';
-import fs from 'fs/promises';
 
 import { validateTeamName, sanitizeName } from './team-name.js';
 import { tmuxExec, tmuxExecAsync, tmuxShell, tmuxCmdAsync } from './tmux-utils.js';
@@ -646,20 +645,11 @@ export async function isWorkerAlive(paneId) {
 }
 
 /**
- * Graceful-then-force shutdown. Writes a sentinel, waits up to `graceMs`,
- * then force-kills any remaining worker panes. Never kills the leader.
+ * Kill worker panes immediately. Never kills the leader. (The old
+ * sentinel + grace wait is gone: no worker ever acknowledged it.)
  */
 export async function killWorkerPanes(opts) {
-    const { paneIds, leaderPaneId, teamName, cwd, graceMs = 10_000 } = opts;
-    if (!paneIds.length) return;
-    const shutdownPath = join(cwd, '.omc', 'state', 'team', teamName, 'shutdown.json');
-    try {
-        await fs.mkdir(join(shutdownPath, '..'), { recursive: true });
-        await fs.writeFile(shutdownPath, JSON.stringify({ requestedAt: Date.now() }));
-        const aliveChecks = await Promise.all(paneIds.map((id) => isWorkerAlive(id)));
-        if (aliveChecks.some((alive) => alive)) await sleep(graceMs);
-    } catch { /* sentinel write failure non-fatal */ }
-
+    const { paneIds, leaderPaneId } = opts;
     for (const paneId of paneIds) {
         if (paneId === leaderPaneId) continue;
         try { await tmuxExecAsync(['kill-pane', '-t', paneId]); } catch { /* gone */ }

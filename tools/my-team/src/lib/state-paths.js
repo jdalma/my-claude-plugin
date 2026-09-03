@@ -24,14 +24,12 @@ function p(teamName, ...parts) {
 
 export const TeamPaths = {
     root: (teamName) => resolveTeamRoot(teamName),
-    shutdown: (teamName) => p(teamName, 'shutdown.json'),
     workers: (teamName) => p(teamName, 'workers'),
     workerDir: (teamName, workerName) => p(teamName, 'workers', workerName),
     overlay: (teamName, workerName) => p(teamName, 'workers', workerName, 'AGENTS.md'),
     heartbeat: (teamName, workerName) => p(teamName, 'workers', workerName, 'heartbeat.json'),
     ready: (teamName, workerName) => p(teamName, 'workers', workerName, '.ready'),
     workerStatus: (teamName, workerName) => p(teamName, 'workers', workerName, 'status.json'),
-    shutdownAck: (teamName, workerName) => p(teamName, 'workers', workerName, 'shutdown-ack.json'),
     mailbox: (teamName, workerName) => p(teamName, 'mailbox', `${workerName}.json`),
     archive: (teamName, workerName) => p(teamName, 'archive', `${workerName}.jsonl`),
     incomingSpoolDir: (teamName, workerName) => p(teamName, 'incoming-spool', workerName),

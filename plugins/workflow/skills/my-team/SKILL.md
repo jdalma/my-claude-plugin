@@ -113,7 +113,6 @@ my-team은 기본이 **peer-to-peer 모델**이다 (task lifecycle 없음). 채�
 |-----|---------|--------|
 | `MY_TEAM_STATE_ROOT_BASE` | `~/.my-team/sessions` | base directory for sessions |
 | `MY_TEAM_STATE_ROOT` | (set by `start`) | absolute state root for current invocation |
-| `MY_TEAM_GRACE_MS` | `10000` | graceful shutdown wait |
 | `MY_TEAM_NO_RC` | (unset) | if `1`, workers skip sourcing zshrc/bashrc |
 | `MY_TEAM_SHELL_READY_TIMEOUT_MS` | `30000` | how long to wait for a worker CLI prompt |
 

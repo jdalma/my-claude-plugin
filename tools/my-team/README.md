@@ -262,7 +262,7 @@ will actually do. High user attention required.
 | `status` | Show team and worker liveness |
 | `add-worker` | Add one worker to a **running** team mid-session (`--team --name --agent-type --cwd`, optional `--role orchestrator\|worker` — defaults to `worker` in a role-declaring team) — splits a new pane, registers it in `manifest.workers`, and notifies existing workers. Pass `--launch-arg` (repeatable) for permission-bypass flags; without them the added worker runs supervised and stalls on its first permission prompt |
 | `monitor` | Tail peer messages in real-time |
-| `shutdown` | Terminate a team **and clear its state** — backs up `state_root` to `<state_root>.bak` (one generation), then removes the original so re-running `start` with the same `team_name` starts clean (see "State cleanup" below) |
+| `shutdown` | Terminate a team immediately **and clear its state** — backs up `state_root` to `<state_root>.bak` (one generation), then removes the original so re-running `start` with the same `team_name` starts clean (see "State cleanup" below) |
 | `api send-message` | **[mutating]** Peer message — drops a spool file, appends sender archive, records `sent_pending`. `to_team` reaches another team by name (role guard applies) |
 | `api mailbox-list` | **[mutating]** List unread inbox — *absorbs the incoming-spool into the mailbox first*. This absorption is the polling side effect: the name says "list" but it writes. Skip the poll and new messages are never absorbed |
 | `api mailbox-mark-delivered` | **[mutating]** Mark consumed — moves the entry to the archive jsonl, removes it from the inbox |
@@ -302,8 +302,7 @@ greeting by the `expects_reply` discipline already in their AGENTS.md.
 ├── workers/<name>/
 │   ├── AGENTS.md             # per-worker system prompt overlay
 │   ├── status.json
-│   ├── heartbeat.json
-│   └── shutdown-ack.json     # written on shutdown
+│   └── heartbeat.json
 ├── mailbox/<name>.json       # peer mailbox (read by recipient)
 ├── incoming-spool/<name>/    # one file per inbound message (sender writes)
 └── archive/<name>.jsonl      # processed messages, append-only

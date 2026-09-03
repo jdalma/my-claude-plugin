@@ -69,3 +69,12 @@ test('cross-team section documents to_team addressing', () => {
     assert.match(text, /to_team\\{0,2}":\\{0,2}"<team-name>/);
     assert.match(text, /Prefer `to_team`/);
 });
+
+test('overlay carries no dead protocol: no shutdown-ack ritual, no to_session addressing', () => {
+    for (const text of [overlayFor('pm', 'orchestrator'), overlayFor('dev', 'worker')]) {
+        assert.doesNotMatch(text, /Shutdown Protocol/);
+        assert.doesNotMatch(text, /shutdown-ack/);
+        assert.doesNotMatch(text, /to_session/);
+        assert.doesNotMatch(text, /from_session/);
+    }
+});

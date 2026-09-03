@@ -14,7 +14,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, rmSync
 import { tmpdir, homedir } from 'os';
 import { join } from 'path';
 
-import { isSafeToWipe, backupAndRemoveStateRoot } from '../../src/commands/shutdown.js';
+import { isSafeToWipe, backupAndRemoveStateRoot, runShutdown } from '../../src/commands/shutdown.js';
 
 function makeStateRoot() {
     // mkdtemp gives a deep, unique path (e.g. /var/folders/.../my-team-XXXX),
@@ -99,6 +99,31 @@ test('backupAndRemoveStateRoot keeps exactly one generation (old .bak replaced)'
         assert.equal(readFileSync(join(bak, 'events.jsonl'), 'utf-8'), '{"ts":"run-1"}\n');
         assert.equal(existsSync(stateRoot), false);
     } finally {
+        rmSync(base, { recursive: true, force: true });
+    }
+});
+
+test('runShutdown does not wait a grace period (nobody ever wrote a shutdown-ack)', async () => {
+    const { base, stateRoot } = makeStateRoot();
+    writeFileSync(join(stateRoot, 'manifest.json'), JSON.stringify({
+        team_name: 'demo-team', state_root: stateRoot, session_name: 'my-team-demo-team-zz:0',
+        session_mode: 'detached-session', leader_pane: '%0',
+        workers: [{ name: 'a', pane_id: '%1' }],
+    }), 'utf-8');
+    process.env.MY_TEAM_STATE_ROOT_BASE = base;
+    const savedTmux = process.env.TMUX;
+    delete process.env.TMUX; // never treat the test runner's session as the team session
+    const origLog = console.log; console.log = () => {};
+    try {
+        const t0 = Date.now();
+        await runShutdown({ team: 'demo-team' });
+        assert.ok(Date.now() - t0 < 2000, `shutdown took ${Date.now() - t0}ms — grace wait still present`);
+        assert.equal(existsSync(`${stateRoot}.bak`), true, 'state still backed up');
+    } finally {
+        console.log = origLog;
+        if (savedTmux !== undefined) process.env.TMUX = savedTmux;
+        delete process.env.MY_TEAM_STATE_ROOT_BASE;
+        delete process.env.MY_TEAM_STATE_ROOT;
         rmSync(base, { recursive: true, force: true });
     }
 });

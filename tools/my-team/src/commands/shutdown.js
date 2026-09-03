@@ -65,9 +65,8 @@ export async function backupAndRemoveStateRoot(stateRoot) {
 export async function runShutdown(opts) {
     if (!opts.team) throw new Error('--team is required');
     // Resolve --team as EITHER a team name OR a tmux session name (what
-    // `tmux ls` shows). Adopt the canonical team_name so the sentinel path
-    // (killWorkerPanes) and the unsafe-wipe manifest path key off the real team
-    // name, not the session-name input.
+    // `tmux ls` shows). Adopt the canonical team_name so the unsafe-wipe
+    // manifest path keys off the real team name, not the session-name input.
     const { manifest, teamName } = resolveTeamManifest(opts.team, opts.stateRoot);
     opts.team = teamName;
     process.env.MY_TEAM_STATE_ROOT = manifest.state_root;
@@ -76,25 +75,13 @@ export async function runShutdown(opts) {
     const workerPaneIds = manifest.workers.map((w) => w.pane_id);
     const leaderPaneId = manifest.leader_pane;
 
-    const graceMs = opts.force ? 0 : Number(process.env.MY_TEAM_GRACE_MS || 10000);
-
-    console.log(`[my-team] Shutting down team '${opts.team}' (mode: ${manifest.session_mode}, grace: ${graceMs}ms)...`);
+    console.log(`[my-team] Shutting down team '${opts.team}' (mode: ${manifest.session_mode})...`);
 
     if (manifest.session_mode === 'split-pane') {
-        // Graceful sentinel + kill worker panes only (preserve user's host pane)
-        await killWorkerPanes({
-            paneIds: workerPaneIds,
-            leaderPaneId,
-            teamName: opts.team,
-            cwd: manifest.state_root.replace(/\/[^/]+$/, ''), // for shutdown.json sentinel
-            graceMs,
-        });
+        // Kill worker panes only (preserve user's host pane)
+        await killWorkerPanes({ paneIds: workerPaneIds, leaderPaneId });
     } else {
         // detached-session or dedicated-window: kill whole session/window
-        if (graceMs > 0) {
-            // Best-effort: wait briefly so workers can react to the shutdown sentinel before kill
-            await new Promise((r) => setTimeout(r, graceMs));
-        }
         await killTeamSession(
             manifest.session_name,
             workerPaneIds,

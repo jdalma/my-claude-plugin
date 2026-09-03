@@ -96,7 +96,6 @@ async function main() {
         .command('shutdown')
         .description('Terminate a team')
         .requiredOption('--team <name>', 'team name')
-        .option('--force', 'kill immediately (no grace period)')
         .option('--state-root <path>', 'override state root')
         .action(async (opts) => {
             await runShutdown(opts);

@@ -62,7 +62,6 @@ my-team start --config my-team.json
 | `### Handling a received message — reply_to resolution order` | sent_pending hit → archive-lookup 순서 |
 | `### When you send a message that needs an answer` | expects_reply=true 후 다른 일 계속 |
 | `### Broadcast caveat` | 1:1만 지원 |
-| `## Shutdown Protocol` | shutdown sentinel 받으면 shutdown-ack.json 쓰고 exit |
 | `## Rules` | 6가지 금지 룰 (아래) |
 | Agent-type guidance | claude/codex/gemini/cursor 별 추가 룰 |
 | `## Role Context` | config의 `extra_prompt`가 그대로 들어감 (없으면 생략) |

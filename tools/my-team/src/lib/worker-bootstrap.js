@@ -121,7 +121,6 @@ export function generateWorkerOverlay(params) {
 
     const heartbeatPath = buildTeamStateInstructionPath(teamName, instructionStateRoot, 'workers', workerName, 'heartbeat.json');
     const statusPath = buildTeamStateInstructionPath(teamName, instructionStateRoot, 'workers', workerName, 'status.json');
-    const shutdownAckPath = buildTeamStateInstructionPath(teamName, instructionStateRoot, 'workers', workerName, 'shutdown-ack.json');
 
     const mailboxListCommand = formatOmcCliInvocation(`team api mailbox-list --input "{\\"team_name\\":\\"${teamName}\\",\\"worker\\":\\"${workerName}\\"}" --json`);
     const mailboxDeliveredCommand = formatOmcCliInvocation(`team api mailbox-mark-delivered --input "{\\"team_name\\":\\"${teamName}\\",\\"worker\\":\\"${workerName}\\",\\"message_id\\":\\"<id>\\"}" --json`);
@@ -307,14 +306,6 @@ surfaces it and clears the pending entry. If too many entries pile up in
 recipients and cannot be cleanly correlated. If you need answers from
 several peers, send individual \`send-message\` calls with distinct
 \`message_id\`s instead.
-
-## Shutdown Protocol
-When the user shuts the team down, you will see a shutdown sentinel:
-1. Write your decision to: ${shutdownAckPath}
-2. Format:
-   - Accept: {"status":"accept","reason":"ok","updated_at":"<iso>"}
-   - Reject: {"status":"reject","reason":"still working","updated_at":"<iso>"}
-3. Exit your session
 
 ## Rules
 - Do NOT edit files outside the scope described in your \`## Role Context\` brief
