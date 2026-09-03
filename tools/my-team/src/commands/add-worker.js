@@ -194,7 +194,7 @@ async function addValidatedWorker(opts, deps, manifest, anchor, newWorker) {
         workerName: opts.name,
         agentType: opts.agentType,
         workerRole,
-        bootstrapInstructions: '',
+        bootstrapInstructions: opts.extraPrompt ?? '',
         instructionStateRoot: stateRoot,
         cwd,
         teamRoster,

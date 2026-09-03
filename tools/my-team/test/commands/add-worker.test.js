@@ -545,3 +545,20 @@ test('--worktree: a failure AFTER the pane split kills the pane and removes the 
     }
 });
 
+test('--extra-prompt renders into the new worker\'s AGENTS.md Role Context', async () => {
+    const ctx = setupTeam();
+    try {
+        await runAddWorker(validOpts({ extraPrompt: '## 목적\n주문 API 구현' }), okDeps());
+        const body = readFileSync(join(ctx.stateRoot, 'workers', 'carol', 'AGENTS.md'), 'utf-8');
+        assert.match(body, /## Role Context\n## 목적\n주문 API 구현/, 'extra prompt lands in Role Context');
+    } finally { cleanup(ctx); }
+});
+
+test('without --extra-prompt the new worker\'s AGENTS.md has no Role Context section', async () => {
+    const ctx = setupTeam();
+    try {
+        await runAddWorker(validOpts(), okDeps());
+        const body = readFileSync(join(ctx.stateRoot, 'workers', 'carol', 'AGENTS.md'), 'utf-8');
+        assert.doesNotMatch(body, /^## Role Context/m);
+    } finally { cleanup(ctx); }
+});

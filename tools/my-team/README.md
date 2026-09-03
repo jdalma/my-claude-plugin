@@ -56,7 +56,8 @@ my-team status --team demo
 my-team monitor demo             # tail peer messages in real-time
 
 # Mid-session: add a worker to the live team (new pane + registered as a peer).
-my-team add-worker --team demo --name gamma --agent-type gemini --cwd ~/work/project-c
+my-team add-worker --team demo --name gamma --agent-type gemini --cwd ~/work/project-c \
+  --description "Infra owner" --extra-prompt "Project C is the infra repo. First job: ..."
 
 # To give an EXISTING worker a new task, type into its tmux pane directly.
 # Workers reach each other via `my-team api send-message` (called from inside
