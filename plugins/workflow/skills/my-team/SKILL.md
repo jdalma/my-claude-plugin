@@ -56,6 +56,8 @@ my-team status --team my-feature   # 워커별 state/blocked 사유 + spool/unre
 my-team monitor my-feature   # peer 메시지 실시간 tail
 
 # 4. 도중에 워커한테 추가 지시 → 해당 워커의 tmux pane에 직접 타이핑
+#    한 레포를 병렬로: 워커 pane에 "이 작업을 나눠서 워크트리 워커를 추가해"라고 하면
+#    워커가 add-worker --worktree <branch> 로 peer를 띄운다 (경로 <repo>/.worktrees/<name>)
 #    워커끼리는 my-team api send-message 호출 (워커 LLM이 AGENTS.md에 따라)
 
 # 5. Shutdown (state도 정리: state_root → <state_root>.bak 백업 후 삭제)
@@ -73,7 +75,7 @@ Reach for `my-team` when **multiple unrelated repos** need to be edited and disc
 ## Defining characteristics
 
 - **Per-worker cwd** — each worker runs at its own `cwd`; a single team can span multiple unrelated repos.
-- **No git worktree management** — worktrees are user-owned; my-team does not create or integrate them.
+- **Worktree per worker on demand** — `add-worker --worktree <branch>` creates `<repo>/.worktrees/<name>` and boots the worker there (parallel work on one repo). Merging and `git worktree remove` stay the user's job.
 - **No task lifecycle** — my-team tracks no shared task objects (no claim/transition); roles are fixed at spawn.
 - **User→worker channel** — the user types directly into the worker's tmux pane (no message CLI command).
 - **State root** — `~/.my-team/sessions/<team>/`.

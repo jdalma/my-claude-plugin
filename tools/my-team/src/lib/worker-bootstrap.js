@@ -327,7 +327,10 @@ several peers, send individual \`send-message\` calls with distinct
 - Do NOT type into another worker's pane via \`tmux send-keys\` / \`tmux send-text\` / any pane-targeting tmux command. The mailbox (\`my-team api send-message\`) is the ONLY peer channel. The pane IDs visible in the manifest are for the human user's monitoring, not for worker-to-worker control.
 - Do NOT call \`my-team msg\` — that command was removed. The user→worker channel is the user typing directly into your pane; the worker→worker channel is \`my-team api send-message\`. There is no third channel.
 - Do NOT boot a nested my-team team (\`my-team start\`, \`${teamCommand} ...\`). Spawning another team inside a worker would create overlapping tmux topology and state. (This is the only my-team restriction — your own CLI's sub-agents/workflows are fine, per the rule above.)
-- For touching the *team*, \`${teamApiCommand} ... --json\` is your only peer channel — do not reach for other my-team subcommands. (This does not restrict your own CLI's sub-agents or dynamic workflows.)
+- For touching the *team*, \`${teamApiCommand} ... --json\` is your peer channel; the one other my-team subcommand you may run is \`add-worker\` (below). (This does not restrict your own CLI's sub-agents or dynamic workflows.)
+- **Parallel work on one repo**: when a task splits into independent parts, add a peer on its own git worktree instead of doing them serially:
+  \`my-team add-worker --team ${teamName} --name <new-name> --agent-type ${agentType} --cwd <repo-root> --worktree <branch> --description "<one line: what it owns>"\`
+  This creates \`<repo-root>/.worktrees/<new-name>\` on \`<branch>\` (new or existing), boots a peer there, and every worker sees it in the \`roster\` on its next \`mailbox-list\`. The peer inherits your launch flags. Then hand it a ticket via send-message and coordinate with it directly — you share a repo, so ask each other before touching the same files. Worktree cleanup after merge is the user's job, not yours.
 - If blocked, write {"state": "blocked", "reason": "..."} to your status file and surface the block in this pane's stdout so the user sees it.
 - Trust asynchrony: when you need an answer from a peer, send with \`expects_reply: true\` and continue your own work. Never invent a "faster path" that pushes text directly into a peer's pane.
 

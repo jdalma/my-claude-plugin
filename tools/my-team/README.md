@@ -259,8 +259,8 @@ will actually do. High user attention required.
 | Command | Purpose |
 |---------|---------|
 | `start` | Boot a team from config (or inline `--worker name:agent:cwd`) |
-| `add-worker` | Add one worker to a **running** team mid-session (`--team --name --agent-type --cwd`, optional `--role orchestrator\|worker` — defaults to `worker` in a role-declaring team) — splits a new pane, registers it in `manifest.workers`, and notifies existing workers. Pass `--launch-arg` (repeatable) for permission-bypass flags; without them the added worker runs supervised and stalls on its first permission prompt |
 | `status` | Per worker: tmux liveness, self-reported `state` (+ `reason` when blocked), and stuck mail — `spool` (never absorbed), `unread` (absorbed, not consumed), `pending` (questions awaiting a reply, with the oldest age). A worker that stalled without saying so shows up here without opening its pane |
+| `add-worker` | Add one worker to a **running** team mid-session (`--team --name --agent-type --cwd`, optional `--role orchestrator\|worker` — defaults to `worker` in a role-declaring team, optional `--description` for the roster one-liner, optional `--worktree <branch>` to create `<repo>/.worktrees/<name>` from the repo at `--cwd` and boot the worker there) — splits a new pane, registers it in `manifest.workers`, and notifies existing workers. Pass `--launch-arg` (repeatable) for permission-bypass flags; when a worker runs this command itself and passes none, the new worker inherits the caller's flags |
 | `monitor` | Tail peer messages in real-time |
 | `shutdown` | Terminate a team immediately **and clear its state** — backs up `state_root` to `<state_root>.bak` (one generation), then removes the original so re-running `start` with the same `team_name` starts clean (see "State cleanup" below) |
 | `api send-message` | **[mutating]** Peer message — drops a spool file, appends sender archive, records `sent_pending`. `to_team` reaches another team by name (role guard applies) |
@@ -296,6 +296,26 @@ every `api mailbox-list` response carries the current `roster` from the
 manifest, so a running worker learns the newcomer's name, role and description
 on its next self-poll. `start` and `add-worker` both persist `description` in
 the manifest for that purpose.
+
+## Parallel work on one repo (`--worktree`)
+
+Any worker (or the user) can split a task across several workers on the same
+repo, each on its own git worktree:
+
+```bash
+my-team add-worker --team shop --name api-cart --agent-type claude \
+  --cwd ~/work/shop-api --worktree feat/cart --description "cart endpoints"
+```
+
+This runs `git worktree add` for `~/work/shop-api/.worktrees/api-cart` on
+`feat/cart` (created if the branch does not exist), adds `.worktrees/` to the
+repo's local `.git/info/exclude`, and boots the worker there. Every worker sees
+the newcomer in the `roster` of its next `mailbox-list`, and same-team workers
+may message each other directly to check for collisions. If a later step fails
+the worktree is removed again; **after the work is merged, removing the
+worktree (`git worktree remove`) is the user's job** — `shutdown` only kills
+panes. Each worker's AGENTS.md carries this recipe so a worker can spawn a
+peer for itself when its own task splits.
 
 ## State layout
 

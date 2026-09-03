@@ -18,8 +18,9 @@
  * manifest / rollback logic is unit-testable without a real tmux session.
  */
 
-import { join } from 'path';
-import { writeFile } from 'fs/promises';
+import { join, basename, dirname, resolve } from 'path';
+import { appendFile, mkdir, readFile, writeFile } from 'fs/promises';
+import { execFileSync } from 'child_process';
 
 import { loadManifest, manifestPathForTeam, resolveTeamManifest } from './_manifest.js';
 import { WORKER_NAME_PATTERN, validateWorker } from '../config/parser.js';
@@ -34,6 +35,35 @@ import {
 import { tmuxExecAsync } from '../lib/tmux-utils.js';
 
 const MAX_WORKERS = 10;
+
+function git(cwd, args) {
+    return execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+}
+
+/**
+ * Create `<repo-root>/.worktrees/<name>` on `branch` (created if missing).
+ * The dir is added to .git/info/exclude (local, untracked) so the main
+ * checkout's `git status` stays clean. Returns { path, remove } where remove()
+ * undoes the creation — used as rollback when a later step fails. Cleanup after
+ * the work is merged is deliberately the user's job.
+ */
+async function createWorktree(repoCwd, name, branch) {
+    let root;
+    try {
+        root = git(repoCwd, ['rev-parse', '--show-toplevel']);
+    } catch {
+        throw new Error(`--worktree requires --cwd inside a git repository; ${repoCwd} is not a git repository.`);
+    }
+    const path = join(root, '.worktrees', name);
+    let branchExists = true;
+    try { git(root, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`]); } catch { branchExists = false; }
+    git(root, branchExists ? ['worktree', 'add', path, branch] : ['worktree', 'add', '-b', branch, path]);
+    const exclude = resolve(root, git(root, ['rev-parse', '--git-common-dir']), 'info', 'exclude');
+    await mkdir(dirname(exclude), { recursive: true });
+    const current = await readFile(exclude, 'utf-8').catch(() => '');
+    if (!/^\.worktrees\/$/m.test(current)) await appendFile(exclude, `${current.endsWith('\n') || !current ? '' : '\n'}.worktrees/\n`);
+    return { path, remove: () => git(root, ['worktree', 'remove', '--force', path]) };
+}
 
 export async function runAddWorker(opts, deps = {}) {
     const {
@@ -104,6 +134,28 @@ export async function runAddWorker(opts, deps = {}) {
     // returns a normalized worker whose `cwd` is tilde-EXPANDED — use that from
     // here on, so `~/foo` reaches tmux split-window and the manifest as the
     // absolute path (matching what start.js stores), never the literal "~/foo".
+    let worktree = null;
+    if (opts.worktree) {
+        worktree = await createWorktree(opts.cwd, opts.name, opts.worktree);
+        newWorker.cwd = worktree.path;
+        if (!newWorker.description) newWorker.description = `worktree ${opts.worktree} of ${basename(git(worktree.path, ['rev-parse', '--show-toplevel']).replace(/\/\.worktrees\/[^/]+$/, ''))}`;
+    }
+    try {
+        return await addValidatedWorker(opts, deps, manifest, anchor, newWorker);
+    } catch (err) {
+        if (worktree) { try { worktree.remove(); } catch { /* best effort */ } }
+        throw err;
+    }
+}
+
+async function addValidatedWorker(opts, deps, manifest, anchor, newWorker) {
+    const {
+        addWorkerPane: _addWorkerPane = addWorkerPane,
+        spawnWorkerInPane: _spawnWorkerInPane = spawnWorkerInPane,
+        waitForPaneReady: _waitForPaneReady = waitForPaneReady,
+        sendToWorker: _sendToWorker = sendToWorker,
+        killPane: _killPane = (id) => tmuxExecAsync(['kill-pane', '-t', id]),
+    } = deps;
     const validated = validateWorker(
         newWorker, manifest.workers.length, new Set(manifest.workers.map((w) => w.name))
     );
@@ -117,6 +169,14 @@ export async function runAddWorker(opts, deps = {}) {
 
     // Agent CLI on PATH. validateAgentCLIs iterates config.workers, so wrap.
     validateAgentCLIs({ workers: [newWorker] });
+
+    // Launch flags: explicit --launch-arg wins; otherwise a worker-initiated
+    // add inherits the caller's flags (MY_TEAM_WORKER=<team>/<name>), so a peer
+    // spawned from a bypass-permissions worker does not stall on prompts.
+    let launchArgs = Array.isArray(opts.launchArgs) ? opts.launchArgs : [];
+    const callerName = process.env.MY_TEAM_WORKER?.startsWith(`${opts.team}/`) ? process.env.MY_TEAM_WORKER.slice(opts.team.length + 1) : null;
+    const caller = callerName ? manifest.workers.find((w) => w.name === callerName) : null;
+    if (launchArgs.length === 0 && Array.isArray(caller?.launch_args)) launchArgs = [...caller.launch_args];
 
     // ── Step 2: state dir + new worker AGENTS.md (idempotent; no pane yet) ──
     const stateRoot = manifest.state_root;
@@ -152,7 +212,7 @@ export async function runAddWorker(opts, deps = {}) {
         const startConfig = {
             teamName: opts.team,
             launchBinary: AGENT_CLI[opts.agentType].bin,
-            launchArgs: Array.isArray(opts.launchArgs) ? opts.launchArgs : [],
+            launchArgs,
             envVars: {
                 MY_TEAM_WORKER: `${opts.team}/${opts.name}`,
                 MY_TEAM_STATE_ROOT: stateRoot,
@@ -188,6 +248,7 @@ export async function runAddWorker(opts, deps = {}) {
             agent_type: opts.agentType,
             role: workerRole,
             description,
+            launch_args: launchArgs,
             overlay_path: overlayPath,
         });
         atomicWriteJson(manifestPathForTeam(opts.team, opts.stateRoot), fresh);

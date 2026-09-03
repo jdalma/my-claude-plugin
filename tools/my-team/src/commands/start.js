@@ -238,6 +238,8 @@ export async function runStart(opts) {
             // Persisted so the roster served by mailbox-list / api roster and
             // add-worker's overlay carry the same one-liner peers saw at boot.
             description: (w.description || w.extra_prompt || '').split('\n')[0].trim(),
+            // Persisted so a worker-initiated add-worker can inherit them.
+            launch_args: launchArgs,
             overlay_path: overlayPath,
         });
     }

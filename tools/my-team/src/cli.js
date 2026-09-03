@@ -121,6 +121,7 @@ async function main() {
         .requiredOption('--cwd <path>', 'worker working directory')
         .option('--role <role>', "team role: orchestrator|worker. In a role-declaring team, omitting this defaults to 'worker'")
         .option('--description <text>', 'one-liner peers see in the roster (what to ask this worker for)')
+        .option('--worktree <branch>', 'create <repo>/.worktrees/<name> on this branch (from the git repo at --cwd) and boot the worker there — parallel work on one repo')
         .option('--launch-arg <arg>', 'extra CLI arg for the worker (repeatable; e.g. --launch-arg --dangerously-skip-permissions). Without a permission-bypass flag the worker runs supervised and stalls on its first permission prompt until you answer it in its pane.', (v, prev) => {
             prev = prev || [];
             prev.push(v);

@@ -84,3 +84,12 @@ test('overlay tells workers the roster is a boot snapshot refreshed by mailbox-l
     assert.match(text, /mailbox-list.*roster|roster.*mailbox-list/s, 'live roster arrives with every mailbox-list');
     assert.match(text, /api roster/, 'cross-team roster lookup command');
 });
+
+test('worker overlay allows same-team peer initiation and explains add-worker --worktree for parallel work', () => {
+    for (const text of [overlayFor('dev', 'worker'), overlayFor('pm', 'orchestrator')]) {
+        assert.doesNotMatch(text, /do NOT initiate conversations/);
+        assert.doesNotMatch(text, /may only initiate messages to an orchestrator/);
+        assert.match(text, /add-worker[^\n]*--worktree/, 'any worker may add a worktree peer');
+        assert.match(text, /\.worktrees\//, 'documents where the worktree lands');
+    }
+});

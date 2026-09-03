@@ -435,3 +435,113 @@ function makeRepo() {
 }
 const git = (cwd, args) => execSync(`git ${args}`, { cwd, encoding: 'utf-8' }).trim();
 
+test('--worktree creates <repo>/.worktrees/<name> on a new branch and boots the worker there', async () => {
+    const ctx = setupTeam();
+    const repo = makeRepo();
+    try {
+        let paneCwd;
+        await runAddWorker(
+            validOpts({ cwd: repo, worktree: 'feat-cart' }),
+            okDeps({ addWorkerPane: async (_s, _anchor, w) => { paneCwd = w.cwd; return { paneId: '%9' }; } })
+        );
+        const wt = join(repo, '.worktrees', 'carol');
+        assert.equal(paneCwd, wt, 'pane opens in the worktree');
+        const carol = readManifest(ctx).workers.find((w) => w.name === 'carol');
+        assert.equal(carol.cwd, wt);
+        assert.equal(git(wt, 'rev-parse --abbrev-ref HEAD'), 'feat-cart');
+        assert.match(carol.description, /feat-cart/, 'roster one-liner names the branch when --description is omitted');
+        assert.match(readFileSync(join(repo, '.git', 'info', 'exclude'), 'utf-8'), /^\.worktrees\/$/m,
+            'worktree dir is excluded locally so git status of the main checkout stays clean');
+    } finally {
+        cleanup(ctx);
+        rmSync(repo, { recursive: true, force: true });
+    }
+});
+
+test('--worktree checks out an existing branch instead of failing on -b', async () => {
+    const ctx = setupTeam();
+    const repo = makeRepo();
+    try {
+        git(repo, 'branch feat-old');
+        await runAddWorker(validOpts({ cwd: repo, worktree: 'feat-old' }), okDeps());
+        assert.equal(git(join(repo, '.worktrees', 'carol'), 'rev-parse --abbrev-ref HEAD'), 'feat-old');
+    } finally {
+        cleanup(ctx);
+        rmSync(repo, { recursive: true, force: true });
+    }
+});
+
+test('--worktree rejects a --cwd that is not a git repo before any pane is split', async () => {
+    const ctx = setupTeam();
+    const plain = mkdtempSync(join(tmpdir(), 'my-team-plain-'));
+    try {
+        let split = false;
+        await assert.rejects(
+            () => runAddWorker(validOpts({ cwd: plain, worktree: 'x' }), okDeps({ addWorkerPane: async () => { split = true; return { paneId: '%9' }; } })),
+            /not a git repository/i
+        );
+        assert.equal(split, false);
+        assert.equal(existsSync(join(plain, '.worktrees')), false);
+    } finally {
+        cleanup(ctx);
+        rmSync(plain, { recursive: true, force: true });
+    }
+});
+
+test('--worktree removes the worktree it just created when a later step fails', async () => {
+    const ctx = setupTeam();
+    const repo = makeRepo();
+    try {
+        await assert.rejects(
+            () => runAddWorker(validOpts({ cwd: repo, worktree: 'feat-x' }), okDeps({ addWorkerPane: async () => { throw new Error('split failed'); } })),
+            /split failed/
+        );
+        assert.equal(existsSync(join(repo, '.worktrees', 'carol')), false, 'worktree dir removed');
+        assert.doesNotMatch(git(repo, 'worktree list'), /\.worktrees\/carol/, 'git no longer tracks it');
+    } finally {
+        cleanup(ctx);
+        rmSync(repo, { recursive: true, force: true });
+    }
+});
+
+test('inherits launch_args from the calling worker (MY_TEAM_WORKER) when --launch-arg is omitted', async () => {
+    const ctx = setupTeam();
+    try {
+        const manifestPath = join(ctx.stateRoot, 'manifest.json');
+        const m = JSON.parse(readFileSync(manifestPath, 'utf-8'));
+        m.workers[0].launch_args = ['--dangerously-skip-permissions'];
+        writeFileSync(manifestPath, JSON.stringify(m), 'utf-8');
+        process.env.MY_TEAM_WORKER = 't1/alice';
+
+        let spawned;
+        await runAddWorker(validOpts(), okDeps({ spawnWorkerInPane: async (_s, _p, config) => { spawned = config; } }));
+        assert.deepEqual(spawned.launchArgs, ['--dangerously-skip-permissions'], 'a worker-spawned peer must not stall on permission prompts');
+        assert.deepEqual(readManifest(ctx).workers.find((w) => w.name === 'carol').launch_args, ['--dangerously-skip-permissions'],
+            'persisted so the next add-worker can inherit again');
+    } finally {
+        delete process.env.MY_TEAM_WORKER;
+        cleanup(ctx);
+    }
+});
+
+test('--worktree: a failure AFTER the pane split kills the pane and removes the worktree', async () => {
+    const ctx = setupTeam();
+    const repo = makeRepo();
+    try {
+        const killed = [];
+        await assert.rejects(
+            () => runAddWorker(validOpts({ cwd: repo, worktree: 'feat-x' }), okDeps({
+                spawnWorkerInPane: async () => { throw new Error('spawn failed'); },
+                killPane: async (id) => { killed.push(id); },
+            })),
+            /spawn failed/
+        );
+        assert.deepEqual(killed, ['%9'], 'orphan pane killed');
+        assert.equal(existsSync(join(repo, '.worktrees', 'carol')), false, 'worktree removed');
+        assert.equal(readManifest(ctx).workers.length, 2, 'manifest untouched');
+    } finally {
+        cleanup(ctx);
+        rmSync(repo, { recursive: true, force: true });
+    }
+});
+
