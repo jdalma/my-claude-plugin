@@ -2,7 +2,7 @@
  * `my-team` CLI entry point.
  *
  * Subcommands (user-facing):
- *   start, status, shutdown, monitor, add-worker
+ *   start, status, shutdown, monitor, add-worker, remove-worker
  *
  * api subcommands (called by worker LLMs from AGENTS.md) — peer messaging only:
  *   api send-message, api mailbox-list, api mailbox-mark-delivered,
@@ -19,6 +19,7 @@ import { runStatus } from './commands/status.js';
 import { runShutdown } from './commands/shutdown.js';
 import { runMonitor } from './commands/monitor.js';
 import { runAddWorker } from './commands/add-worker.js';
+import { runRemoveWorker } from './commands/remove-worker.js';
 
 import { runApiSendMessage } from './commands/api/send-message.js';
 import { runApiMailboxList } from './commands/api/mailbox-list.js';
@@ -132,6 +133,17 @@ async function main() {
         .action(async (opts) => {
             // commander stores repeated --launch-arg under opts.launchArg; add-worker reads opts.launchArgs
             await runAddWorker({ ...opts, launchArgs: opts.launchArg });
+        });
+
+    // remove-worker
+    program
+        .command('remove-worker')
+        .description('Remove one worker from a running team mid-session (inverse of add-worker)')
+        .requiredOption('--team <name>', 'team name')
+        .requiredOption('--name <name>', 'worker name')
+        .option('--state-root <path>', 'override state root')
+        .action(async (opts) => {
+            await runRemoveWorker(opts);
         });
 
     // api ... (peer messaging only)

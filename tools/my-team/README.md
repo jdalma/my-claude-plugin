@@ -59,6 +59,9 @@ my-team monitor demo             # tail peer messages in real-time
 my-team add-worker --team demo --name gamma --agent-type gemini --cwd ~/work/project-c \
   --description "Infra owner" --extra-prompt "Project C is the infra repo. First job: ..."
 
+# Mid-session: retire a worker whose task is done (off the roster, pane closed).
+my-team remove-worker --team demo --name gamma
+
 # To give an EXISTING worker a new task, type into its tmux pane directly.
 # Workers reach each other via `my-team api send-message` (called from inside
 # their AGENTS.md protocol).
@@ -262,6 +265,7 @@ will actually do. High user attention required.
 | `start` | Boot a team from config (or inline `--worker name:agent:cwd`) |
 | `status` | Per worker: tmux liveness, self-reported `state` (+ `reason` when blocked), and stuck mail — `spool` (never absorbed), `unread` (absorbed, not consumed), `pending` (questions awaiting a reply, with the oldest age). A worker that stalled without saying so shows up here without opening its pane |
 | `add-worker` | Add one worker to a **running** team mid-session (`--team --name --agent-type --cwd`, optional `--role orchestrator\|worker` — defaults to `worker` in a role-declaring team, optional `--description` for the roster one-liner, optional `--worktree <branch>` to create `<repo>/.worktrees/<name>` from the repo at `--cwd` and boot the worker there) — splits a new pane, registers it in `manifest.workers`, and notifies existing workers. Pass `--launch-arg` (repeatable) for permission-bypass flags; when a worker runs this command itself and passes none, the new worker inherits the caller's flags |
+| `remove-worker` | Remove one worker from a **running** team mid-session (`--team --name`) — the inverse of `add-worker`: takes it off `manifest.workers` (so peers can no longer address it), kills its pane, re-tiles, and tells the remaining workers to stop waiting on it. Its mailbox/archive/`AGENTS.md` and any `--worktree` dir are left on disk — `shutdown` backs up the whole `state_root`, and worktree cleanup stays the user's job |
 | `monitor` | Tail peer messages in real-time |
 | `shutdown` | Terminate a team immediately **and clear its state** — backs up `state_root` to `<state_root>.bak` (one generation), then removes the original so re-running `start` with the same `team_name` starts clean (see "State cleanup" below) |
 | `api send-message` | **[mutating]** Peer message — drops a spool file, appends sender archive, records `sent_pending`. `to_team` reaches another team by name (role guard applies) |

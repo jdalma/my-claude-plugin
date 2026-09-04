@@ -76,6 +76,7 @@ Reach for `my-team` when **multiple unrelated repos** need to be edited and disc
 
 - **Per-worker cwd** — each worker runs at its own `cwd`; a single team can span multiple unrelated repos.
 - **Worktree per worker on demand** — `add-worker --worktree <branch>` creates `<repo>/.worktrees/<name>` and boots the worker there (parallel work on one repo). Merging and `git worktree remove` stay the user's job.
+- **Retiring a worker** — `remove-worker --team <team> --name <worker>` is the inverse of `add-worker`: off the roster, pane closed, remaining workers told to stop waiting on it. State files and worktree dirs are kept.
 - **No task lifecycle** — my-team tracks no shared task objects (no claim/transition); roles are fixed at spawn.
 - **User→worker channel** — the user types directly into the worker's tmux pane (no message CLI command).
 - **State root** — `~/.my-team/sessions/<team>/`.
