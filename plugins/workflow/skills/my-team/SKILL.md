@@ -102,6 +102,28 @@ my-team은 기본이 **peer-to-peer 모델**이다 (task lifecycle 없음). 채�
 - 다른 워커의 pane에 `tmux send-keys`로 직접 입력 박기 — manifest의 pane id는 사용자의 모니터링용이지 워커간 제어 surface가 아니다.
 - `my-team msg` 호출 — 이 명령은 제거됐다. 사용자→워커는 pane 직접 입력 한 가지뿐.
 
+## Worker succession (컨텍스트가 찼을 때 워커 교대)
+
+`/clear` 대신 **후임 워커를 옆에 띄우고 전임과 대화하게 한다.** handoff 문서는 압축본이라 버려진 맥락이 있다 — 후임이 문서를 읽고 궁금한 것을 전임에게 직접 묻는 것이 이 절차의 핵심이다.
+
+**전임 워커 pane에서** (컨텍스트가 답답해졌을 때 사용자가 지시):
+
+```bash
+/handoff                                   # docs/handoffs/<file>.md — 지금까지와 동일
+my-team add-worker --team <team> --name <me>-2 --cwd "$PWD" --agent-type <same> \
+  --description "<same one-liner>" \
+  --extra-prompt "<me>의 후임. 1) CLAUDE.md를 읽고 /takeover docs/handoffs/<file>.md 를 실행한다. 2) 문서를 읽고 궁금한 것을 전부 전임 <me>에게 send-message(expects_reply)로 묻는다 — 한 통에 최대한 묶되, 답을 보고 생긴 후속 질문도 계속 묻는다. 3) 더 물을 것이 없으면 <me>에게 '인계 완료'를 보내고 my-team remove-worker --team <team> --name <me> 를 실행한다."
+```
+
+이후 전임은 **후임의 질문에 답하는 것 외에 아무 작업도 하지 않는다.** 남은 컨텍스트는 전부 답변에 쓴다.
+
+규칙:
+- **인계 브리프는 `--extra-prompt`, 질문은 mailbox.** Role Context는 AGENTS.md 파일로 남아 후임이 다시 `/clear` 해도 `/my-team-resume`으로 되찾는다. mailbox 메시지는 delivered 후 아카이브로 빠지므로 브리프 운반체로 쓰지 않는다.
+- **`--extra-prompt`에 handoff 본문을 복사하지 않는다.** 경로 + 위 세 단계면 충분하다. stale 판정(`head_commit`)은 `/takeover`가 문서로 한다.
+- **전임의 컨텍스트는 거의 없다.** 후임은 질문을 가능한 한 묶어 보내고, 전임은 답만 한다. 대화 횟수 제한은 없지만 전임이 도중에 끊길 수 있음을 전제한다.
+- **`remove-worker`는 후임이 실행한다.** 이 명령은 pane을 죽인 뒤 피어에게 이탈 통지를 보내므로, 전임이 자기 자신을 제거하면 통지 전에 죽는다.
+- **이름은 세대 접미사(`backend` → `backend-2`).** 같은 이름은 거부된다. 피어는 `remove-worker`의 이탈 통지와 `mailbox-list`의 `roster`로 새 이름을 안다.
+
 ## Constraints
 
 - 1–10 workers per team
