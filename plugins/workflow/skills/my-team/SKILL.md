@@ -106,14 +106,16 @@ my-team은 기본이 **peer-to-peer 모델**이다 (task lifecycle 없음). 채�
 
 `/clear` 대신 **후임 워커를 옆에 띄우고 전임과 대화하게 한다.** handoff 문서는 압축본이라 버려진 맥락이 있다 — 후임이 문서를 읽고 궁금한 것을 전임에게 직접 묻는 것이 이 절차의 핵심이다.
 
-**전임 워커 pane에서** (컨텍스트가 답답해졌을 때 사용자가 지시):
+**전임 워커 pane에서** — 사용자가 "교대해" 뒤에 후임이 집중할 내용을 한두 줄 덧붙인다 (예: `교대해. 집중: 주문 API 재시도 로직만, 캐시는 건드리지 마`). 전임은 그 문장을 **그대로** `--extra-prompt`의 `사용자 지시:` 줄에 싣는다 — 요약하거나 자기 해석으로 바꾸지 않는다:
 
 ```bash
 /handoff                                   # docs/handoffs/<file>.md — 지금까지와 동일
 my-team add-worker --team <team> --name <me>-2 --cwd "$PWD" --agent-type <same> \
   --description "<same one-liner>" \
-  --extra-prompt "<me>의 후임. 1) CLAUDE.md를 읽고 /takeover docs/handoffs/<file>.md 를 실행한다. 2) 문서를 읽고 궁금한 것을 전부 전임 <me>에게 send-message(expects_reply)로 묻는다 — 한 통에 최대한 묶되, 답을 보고 생긴 후속 질문도 계속 묻는다. 3) 더 물을 것이 없으면 <me>에게 '인계 완료'를 보내고 my-team remove-worker --team <team> --name <me> 를 실행한다."
+  --extra-prompt "<me>의 후임. 사용자 지시: <사용자가 pane에 적은 문장 그대로>. 1) CLAUDE.md를 읽고 /takeover docs/handoffs/<file>.md 를 실행한다. 2) 문서를 읽고 궁금한 것을 전부 전임 <me>에게 send-message(expects_reply)로 묻는다 — 한 통에 최대한 묶되, 답을 보고 생긴 후속 질문도 계속 묻는다. 3) 더 물을 것이 없으면 <me>에게 '인계 완료'를 보내고 my-team remove-worker --team <team> --name <me> 를 실행한다."
 ```
+
+사용자 지시가 없으면 `사용자 지시:` 줄을 생략한다. 후임은 handoff 문서와 사용자 지시가 어긋나면 사용자 지시를 우선한다.
 
 이후 전임은 **후임의 질문에 답하는 것 외에 아무 작업도 하지 않는다.** 남은 컨텍스트는 전부 답변에 쓴다.
 
