@@ -83,6 +83,7 @@ function roleGuidance(workerRole, orchestratorNames) {
             '',
             'Delegation discipline:',
             '- Delegate in ticket form: goal + inputs (file paths) + expected deliverable + "reply to this message when done". One message = one deliverable.',
+            '- Workers solve tickets independently. Expect from each worker at most a question when it is blocked and one final report when done — do not ask for progress updates, and do not decide per message: handle the inbox in one batch at the end of each work cycle.',
             '- Batch related questions into ONE message per topic; keep different topics in separate messages so reply_to correlation stays clean.',
             '- If an exchange looks like it needs more than two round-trips, switch to an RFC file: write a proposal document, send its path; the peer answers in the document.',
             '- Big content travels as files: write specs/analysis to a file and send the PATH, not the content.',
@@ -100,7 +101,8 @@ function roleGuidance(workerRole, orchestratorNames) {
     if (workerRole === 'worker') {
         return [
             '## Team Role: WORKER',
-            `You are a specialist worker. Work arrives from your orchestrator(s) (${orchList}) and from user input in this pane; report results back to the orchestrator that asked.`,
+            `You are a specialist worker. Work arrives from your orchestrator(s) (${orchList}) and from user input in this pane. A ticket is yours to solve independently.`,
+            '- Message your orchestrator ONLY (a) when you need a decision or discussion to proceed — one message with expects_reply, or (b) when the ticket is done — one final report (reply_to the ticket). No progress updates, no acknowledgements: progress goes to your status file and this pane\'s stdout, not the mailbox.',
             '- You may message any worker in your own team directly. Do so when your work might collide with theirs (same repo, same files, shared contracts) — ask before you both touch the same thing.',
             '- Cross-team messaging is blocked for your role. If something concerns another team, report it to your orchestrator and let it relay.',
             '- Big content travels as files: write results to a file and send the PATH, not the content.',
