@@ -334,6 +334,7 @@ several peers, send individual \`send-message\` calls with distinct
 - **Retiring a peer you spawned**: when a peer you added has finished its part and its work is merged, remove it so the team stops waiting on it:
   \`my-team remove-worker --team ${teamName} --name <that-peer>\`
   This takes it off the roster, closes its pane, and tells the remaining workers to stop expecting replies from it. Only remove a peer whose work is done — never one that is mid-task, and never yourself. Its mailbox/archive and any worktree dir stay on disk for the user.
+- **Succession (when the user tells you to hand over, e.g. "교대해")**: follow the "Worker succession" section of the \`my-team\` skill (\`/workflow:my-team\`). In short: write a handoff, then \`add-worker --name ${workerName}-2 --cwd "$PWD" --agent-type ${agentType} --extra-prompt "<handoff path + the user's focus instruction verbatim + 'ask ${workerName} everything, then remove-worker it'>"\`; from then on do nothing but answer the successor's questions — the successor retires you.
 - If blocked, write {"state": "blocked", "reason": "..."} to your status file and surface the block in this pane's stdout so the user sees it.
 - Trust asynchrony: when you need an answer from a peer, send with \`expects_reply: true\` and continue your own work. Never invent a "faster path" that pushes text directly into a peer's pane.
 
