@@ -6,6 +6,8 @@
 >
 > **대상 코드**: `src/lib/worker-bootstrap.js`, `src/lib/prompt-helpers.js`, `src/commands/start.js`
 >
+> **세션 도중 합류하는 워커**(`add-worker`)의 주입 프롬프트와 role 게이트·보고 빈도 분석은 [`add-worker-prompts.md`](add-worker-prompts.md).
+>
 > **관련 다이어그램**: peer 메시지 흐름의 현행 시각 자료는 [`worker-message-flow.html`](worker-message-flow.html)(브라우저로 열기). [`diagrams/communication-flow.excalidraw`](diagrams/communication-flow.excalidraw)는 옵션 B 이전(inbox.md 시대)을 묘사한다 — peer mailbox 사이클 부분만 그대로 유효한 구버전.
 
 ---
@@ -44,7 +46,7 @@ my-team start --config my-team.json
 
 ## 2. `AGENTS.md` 오버레이 (`generateWorkerOverlay`)
 
-워커별 `workers/<name>/AGENTS.md` 파일로 작성된다. 워커 CLI는 자기 cwd의 AGENTS.md를 자동으로 읽어 시스템 프롬프트로 사용한다 (claude/codex/gemini/cursor 모두 동일 컨벤션).
+워커별 `workers/<name>/AGENTS.md` 파일로 작성된다. 이 파일은 `state_root` 아래에 있고 워커의 `cwd`가 아니므로 CLI가 자동 로드하지 않는다 — §6의 시작 안내가 절대 경로를 알려주면 워커가 한 번 읽는다.
 
 ### 골격 구성 요소
 
@@ -151,7 +153,7 @@ Team is live. Follow <state_root>/workers/<name>/AGENTS.md for the peer protocol
 wait for user input in this pane or peer messages in your mailbox.
 ```
 
-이걸 받은 워커 LLM은 자기 AGENTS.md를 (이미 시스템 프롬프트로 갖고 있지만) 한 번 더 읽고 idle 진입한다.
+이걸 받은 워커 LLM은 경로의 AGENTS.md를 읽고 idle 진입한다. 이 안내가 워커가 오버레이 경로를 아는 유일한 통로다.
 
 옵션 B 이전에는 `generateTriggerMessage`가 `Read <inbox.md path>, execute now, report concrete progress.`를 보냈지만, inbox.md 폐기 후 그 헬퍼도 함께 제거됐다.
 
@@ -175,7 +177,7 @@ wait for user input in this pane or peer messages in your mailbox.
 
 | 레이어 | 파일 | 누가 작성 | 워커가 언제 읽나 |
 |--------|------|-----------|------------------|
-| ① AGENTS.md 오버레이 | `workers/<name>/AGENTS.md` | start.js가 부팅 시 generate | 부팅 시 1회 (시스템 프롬프트) |
+| ① AGENTS.md 오버레이 | `workers/<name>/AGENTS.md` | start.js가 부팅 시 generate | 시작 안내(§6)를 받은 직후 1회 |
 | ② Role Context (extra_prompt) | AGENTS.md `## Role Context` | 사용자의 config | ①에 포함되어 부팅 시 1회 |
 | ③ peer 메시지 | `mailbox/<name>.json` | peer가 `api send-message` | new-message 트리거 또는 사이클 끝마다 폴링 |
 | ④ 사용자 자유 입력 | 워커 pane stdin | 사용자가 직접 타이핑 | 즉시 (tmux 키 입력) |
