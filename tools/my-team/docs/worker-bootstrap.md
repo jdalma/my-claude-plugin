@@ -54,7 +54,7 @@ my-team start --config my-team.json
 |------|------|
 | `# Team Worker Protocol` (헤더) | peer-to-peer 모델 한 줄 선언 + user는 pane으로, peer는 mailbox로 본다 |
 | `## Identity` | team_name, worker name, agent_type, `OMC_TEAM_WORKER` env |
-| `## Team Roster` | 모든 워커 한 줄씩: `- **name** [agent_type] — role`. role은 config의 `description` (없으면 `extra_prompt` 첫 줄). 부팅 스냅샷이며, 최신 로스터는 `mailbox-list` 응답의 `roster`가 권위 있다고 명시 |
+| `## Team Roster` | 모든 워커 한 줄씩: `- **name** [agent_type] — role`. role은 config의 `description` (없으면 `extra_prompt` 첫 줄). 부팅 스냅샷이며, 최신 로스터는 `mailbox-list` 응답의 `roster`가 권위 있다고 명시. WORKER role은 "로스터에 보인다고 메시지 보낼 이유는 아니다"(orchestrator 경유)로, peer 팀은 "범위 밖이면 그 피어에게 직접 보내라"로 분기 |
 | `## Liveness` | `status.json` / `heartbeat.json` 갱신 안내 |
 | `## Message Protocol` | **hard rule**: peer 통신은 오직 `api send-message`. `tmux send-keys` 금지, `my-team msg` 금지 |
 | `## Message Protocol > Talk to other workers via CLI API` | 6개 명령 한 줄씩 (send-message 1-way / send-message expects_reply / 답장 / mailbox-list / mark-delivered / archive-lookup) |
@@ -64,6 +64,8 @@ my-team start --config my-team.json
 | `### Handling a received message — reply_to resolution order` | sent_pending hit → archive-lookup 순서 |
 | `### When you send a message that needs an answer` | expects_reply=true 후 다른 일 계속 |
 | `### Broadcast caveat` | 1:1만 지원 |
+| `## Team Role: ORCHESTRATOR` | 위임 규율 + cross-team 게이트웨이 + **Team changes**(합류 보고 1통을 받아 사용자에게 stdout으로 알림, 파일 겹침은 관리하지 않음) — `workerRole`이 non-null일 때만 |
+| `## Team Role: WORKER` | 오케스트레이터에게만 blocked/done 보고, 파일 조율 없음(워크트리가 워킹 트리를 분리하므로 피어에게 편집 중인 파일을 묻지 않음), 합류 시 자기소개 금지 — `workerRole`이 non-null일 때만 |
 | `## Rules` | 6가지 금지 룰 (아래) |
 | Agent-type guidance | claude/codex/gemini/cursor 별 추가 룰 |
 | `## Role Context` | config의 `extra_prompt`가 그대로 들어감 (없으면 생략) |

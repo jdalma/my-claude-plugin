@@ -25,9 +25,14 @@ function setupTeam({ teamName = 't1', workers = ['alice', 'bob', 'carol'] } = {}
         session_name: 'test-session',
         session_mode: 'split-pane',
         leader_pane: '%0',
-        workers: workers.map((name, i) => ({
-            name, pane_id: `%${i + 1}`, cwd: tmpdir(), agent_type: 'claude', overlay_path: '',
-        })),
+        workers: workers.map((w, i) => {
+            // Accept a bare name (legacy peer team) or {name, role} so a test
+            // can build a role-declaring team.
+            const { name, role } = typeof w === 'string' ? { name: w, role: undefined } : w;
+            const entry = { name, pane_id: `%${i + 1}`, cwd: tmpdir(), agent_type: 'claude', overlay_path: '' };
+            if (role !== undefined) entry.role = role;
+            return entry;
+        }),
     };
     writeFileSync(join(stateRoot, 'manifest.json'), JSON.stringify(manifest), 'utf-8');
     process.env.MY_TEAM_STATE_ROOT_BASE = base;
@@ -37,6 +42,21 @@ function setupTeam({ teamName = 't1', workers = ['alice', 'bob', 'carol'] } = {}
 function cleanup(ctx) {
     delete process.env.MY_TEAM_STATE_ROOT_BASE;
     rmSync(ctx.base, { recursive: true, force: true });
+}
+
+/**
+ * Write worker `from`'s mailbox with one open question addressed to `to`.
+ * This is the on-disk fact remove-worker reads to decide who is actually
+ * affected by the removal (tmux-comm.js records to_worker in sent_pending).
+ */
+function seedPendingQuestion(ctx, from, to) {
+    mkdirSync(join(ctx.stateRoot, 'mailbox'), { recursive: true });
+    writeFileSync(join(ctx.stateRoot, 'mailbox', `${from}.json`), JSON.stringify({
+        schema_version: 2,
+        worker: from,
+        inbox: {},
+        sent_pending: { 'msg-1': { to_worker: to, body: 'still there?', expects_reply: true, sent_at: '2026-01-01T00:00:00Z' } },
+    }), 'utf-8');
 }
 
 const readManifest = (ctx) => JSON.parse(readFileSync(join(ctx.stateRoot, 'manifest.json'), 'utf-8'));
@@ -61,8 +81,10 @@ test('removes the worker from the roster, kills its pane, notifies the rest', as
         assert.equal(res.pane_id, '%2');
         assert.deepEqual(readManifest(ctx).workers.map((w) => w.name), ['alice', 'carol']);
         assert.deepEqual(killed, ['%2']);
+        // Peer team, nobody waiting on bob: the notice falls back to everyone
+        // (otherwise the removal would be silent for a team with no orchestrator).
         assert.deepEqual(notified.map(([p]) => p), ['%1', '%3']);
-        assert.match(notified[0][1], /'bob' has LEFT/);
+        assert.match(notified[0][1], /'bob' finished its assignment and has LEFT/);
     } finally { cleanup(ctx); }
 });
 
@@ -103,5 +125,43 @@ test('a failing departure notice does not undo the removal', async () => {
         });
         assert.deepEqual(readManifest(ctx).workers.map((w) => w.name), ['alice', 'carol']);
         assert.deepEqual(killed, ['%2']);
+    } finally { cleanup(ctx); }
+});
+
+test('only the waiting worker and the orchestrator are told about a removal', async () => {
+    // alice orchestrates; carol has an open question to bob; dave is unrelated.
+    const ctx = setupTeam({
+        workers: [
+            { name: 'alice', role: 'orchestrator' },
+            { name: 'bob', role: 'worker' },
+            { name: 'carol', role: 'worker' },
+            { name: 'dave', role: 'worker' },
+        ],
+    });
+    seedPendingQuestion(ctx, 'carol', 'bob');
+    const { notified, deps } = spyDeps();
+    try {
+        await runRemoveWorker({ team: 't1', name: 'bob' }, deps);
+        const panes = notified.map(([p]) => p).sort();
+        // %1 = alice (orchestrator, keeps the work map), %3 = carol (waiting).
+        // %4 = dave learns from the roster on his next mailbox-list instead.
+        assert.deepEqual(panes, ['%1', '%3']);
+        assert.match(notified[0][1], /finished its assignment/);
+    } finally { cleanup(ctx); }
+});
+
+test('an unreadable mailbox does not block the removal or the other notices', async () => {
+    const ctx = setupTeam({
+        workers: [{ name: 'alice', role: 'orchestrator' }, { name: 'bob', role: 'worker' }, { name: 'carol', role: 'worker' }],
+    });
+    mkdirSync(join(ctx.stateRoot, 'mailbox'), { recursive: true });
+    writeFileSync(join(ctx.stateRoot, 'mailbox', 'carol.json'), '{ not json', 'utf-8');
+    const { notified, deps } = spyDeps();
+    try {
+        await runRemoveWorker({ team: 't1', name: 'bob' }, deps);
+        assert.deepEqual(readManifest(ctx).workers.map((w) => w.name), ['alice', 'carol']);
+        // carol's mailbox is unreadable so she cannot be classified as waiting;
+        // the orchestrator is still notified.
+        assert.deepEqual(notified.map(([p]) => p), ['%1']);
     } finally { cleanup(ctx); }
 });

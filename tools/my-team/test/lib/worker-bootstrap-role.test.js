@@ -93,3 +93,49 @@ test('worker overlay allows same-team peer initiation and explains add-worker --
         assert.match(text, /\.worktrees\//, 'documents where the worktree lands');
     }
 });
+// ── File overlap is NOT policed: worktrees + git merge handle it ──
+
+test('orchestrator overlay narrates team changes to the user without policing file overlap', () => {
+    const text = overlayFor('pm', 'orchestrator');
+    assert.match(text, /report-in message/, 'a mid-session joiner reports in to it');
+    assert.match(text, /never fan the same notice out to every worker/,
+        'join/departure narration goes to the user, not the whole team');
+    assert.match(text, /Do not police file overlap between workers/,
+        'overlap is left to worktrees + git merge');
+    assert.doesNotMatch(text, /Work map/, 'no file-ownership map to maintain');
+    assert.doesNotMatch(text, /files\/dirs that ticket touches/, 'no file scope tracking');
+});
+
+test('worker overlay leaves file coordination to worktrees instead of peer polling', () => {
+    const text = overlayFor('dev', 'worker');
+    assert.match(text, /Do NOT poll peers to ask what they are editing/);
+    assert.match(text, /separate git worktrees/, 'the reason is worktree isolation');
+    assert.match(text, /Do NOT introduce yourself to peers when you join/,
+        'no greeting fan-out on join');
+    assert.match(text, /Seeing a peer here is NOT a reason to message it/,
+        'the roster section agrees with the role section');
+});
+
+test('a spawning worker registers the new peer with the orchestrator, without file scope', () => {
+    const text = overlayFor('dev', 'worker');
+    assert.match(text, /Tell the orchestrator \(pm\)[^\n]*spawned this peer/,
+        'the team picture of who is working stays complete');
+    assert.doesNotMatch(text, /the files it will touch/, 'file scope is not registered');
+});
+
+test('the worktree recipe does not ask peers to coordinate file edits', () => {
+    for (const text of [overlayFor('dev', 'worker'), overlayFor('pm', 'orchestrator')]) {
+        assert.doesNotMatch(text, /ask each other before touching the same files/,
+            'worktrees remove the need for that handshake');
+        assert.match(text, /git resolves the rest at merge time/);
+    }
+});
+
+test('a roleless peer team keeps the old peer-initiation wording', () => {
+    const text = generateWorkerOverlay({
+        teamName: 'demo', workerName: 'solo', agentType: 'claude',
+        workerRole: null, teamRoster: [], bootstrapInstructions: '',
+    });
+    assert.match(text, /send that peer a message instead of solving it/);
+    assert.doesNotMatch(text, /Do not police file overlap/);
+});

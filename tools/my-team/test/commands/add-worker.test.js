@@ -19,11 +19,21 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'fs';
 import { tmpdir, homedir } from 'os';
 import { join } from 'path';
+import { execFileSync } from 'child_process';
 
 import { runAddWorker } from '../../src/commands/add-worker.js';
 
 /** A real, existing dir to use as a valid --cwd (the worker's cwd must exist). */
 const VALID_CWD = tmpdir();
+
+/**
+ * add-worker refuses a --cwd an existing worker already uses, so fixture
+ * workers must NOT sit on VALID_CWD (the dir the new worker asks for).
+ * stateRoot is real, unique per fixture, and irrelevant to the assertions.
+ */
+function fixtureWorkerCwd(stateRoot) {
+    return stateRoot;
+}
 
 function setupTeam({ teamName = 't1', workers = ['alice', 'bob'] } = {}) {
     const base = mkdtempSync(join(tmpdir(), 'my-team-test-'));
@@ -37,13 +47,20 @@ function setupTeam({ teamName = 't1', workers = ['alice', 'bob'] } = {}) {
         session_name: 'test-session',
         session_mode: 'split-pane',
         leader_pane: '%0',
-        workers: workers.map((name, i) => ({
-            name,
-            pane_id: `%${i + 1}`,
-            cwd: VALID_CWD,
-            agent_type: 'claude',
-            overlay_path: '',
-        })),
+        workers: workers.map((w, i) => {
+            // Accept either a bare name (legacy peer team) or {name, role}
+            // so a test can build a role-declaring team.
+            const { name, role } = typeof w === 'string' ? { name: w, role: undefined } : w;
+            const entry = {
+                name,
+                pane_id: `%${i + 1}`,
+                cwd: fixtureWorkerCwd(stateRoot),
+                agent_type: 'claude',
+                overlay_path: '',
+            };
+            if (role !== undefined) entry.role = role;
+            return entry;
+        }),
     };
     writeFileSync(join(stateRoot, 'manifest.json'), JSON.stringify(manifest), 'utf-8');
 
@@ -298,23 +315,98 @@ test('anchors on the first ALIVE worker when an earlier pane is dead', async () 
     } finally { cleanup(ctx); }
 });
 
-// ── Join greeting: D announces itself; existing panes are NOT poked ──
+// ── Shared-cwd guard: two workers in one working tree overwrite each other ──
 
-test('triggers the new worker to greet peers via its startup notice (not in-pane pokes to existing workers)', async () => {
-    const ctx = setupTeam({ workers: ['alice', 'bob'] });
+test('refuses a --cwd an existing worker already uses, before any side effect', async () => {
+    const ctx = setupTeam({ workers: ['alice'] });
+    // Put alice on the very dir carol will ask for.
+    const m = readManifest(ctx);
+    m.workers[0].cwd = VALID_CWD;
+    writeFileSync(join(ctx.stateRoot, 'manifest.json'), JSON.stringify(m), 'utf-8');
+    let split = false;
+    try {
+        const deps = okDeps({ addWorkerPane: async () => { split = true; return { paneId: '%9' }; } });
+        await assert.rejects(
+            () => runAddWorker(validOpts(), deps),
+            /already used by 'alice'.*--worktree/s
+        );
+        assert.equal(split, false, 'refused before the pane split — no side effect');
+        assert.equal(readManifest(ctx).workers.length, 1, 'manifest untouched');
+        assert.ok(!existsSync(join(ctx.stateRoot, 'workers', 'carol', 'AGENTS.md')), 'no overlay written');
+    } finally { cleanup(ctx); }
+});
+
+test('the shared-cwd guard compares canonical paths (tilde, trailing slash)', async () => {
+    const ctx = setupTeam({ workers: ['alice'] });
+    const m = readManifest(ctx);
+    m.workers[0].cwd = homedir();
+    writeFileSync(join(ctx.stateRoot, 'manifest.json'), JSON.stringify(m), 'utf-8');
+    try {
+        // `~` and `<home>/` must both resolve onto alice's plain homedir().
+        await assert.rejects(() => runAddWorker(validOpts({ cwd: '~' }), okDeps()), /already used by 'alice'/);
+        await assert.rejects(() => runAddWorker(validOpts({ cwd: `${homedir()}/` }), okDeps()), /already used by 'alice'/);
+    } finally { cleanup(ctx); }
+});
+
+test('--allow-shared-cwd overrides the guard', async () => {
+    const ctx = setupTeam({ workers: ['alice'] });
+    const m = readManifest(ctx);
+    m.workers[0].cwd = VALID_CWD;
+    writeFileSync(join(ctx.stateRoot, 'manifest.json'), JSON.stringify(m), 'utf-8');
+    try {
+        await runAddWorker(validOpts({ allowSharedCwd: true }), okDeps());
+        const names = readManifest(ctx).workers.map((w) => w.name);
+        assert.deepEqual(names, ['alice', 'carol']);
+    } finally { cleanup(ctx); }
+});
+
+test('--worktree bypasses the guard: the worker lands in its own working tree', async () => {
+    const ctx = setupTeam({ workers: ['alice'] });
+    const repo = mkdtempSync(join(tmpdir(), 'my-team-repo-'));
+    execFileSync('git', ['-C', repo, 'init', '-q']);
+    execFileSync('git', ['-C', repo, 'commit', '-q', '--allow-empty', '-m', 'init']);
+    // alice already occupies the repo root — without --worktree this is refused.
+    const m = readManifest(ctx);
+    m.workers[0].cwd = repo;
+    writeFileSync(join(ctx.stateRoot, 'manifest.json'), JSON.stringify(m), 'utf-8');
+    try {
+        await runAddWorker(validOpts({ cwd: repo, worktree: 'feature-x' }), okDeps());
+        const carol = readManifest(ctx).workers.find((w) => w.name === 'carol');
+        // git reports the resolved path (/private/var vs /var on macOS), so
+        // compare through realpath rather than string-equal on `repo`.
+        assert.equal(realpathSync(carol.cwd), join(realpathSync(repo), '.worktrees', 'carol'),
+            'carol got her own working tree');
+        assert.notEqual(realpathSync(carol.cwd), realpathSync(m.workers[0].cwd),
+            'not the dir alice occupies');
+    } finally {
+        rmSync(repo, { recursive: true, force: true });
+        cleanup(ctx);
+    }
+});
+
+// ── Join notice: D reports in to the orchestrator only; peers are untouched ──
+
+test('in a role team, the join notice tells the newcomer to report in to the orchestrator only', async () => {
+    const ctx = setupTeam({ workers: [{ name: 'alice', role: 'orchestrator' }, { name: 'bob', role: 'worker' }] });
     const notices = [];
     try {
         const deps = okDeps({
             sendToWorker: async (_session, paneId, msg) => { notices.push({ paneId, msg }); return true; },
         });
         await runAddWorker(validOpts(), deps);
-        // Awareness is now D's job: the ONLY sendToWorker call targets the new
-        // pane (%9) and tells D to greet its peers with expects_reply. The old
-        // best-effort in-pane loop over existing panes (%1, %2) is gone.
+        // The ONLY sendToWorker call targets the new pane (%9). Existing panes
+        // are never poked — peers learn of the newcomer via mailbox-list roster.
         assert.equal(notices.length, 1, 'exactly one notice — to the new pane only');
         assert.equal(notices[0].paneId, '%9', 'notice targets the new worker pane');
-        assert.match(notices[0].msg, /expects_reply/, 'D is told to request acknowledgement');
-        assert.match(notices[0].msg, /OTHER worker/, 'D greets peers, not itself (avoids self-message throw)');
+        assert.match(notices[0].msg, /alice/, 'the newcomer is pointed at the orchestrator by name');
+        assert.doesNotMatch(notices[0].msg, /bob/, 'non-orchestrator peers are not named as recipients');
+        // The greeting-to-everyone behaviour is gone: the notice must say the
+        // report-in is one-way, not request an ack from every peer.
+        assert.match(notices[0].msg, /no expects_reply/, 'report-in is explicitly one-way, no ack storm');
+        assert.match(notices[0].msg, /Do not message any other worker/i, 'no fan-out to peers');
+        assert.match(notices[0].msg, /cwd/, 'report-in carries cwd so the orchestrator can narrate the join');
+        assert.doesNotMatch(notices[0].msg, /files\/dirs you expect to touch/,
+            'file scope is NOT reported — worktrees keep working trees separate');
         // The notice MUST carry the absolute overlay path. The worker boots in
         // its own cwd with nothing wiring the overlay in, so a bare "your
         // AGENTS.md" leaves it unable to find its roster (the bug this fixes).
@@ -323,8 +415,24 @@ test('triggers the new worker to greet peers via its startup notice (not in-pane
             notices[0].msg.includes(expectedOverlay),
             `notice must embed the absolute overlay path (${expectedOverlay})`
         );
+    } finally { cleanup(ctx); }
+});
+
+test('in a peer team (no roles) the newcomer is told NOT to introduce itself', async () => {
+    const ctx = setupTeam({ workers: ['alice', 'bob'] });
+    const notices = [];
+    try {
+        const deps = okDeps({
+            sendToWorker: async (_session, paneId, msg) => { notices.push({ paneId, msg }); return true; },
+        });
+        await runAddWorker(validOpts(), deps);
+        assert.equal(notices.length, 1, 'still exactly one notice — to the new pane only');
+        assert.equal(notices[0].paneId, '%9');
+        assert.match(notices[0].msg, /Do not introduce yourself/i, 'no peer greeting in a roleless team');
+        assert.doesNotMatch(notices[0].msg, /expects_reply/, 'no ack storm');
+        assert.match(notices[0].msg, /roster/, 'peers learn of it through the roster instead');
         const existingPanes = notices.filter((n) => n.paneId === '%1' || n.paneId === '%2');
-        assert.equal(existingPanes.length, 0, 'existing worker panes are NOT poked in-pane anymore');
+        assert.equal(existingPanes.length, 0, 'existing worker panes are NOT poked in-pane');
     } finally { cleanup(ctx); }
 });
 

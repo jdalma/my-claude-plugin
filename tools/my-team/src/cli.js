@@ -124,6 +124,7 @@ async function main() {
         .option('--description <text>', 'one-liner peers see in the roster (what to ask this worker for)')
         .option('--extra-prompt <text>', "the worker's own work brief (purpose, goal, first task); rendered into its AGENTS.md ## Role Context, same as config extra_prompt")
         .option('--worktree <branch>', 'create <repo>/.worktrees/<name> on this branch (from the git repo at --cwd) and boot the worker there — parallel work on one repo')
+        .option('--allow-shared-cwd', 'permit --cwd that an existing worker already uses. Refused by default: two workers in one working tree overwrite each other silently (same branch, so git reports no conflict). Prefer --worktree.')
         .option('--launch-arg <arg>', 'extra CLI arg for the worker (repeatable; e.g. --launch-arg --dangerously-skip-permissions). Without a permission-bypass flag the worker runs supervised and stalls on its first permission prompt until you answer it in its pane.', (v, prev) => {
             prev = prev || [];
             prev.push(v);

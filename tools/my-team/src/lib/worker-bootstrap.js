@@ -90,6 +90,10 @@ function roleGuidance(workerRole, orchestratorNames) {
             '- At the end of every work cycle, review `sent_pending` from mailbox-list; surface long-outstanding questions in this pane so the user can intervene.',
             '- Worker-to-worker coordination goes through you by default. Only when a pair needs tight back-and-forth, explicitly delegate: message BOTH workers naming each other, and have the initiating worker send with expects_reply so the other can reply directly.',
             '',
+            'Team changes:',
+            '- A worker joining mid-session sends you ONE report-in message (name, cwd, one-line assignment). Add it to your own notes and narrate it to the user in this pane\'s stdout: who joined, for what. On a removal, say whose work finished. That is a local print, not a team broadcast — never fan the same notice out to every worker.',
+            '- Do not police file overlap between workers. Parallel work on one repo goes on separate git worktrees (see the add-worker recipe in Rules), so two workers do not share a working tree and git resolves the rest at merge time. Do not ask workers what they are editing, and do not build a file-ownership map.',
+            '',
             'Cross-team Q&A quality (context survives as documents, not summaries):',
             '- A cross-team question travels as a document containing: background (why you ask, what the answer feeds into), the question, what you already know/assume, and the expected answer format. Include paths to your own relevant docs/code — the answering team can read them directly.',
             '- Before asking another team, read its published docs (its PM keeps them under its project docs/) — ask only what the docs cannot answer.',
@@ -103,7 +107,9 @@ function roleGuidance(workerRole, orchestratorNames) {
             '## Team Role: WORKER',
             `You are a specialist worker. Work arrives from your orchestrator(s) (${orchList}) and from user input in this pane. A ticket is yours to solve independently.`,
             '- Message your orchestrator ONLY (a) when you need a decision or discussion to proceed — one message with expects_reply, or (b) when the ticket is done — one final report (reply_to the ticket). No progress updates, no acknowledgements: progress goes to your status file and this pane\'s stdout, not the mailbox.',
-            '- You may message any worker in your own team directly. Do so when your work might collide with theirs (same repo, same files, shared contracts) — ask before you both touch the same thing.',
+            '- Work your own tree and do not coordinate file edits with peers. Parallel work on one repo runs on separate git worktrees, so you do not share a working tree with anyone; git resolves the rest at merge time. Do NOT poll peers to ask what they are editing.',
+            '- Message another worker directly only when your orchestrator named that worker and told you to. Then keep it to the delegated topic.',
+            '- Do NOT introduce yourself to peers when you join. Peers see you in the `roster` of their next mailbox-list; your one report-in message goes to the orchestrator only.',
             '- Cross-team messaging is blocked for your role. If something concerns another team, report it to your orchestrator and let it relay.',
             '- Big content travels as files: write results to a file and send the PATH, not the content.',
             '- Evidence discipline: results and answers must cite file:line, schema, or document paths so the recipient can open and verify them directly. A claim without a citation is incomplete.',
@@ -161,9 +167,8 @@ These are the workers in this team. Use the exact \`name\` shown here as the
 \`to_worker\` value when calling \`my-team api send-message\`. The same name is
 also visible on each pane's top border.
 
-Each entry shows that worker's role/specialty. When a sub-problem falls
-outside your own scope but matches a peer's role, send that peer a message
-instead of solving it yourself — that is what the roster is for.
+Each entry shows that worker's role/specialty, so you can see who owns what
+without asking.${workerRole === 'worker' ? ' Seeing a peer here is NOT a reason to message it —\nroute through your orchestrator, per your Team Role section.' : ' When a sub-problem falls outside your own scope\nbut matches a peer\'s role, send that peer a message instead of solving it\nyourself.'}
 ${rosterList}
 
 This list is the snapshot taken when you booted. Workers can join later via
@@ -332,9 +337,10 @@ several peers, send individual \`send-message\` calls with distinct
 - For touching the *team*, \`${teamApiCommand} ... --json\` is your peer channel; the only other my-team subcommands you may run are \`add-worker\` and \`remove-worker\` (below). (This does not restrict your own CLI's sub-agents or dynamic workflows.)
 - **Parallel work on one repo**: when a task splits into independent parts, add a peer on its own git worktree instead of doing them serially:
   \`my-team add-worker --team ${teamName} --name <new-name> --agent-type ${agentType} --cwd <repo-root> --worktree <branch> --description "<one line: what it owns>" --extra-prompt "<the brief below>"\`
-  This creates \`<repo-root>/.worktrees/<new-name>\` on \`<branch>\` (new or existing), boots a peer there, and every worker sees it in the \`roster\` on its next \`mailbox-list\`. The peer inherits your launch flags. Then hand it a ticket via send-message — you share a repo, so ask each other before touching the same files. Worktree cleanup after merge is the user's job, not yours.
+  This creates \`<repo-root>/.worktrees/<new-name>\` on \`<branch>\` (new or existing), boots a peer there, and every worker sees it in the \`roster\` on its next \`mailbox-list\`. The peer inherits your launch flags. Then hand it a ticket via send-message. The worktree gives it its own working tree, so neither of you has to ask the other before editing a file — git resolves the rest at merge time. Worktree cleanup after merge is the user's job, not yours.
+  \`--worktree\` is not optional here: add-worker REFUSES a \`--cwd\` that an existing worker already uses, because two workers in one working tree overwrite each other with no merge conflict to catch it. If you hit that error, add \`--worktree <branch>\` rather than reaching for the \`--allow-shared-cwd\` escape hatch — that flag is for the user to decide, not you.
   Spawn protocol (you keep the task context; the peer works alone and does not report as it goes):
-  - \`--extra-prompt\` MUST say: "Spawned by ${workerName}. Message ${workerName} ONLY (a) when you need a decision to proceed — one message with expects_reply — or (b) when the ticket is done — one final report (reply_to the ticket). No progress updates, no acknowledgements: progress goes to your status file and your pane's stdout."
+  - \`--extra-prompt\` MUST say: "Spawned by ${workerName}. Message ${workerName} ONLY (a) when you need a decision to proceed — one message with expects_reply — or (b) when the ticket is done — one final report (reply_to the ticket). No progress updates, no acknowledgements: progress goes to your status file and your pane's stdout."${orchestratorNames.length > 0 ? `\n  - Tell the orchestrator (${orchestratorNames.join(', ')}) in ONE message that you spawned this peer and what it owns, so the team's picture of who is working stays complete.` : ''}
   - The ticket = goal + inputs (file paths) + expected deliverable + "reply to this message when done". Send it with expects_reply so the final report lands in your \`sent_pending\`.
   - Do not ask the peer for progress; read its status file or \`my-team status\` instead. Handle its report/question when it arrives in your inbox.
 - **Retiring a peer you spawned**: when a peer you added has finished its part and its work is merged, remove it so the team stops waiting on it:

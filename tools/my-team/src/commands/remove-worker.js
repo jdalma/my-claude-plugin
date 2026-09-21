@@ -15,6 +15,7 @@
 import { loadManifest, manifestPathForTeam, resolveTeamManifest } from './_manifest.js';
 import { atomicWriteJson } from '../lib/fs-utils.js';
 import { applyTeamLayout, sendToWorker } from '../lib/tmux-session.js';
+import { readMailboxFile } from '../lib/tmux-comm.js';
 import { tmuxExecAsync } from '../lib/tmux-utils.js';
 
 export async function runRemoveWorker(opts, deps = {}) {
@@ -52,13 +53,40 @@ export async function runRemoveWorker(opts, deps = {}) {
         try { await applyTeamLayout(fresh.session_name); } catch { /* cosmetic */ }
     }
 
-    // Departure notice, mirroring add-worker's join greeting: without it a peer
-    // keeps messaging a worker that no longer exists and only finds out via a
-    // roster-rejection error, possibly after stalling on a reply that can't come.
-    const notice =
-        `Worker '${opts.name}' has LEFT team '${opts.team}'. Do not send it messages; `
-        + 'if you were waiting on a reply from it, stop waiting and proceed.';
+    // Departure notice — sent only to workers it actually affects, so a removal
+    // does not cost one message per remaining worker. Two disjoint groups:
+    //
+    //   1. Anyone with an open question addressed to the removed worker. That
+    //      is a fact on disk: `sent_pending` entries carry `to_worker`
+    //      (tmux-comm.js:290). Without the notice they stall on a reply that
+    //      can never arrive.
+    //   2. The orchestrator(s), who keep the team's ticket record and need to
+    //      mark the removed worker's assignment as finished.
+    //
+    // Everyone else learns the worker is gone from the `roster` field of their
+    // next mailbox-list, and send-message would reject the name anyway.
+    const parentDir = fresh.state_root.replace(/\/[^/]+$/, '');
+    const waiting = [];
     for (const w of fresh.workers) {
+        let mailbox;
+        try {
+            mailbox = await readMailboxFile(opts.team, w.name, parentDir);
+        } catch { continue; } // unreadable mailbox must not block the removal
+        const pending = Object.values(mailbox.sent_pending ?? {});
+        if (pending.some((p) => p?.to_worker === opts.name)) waiting.push(w);
+    }
+    const orchestrators = fresh.workers.filter((w) => w.role === 'orchestrator');
+
+    // In a legacy peer team there is no orchestrator and nobody may be waiting,
+    // which would leave the removal silent. Fall back to telling everyone —
+    // the old behaviour — only in that case.
+    let recipients = [...new Set([...waiting, ...orchestrators])];
+    if (recipients.length === 0) recipients = fresh.workers;
+
+    const notice =
+        `Worker '${opts.name}' finished its assignment and has LEFT team '${opts.team}'. `
+        + 'Do not send it messages; if you were waiting on a reply from it, stop waiting and proceed.';
+    for (const w of recipients) {
         try { await _sendToWorker(fresh.session_name, w.pane_id, notice); } catch { /* best effort */ }
     }
 

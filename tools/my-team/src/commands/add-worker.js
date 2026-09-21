@@ -21,6 +21,7 @@
 import { join, basename, dirname, resolve } from 'path';
 import { appendFile, mkdir, readFile, writeFile } from 'fs/promises';
 import { execFileSync } from 'child_process';
+import { homedir } from 'os';
 
 import { loadManifest, manifestPathForTeam, resolveTeamManifest } from './_manifest.js';
 import { WORKER_NAME_PATTERN, validateWorker } from '../config/parser.js';
@@ -38,6 +39,24 @@ const MAX_WORKERS = 10;
 
 function git(cwd, args) {
     return execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+}
+
+/**
+ * Canonical form for comparing two `cwd` values. The manifest stores absolute,
+ * tilde-expanded paths (validateWorker does the expansion), but `--cwd` may
+ * arrive as `~/foo`, a relative path, or with a trailing slash. Compare only
+ * after putting both through this.
+ *
+ * Deliberately no realpath(): it touches the filesystem and would throw for a
+ * path that does not exist yet — this guard must stay side-effect free. A
+ * symlinked duplicate therefore slips through, which is the accepted limit.
+ */
+function normalizeCwd(cwd) {
+    if (typeof cwd !== 'string' || cwd === '') return '';
+    const expanded = cwd === '~' || cwd.startsWith('~/')
+        ? join(homedir(), cwd.slice(1))
+        : cwd;
+    return resolve(expanded);
 }
 
 /**
@@ -127,6 +146,26 @@ export async function runAddWorker(opts, deps = {}) {
     const sn = sanitizeName(opts.name);
     if (manifest.workers.some((w) => sanitizeName(w.name) === sn)) {
         throw new Error(`Worker name '${opts.name}' collides with an existing worker after sanitization ('${sn}').`);
+    }
+
+    // Shared-cwd guard. Two workers in ONE working tree is the single case git
+    // cannot rescue: same branch, same files, so there is no merge conflict to
+    // resolve — one worker's edit silently overwrites the other's. (Separate
+    // worktrees are fine: different dirs, different branches, conflicts surface
+    // at merge.) my-team deliberately does not track file ownership, so this
+    // guard is what makes that omission safe. Refuse before ANY side effect —
+    // this runs before createWorktree and before the pane split.
+    if (!opts.worktree && !opts.allowSharedCwd) {
+        const target = normalizeCwd(opts.cwd);
+        const sharing = manifest.workers.filter((w) => normalizeCwd(w.cwd) === target);
+        if (sharing.length > 0) {
+            throw new Error(
+                `--cwd ${opts.cwd} is already used by ${sharing.map((w) => `'${w.name}'`).join(', ')}. `
+                + 'Two workers in one working tree overwrite each other silently (same branch, so git '
+                + 'never reports a conflict). Use --worktree <branch> to give this worker its own '
+                + 'working tree, or pass --allow-shared-cwd if they will not edit the same files.'
+            );
+        }
     }
 
     // Field-level validation (cwd exists+dir, agent_type whitelist, etc.).
@@ -258,15 +297,19 @@ async function addValidatedWorker(opts, deps, manifest, anchor, newWorker) {
         throw err;
     }
 
-    // ── Step 8: join greeting (the new worker announces itself) ──
-    // D is the only one who can RELIABLY notify the existing team: it sends a
-    // mailbox greeting (not a best-effort in-pane tmux poke) to each existing
-    // peer, so a busy peer still receives it on its next self-poll. We trigger
-    // this through D's startup notice — the one active signal D gets on boot —
-    // because AGENTS.md alone is passive reference and would not make D act.
-    // ACK (expects_reply) gives the user visibility into who has not acknowledged
-    // D yet; it is NOT auto-redelivery. Existing workers reply by the
-    // expects_reply discipline already in their AGENTS.md — no change to them.
+    // ── Step 8: join notice (the new worker reports in) ──
+    // Awareness of a new peer is ALREADY solved by `mailbox-list`'s `roster`
+    // field, which every worker polls each cycle — so a greeting to every peer
+    // is a duplicate channel that costs 2N messages per join (N greetings, N
+    // expects_reply acks).
+    //
+    // So: in a role-declaring team the newcomer reports ONLY to the
+    // orchestrator(s), one message, no expects_reply, so the orchestrator can
+    // tell the user who joined and why. File overlap is deliberately NOT part
+    // of that report — parallel work on one repo runs on separate git
+    // worktrees, so workers do not share a working tree and git resolves the
+    // rest at merge time. In a legacy peer team there is no orchestrator, so
+    // the newcomer stays silent and peers learn of it through the roster.
     //
     // The notice embeds the ABSOLUTE overlayPath (same as start.js:259), not a
     // bare "your AGENTS.md": the worker CLI boots in its own cwd and nothing
@@ -274,10 +317,18 @@ async function addValidatedWorker(opts, deps, manifest, anchor, newWorker) {
     // without the explicit path the worker cannot find its roster and falls back
     // to an unrelated team source. overlayPath is built from runtime values
     // (state_root + worker name) — no session/team name is hardcoded.
+    const orchestrators = manifest.workers
+        .filter((w) => w.role === 'orchestrator')
+        .map((w) => w.name);
+    const reportIn = orchestrators.length > 0
+        ? ` Then send ONE message (no expects_reply) to ${orchestrators.join(', ')} `
+          + 'stating your name, your cwd, and your assignment in one line. '
+          + 'Do not message any other worker.'
+        : ' Do not introduce yourself to peers — they see you in the `roster` '
+          + 'field of their next mailbox-list.';
     const greeting =
         `You just joined team '${opts.team}'. First action: read ${overlayPath} `
-        + 'for the roster + peer protocol, then introduce yourself to every OTHER '
-        + 'worker via send-message with expects_reply, as that file describes.';
+        + `for the roster + peer protocol.${reportIn}`;
     try {
         const sent = await _sendToWorker(manifest.session_name, paneId, greeting);
         if (sent === false) {
