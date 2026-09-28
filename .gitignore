@@ -2,9 +2,6 @@
 .omc/
 .omx/
 
-# orchestrator: 방향성 미확정 상태 — public 레포에서 임시 제외
-plugins/orchestrator/
-
 # handoff dump: 세션 인계용. 절대경로·사용자 선호·secret 노출 방지 위해 git 제외
 docs/handoffs/
 !docs/handoffs/.gitkeep

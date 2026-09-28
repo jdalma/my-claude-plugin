@@ -6,7 +6,6 @@
 
 등록된 모듈:
 - `plugins/workflow/` — 개인 워크플로우 자산 (도메인 정보 미포함)
-- `plugins/orchestrator/` — v2 6-Phase 멀티 에이전트 오케스트레이션 (Question Debt 기반). marketplace.json에 등록됨.
 
 도구 (마켓플레이스 외):
 - `tools/my-team/` — tmux 멀티프로젝트 워커 오케스트레이션 CLI (npm 패키지)
