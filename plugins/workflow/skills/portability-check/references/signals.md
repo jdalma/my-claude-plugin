@@ -13,7 +13,7 @@
 |---|---|---|---|---|
 | **L0** 순수 지식 | 워크플로우·체크리스트·원칙·판단 기준 | ✅ | ✅ | ✅ |
 | **L1** 기본 도구 | 파일 읽기/쓰기, bash, grep | ✅ | ✅ | ✅ |
-| **L2** 서브에이전트 | `subagent_type`, `context: fork`, `Agent(`, `Task tool`, `Skill tool` 체이닝, `web-researcher`, `TeamCreate` | ✅ | ⚠️ 부분 | ⚠️ `activate_skill` |
+| **L2** 서브에이전트 | `subagent_type`, `context: fork`, `Agent(`, `Task tool`, `Skill tool` 체이닝, `TeamCreate` | ✅ | ⚠️ 부분 | ⚠️ `activate_skill` |
 | **L3** Claude/MCP/레포-로컬 종속 | `mcp__*`, `omc:*`/`oh-my-claudecode:*` 위임, `--fork-session`, **레포 로컬 CLI 바이너리 의존** | ✅ | ❌ | ❌ |
 
 - **L2**는 세 CLI가 의미는 비슷하나 호출 표면이 달라(`Agent(` vs `activate_skill`),
@@ -45,14 +45,13 @@ mcp__|(oh-my-claudecode|omc):|--fork-session|command -v (my-team|my-team-install
 
 ### L2 (서브에이전트/세션 모델 — L3가 없을 때 B)
 ```
-subagent_type|context:[[:space:]]*fork|Agent\(|Task tool|Skill tool|web-researcher|TeamCreate
+subagent_type|context:[[:space:]]*fork|Agent\(|Task tool|Skill tool|TeamCreate
 ```
 - `subagent_type` — Task 도구의 서브에이전트 지정 인자.
 - `context:\s*fork` — frontmatter의 서브에이전트 격리 실행 선언.
 - `Agent\(` — 에이전트 호출 구문 (`-i`로 `agent(`도 매칭. 일반 영어 "agent("는 SKILL.md 본문에
   드물어 오탐 위험 < false negative 위험).
 - `Task tool` / `Skill tool` — Claude 도구를 이름으로 지목한 체이닝 지시.
-- `web-researcher` — Claude 전용 리서치 서브에이전트 이름.
 - `TeamCreate` — 팀 오케스트레이션 도구.
 
 ### 강등 보조 신호 (등급 자체는 아니나, 강등 규칙 §3에 필요)
@@ -98,7 +97,6 @@ L2 신호는 **특정 도구명을 행동 서술로 바꾸면** 사라진다. su
 |---|---|
 | `Agent(subagent_type=executor)로 구현시켜라` | 서브에이전트를 띄워 구현을 위임하라 |
 | `Task tool로 병렬 실행` | 독립 작업을 병렬 서브에이전트로 나눠 실행하라 |
-| `web-researcher에 위임` | 웹 리서치 서브에이전트에 본문 추출을 맡겨라 |
 | `Skill tool로 X 스킬 체이닝` | X 절차를 (가능하면 격리된 컨텍스트에서) 수행하라 |
 
 핵심: **"무엇을 시킬지"(행동)는 남기고, "어느 도구로"(CLI 고유 호출 표면)는 지운다.**

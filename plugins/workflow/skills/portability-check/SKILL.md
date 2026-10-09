@@ -49,7 +49,7 @@ PATH_ARG="${1:-plugins/workflow/skills}"
 # L3 — Claude/MCP/레포-로컬 바이너리 전용 (부적격 신호)
 L3='mcp__|(oh-my-claudecode|omc):|--fork-session|command -v (my-team|my-team-install)|tools/my-team'
 # L2 — 서브에이전트/세션 모델 (추상화 시 가능)
-L2='subagent_type|context:[[:space:]]*fork|Agent\(|Task tool|Skill tool|web-researcher|TeamCreate'
+L2='subagent_type|context:[[:space:]]*fork|Agent\(|Task tool|Skill tool|TeamCreate'
 # 강등 보조 — context:fork 와 함께 있으면 forked 전용 서브스킬로 C 강등 (2단계 참조)
 DEMOTE='user-invocable:[[:space:]]*false'
 
