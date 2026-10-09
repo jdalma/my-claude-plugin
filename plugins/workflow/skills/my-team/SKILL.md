@@ -128,6 +128,10 @@ my-team add-worker --team <team> --name <me>-2 --cwd "$PWD" --agent-type <same> 
 - **`remove-worker`는 후임이 실행한다.** 이 명령은 pane을 죽인 뒤 피어에게 이탈 통지를 보내므로, 전임이 자기 자신을 제거하면 통지 전에 죽는다.
 - **이름은 세대 접미사(`backend` → `backend-2`).** 같은 이름은 거부된다. 피어는 `remove-worker`의 이탈 통지와 `mailbox-list`의 `roster`로 새 이름을 안다.
 
+## Worker closeout (작업 종결 보고 → 검증 → 제거/재개 브리프)
+
+워커의 티켓이 끝났을 때는 succession 이 아니라 **`/my-team-closeout`** 을 쓴다. 워커가 생성자(보통 orchestrator)에게 증거 기반 완료 보고를 보내고, 생성자가 티켓과 대조 검증한 뒤 **완료면 `remove-worker` + 종결 문서, 미완료면 다른 워커가 바로 이어받을 수 있는 재개 브리프를 쓴다(전임은 유지)**. 제거는 항상 보고받은 쪽이 실행한다 — 자기 자신을 제거하면 이탈 통지 전에 죽는다. 상세 절차·템플릿은 `my-team-closeout` 스킬.
+
 ## Constraints
 
 - 1–10 workers per team
