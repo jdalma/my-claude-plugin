@@ -1,44 +1,52 @@
 ---
 name: handoff
-description: 사용자가 명시적으로 "/handoff" 슬래시 커맨드를 호출하거나 "/handoff 실행", "/handoff 작성" 같이 스킬 이름을 직접 지명할 때만 사용한다. 현재 세션의 작업 내용·결정·함정·미완료 작업을 다음 세션으로 넘길 handoff 문서로 작성하고, 연결된 features/<feature-name>/task-index.md의 TODO 섹션을 갱신한다. 사용자가 단순히 "오늘 작업 정리해줘", "이거 다음에 이어서 하자" 등 의도만 표현하고 스킬을 지명하지 않았다면 절대 자동 호출하지 마라. 자동 제안·자동 트리거 금지.
+description: 사용자가 명시적으로 "/handoff" 슬래시 커맨드를 호출하거나 "/handoff 실행", "/handoff 작성" 같이 스킬 이름을 직접 지명할 때만 사용한다. 현재 세션의 작업 내용·결정·함정·미완료 작업을 다음 세션으로 넘길 handoff 문서로 작성한다. features/<feature-name>/task-index.md가 이미 있으면 그 TODO 섹션 갱신 후보도 제안한다. 사용자가 단순히 "오늘 작업 정리해줘", "이거 다음에 이어서 하자" 등 의도만 표현하고 스킬을 지명하지 않았다면 절대 자동 호출하지 마라. 자동 제안·자동 트리거 금지.
 disable-model-invocation: true
 ---
 
-# handoff — 세션 종료 dump + features/ 동기화
+# handoff — 세션 종료 dump
 
 ## ⛔ 호출 규칙 (가장 중요)
 
 이 스킬은 **사용자가 `/handoff`를 명시적으로 호출했을 때만** 동작한다.
 
 - ❌ "오늘 작업 정리해줘" 같은 의도 표현만으로 자동 실행 금지
-- ❌ context 사용률 70% 도달, `/clear` 감지 등으로 자동 제안 금지
+- ❌ context 사용률 도달, 세션 초기화 감지 등으로 자동 제안 금지
 - ❌ "handoff를 만들까요?" 식 선제 권유 금지
 - ✅ 사용자가 명시적으로 `/handoff` 또는 "handoff 스킬 실행해" 등 지명한 경우만 실행
 
 ## 목적
 
-세션이 끝날 때 두 가지를 동시에 한다:
+긴 작업의 컨텍스트를 **사용자가 고른 시점에, 검증 가능한 형태로** 다음 세션에 넘긴다. 자동 컨텍스트 압축은 시점을 고를 수 없고, 실패한 시도를 가장 먼저 버리고, 결과를 fact처럼 이어간다. handoff는 그 셋을 뒤집는다.
 
 1. **세션 dump**: 다음 세션이 hypothesis로 다룰 수 있는 형태로 작업 상태를 `docs/handoffs/`에 떨어뜨린다.
-2. **features/ 동기화**: 연결된 `features/<feature-name>/task-index.md`의 *TODO 섹션*에서 이번 세션이 완료한 항목을 체크하고, 새로 발견한 슬라이스 외 작업을 추가한다. 또한 `task-index.md`와 *현재 진행 중인* `tdd-state/slice-N.md`를 Relevant Files에 자동 포함한다 (plan/slice-tdd가 만든 자산).
+2. **(선택) TODO 동기화**: `features/<feature-name>/task-index.md`가 **이미 있으면** 그 TODO 섹션에서 이번 세션이 완료한 항목과 새로 발견한 항목을 후보로 제안한다. 슬롯이 없으면 이 단계는 건너뛴다. 슬롯을 새로 만들지 않는다.
 
-handoff 문서는 **fact가 아닌 hypothesis** — 다음 세션은 이 문서를 그대로 믿지 않고 코드와 대조 검증한다 (`takeover` 스킬이 그 역할).
+handoff 문서는 **fact가 아닌 hypothesis** — 다음 세션은 이 문서를 그대로 믿지 않고 코드와 대조 검증한다 (takeover 스킬이 그 역할).
 
-## 4개 자산 통합 모델
+## features/ 슬롯 (선택 사용)
 
-이 스킬은 plan/slice-tdd/handoff/takeover 4개 자산이 공유하는 단일 디렉토리 컨벤션을 전제한다:
+프로젝트가 feature 단위 running TODO를 유지하고 싶으면 사용자가 직접 만든다:
 
 ```
-features/<feature-name>/
-├── task-index.md     ← /plan이 생성, slice 정의 + 진행 마커 + TODO 섹션 + Decisions 섹션
-└── tdd-state/
-    ├── slice-1.md    ← slice-tdd가 슬라이스마다 생성·갱신
-    └── slice-N.md
+features/<feature-name>/task-index.md
 ```
 
-모든 결정·트랩은 `task-index.md`의 `## Decisions` 섹션 안에서 관리한다. 별도의 `decisions.md` / `pending-decisions.md` 파일은 사용하지 않는다.
+```markdown
+---
+feature_name: <feature-name>
+---
 
-`/handoff` 호출 시 위 디렉토리의 모든 파일을 자동으로 Relevant Files 후보에 포함한다. 단, 권장 5-8개 한도 내에서 압축한다.
+# <feature-name>
+
+## TODO
+- [ ] ...
+
+## Decisions
+- ...
+```
+
+handoff는 이 파일의 **TODO 섹션만** 수정 후보를 낸다. Decisions 섹션은 읽기 전용(Relevant Files 인용용). 별도의 `decisions.md` 같은 파일은 두지 않는다.
 
 ## 핵심 원칙
 
@@ -46,26 +54,35 @@ features/<feature-name>/
    다음 세션이 맹목적으로 실행하지 않도록.
    (이 룰은 handoff가 *생성하는 출력 문서*에만 적용된다. 본 SKILL.md 본문의 단계별 지시는 명령형으로 작성한다.)
 2. **파일은 라인 번호까지** — `file.kt` ❌ → `file.kt:L45-L72` ✅
-3. **CLAUDE.md 중복 금지** — Prompt for New Chat에 "Read CLAUDE.md first" 포함.
+3. **프로젝트 지침 파일과 중복 금지** — Prompt for New Chat에 "프로젝트 지침 파일(CLAUDE.md 또는 AGENTS.md)을 먼저 읽어라" 포함. 거기 있는 내용은 handoff에 재진술하지 않는다.
 4. **Traps 섹션 비울 수 없음** — 실패 정보가 가장 가치 높음. 이번 세션에 실패가 없었으면 그 사실을 명시.
 5. **Relevant Files는 5-8개 권장** — 검증된 매직 넘버는 아님. 다음 세션이 첫 응답 전에 모두 검증할 수 있는 양으로 압축한다는 게 본질. 작업 종류에 따라 조정 가능.
-6. **분량은 다음 세션 검증 비용 기준** — 게시글 권장은 2K 토큰이지만, 검증된 숫자 아님. 핵심은 "다음 세션이 첫 응답 전에 다 읽고 검증 가능한 양".
+6. **분량은 다음 세션 검증 비용 기준** — 핵심은 "다음 세션이 첫 응답 전에 다 읽고 검증 가능한 양".
 7. **task-index.md TODO 섹션 변경은 사용자 확인 후** — 자동 체크/추가 전에 변경 후보를 보여주고 승인받음.
+8. **압축 뒤에 쓰지 않는다** — 이 세션에 이미 자동 컨텍스트 압축이 일어났으면 frontmatter에 `compacted_before_handoff: true`를 적는다. 압축 전 세부는 요약으로만 남아 있어 Traps·Relevant Files의 정확도가 낮다는 신호다.
 
 ## 작업 단위와 handoff 1회의 관계
 
-**handoff 1회 = task-index.md TODO 섹션 항목 1개 (또는 작은 묶음)** 가 이상적이다. 컨텍스트 사용률 임계값(예: 70%) 같은 매직 넘버는 박지 않는다 — 검증된 숫자가 없고, 작업 종류에 따라 다르기 때문.
+**handoff 1회 = TODO 항목 1개 (또는 작은 묶음)** 가 이상적이다. 컨텍스트 사용률 임계값 같은 매직 넘버는 박지 않는다.
 
-대신 다음 신호 중 **하나라도 발생하면 작업 단위가 너무 컸다**는 뜻이고, 그 자리에서 handoff 후 분할을 권장한다:
+다음 신호 중 **하나라도 발생하면 작업 단위가 너무 컸다**는 뜻이고, 그 자리에서 handoff 후 분할을 권장한다:
 
 - handoff Key Decisions이 3개를 초과
 - Traps to Avoid가 5개를 초과
 - Relevant Files가 8개를 초과
 - 작업이 끝나기도 전에 컨텍스트가 답답해짐
 
-이런 신호가 반복되면 TODO 항목 자체를 더 작게 쪼개는 게 본질적 해결이다.
+TODO 항목 크기 기준: **한 세션에 끝나고, 완료 기준이 검증 가능하고, 결정이 1-2개 안에 떨어지는 단위.**
 
-> **TODO 항목 크기 가이드**: 좋은/나쁜 항목 예시, 작성 체크리스트, 권장 구조, 안티 패턴은 `references/todo-sizing.md` 참고. handoff 작성 중 "Step 2: 연결된 features/ 식별" 단계에서 TODO 항목 크기에 의문이 생기면 그 가이드를 먼저 읽는다.
+```markdown
+❌ - [ ] Payment MSA 분리                      # 며칠짜리 epic
+❌ - [ ] import 정리                            # handoff 비용 > 작업. 그냥 한다
+✅ - [ ] OAuth refresh를 TX 밖으로 이동 (PaymentService.refresh)
+       - 검증: TestPaymentRefresh.testRefresh가 그린
+       - Out of scope: race condition 처리 (별도 항목)
+```
+
+외부 의존("백엔드 PR 머지 대기")은 항목이 아니라 **Blocked By**다. 완료된 항목은 삭제하지 않고 `[x]`로 남긴다 (takeover가 흐름 파악에 쓴다).
 
 ## 입력 수집
 
@@ -86,10 +103,11 @@ git repo가 아니면 위 명령은 실패한다. 그 경우 frontmatter에서 g
 ```bash
 # 2. 워크트리 경로
 pwd
-```
 
-```bash
-# 3. 동일 브랜치/날짜의 기존 handoff 존재 여부 확인
+# 3. features/ 슬롯 존재 여부 (있을 때만 TODO 동기화 단계 진입)
+ls features/*/task-index.md 2>/dev/null
+
+# 4. 동일 브랜치/날짜의 기존 handoff 존재 여부 확인
 ls docs/handoffs/$(date +%Y-%m-%d)-*.md 2>/dev/null
 ```
 
@@ -119,8 +137,9 @@ branch: fix/skills-subskill-chaining
 head_commit: 403569cabcdef          # 다음 세션의 stale 판정 기준
 merge_base_with_main: 974f78fghijk
 worktree: /Users/jhj/IdeaProjects/example
-feature_name: skills-subskill-chaining     # features/ 슬롯 (있으면)
+feature_name: skills-subskill-chaining     # features/ 슬롯명. 없으면 브랜치명에서 추론한 slug
 relevant_files_count: 6
+compacted_before_handoff: false            # 이 세션에 자동 압축이 선행했으면 true
 ---
 
 # Handoff — 2026-05-04 — fix/skills-subskill-chaining
@@ -144,8 +163,7 @@ relevant_files_count: 6
 
 ## Relevant Files (최대 5-8개)
 - `path/to/file.kt:L45-L72` — 무엇을 위한 라인인지, 왜 중요한지
-- `features/<feature-name>/task-index.md` — slice 정의 + 진행 마커 + TODO 섹션 (해당 시)
-- `features/<feature-name>/tdd-state/slice-N.md` — 현재 진행 슬라이스의 behavior 트리 (해당 시)
+- `features/<feature-name>/task-index.md` — TODO + Decisions (슬롯이 있을 때)
 
 ## Observed State
 - 현재 코드/테스트가 어떤 상태인지 사실만 기록
@@ -163,23 +181,23 @@ relevant_files_count: 6
 - 적용된 변경: features/<feature-name>/task-index.md (TODO 섹션)
   - 체크: N개 (...)
   - 추가: M개 (...)
-- 슬라이스 진행 마커 변경: slice-tdd가 이미 토글한 항목 요약 (없으면 "(없음 — slice-tdd가 마커 토글 미적용)")
-- (task-index.md 없으면 "(연결된 task-index.md 없음 — features/ 슬롯 부재)")
+- (슬롯 없으면 "(features/ 슬롯 없음 — TODO 동기화 생략)")
+- (사용자가 n 선택 시 "(미적용)" + 후보 목록)
 
 ## Verification Checklist (takeover 스킬이 따를 절차)
-- [ ] 이 문서를 먼저 Read
+- [ ] 이 문서를 먼저 읽기
 - [ ] head_commit이 여전히 git에 존재하는지 확인
-- [ ] Relevant Files를 모두 Read (라인 범위 유효성 확인)
-- [ ] features/<feature-name>/ 의 task-index.md 와 현재 슬라이스의 tdd-state/slice-N.md를 hypothesis로 검증
+- [ ] Relevant Files를 모두 읽기 (라인 범위 유효성 확인)
+- [ ] features/<feature-name>/task-index.md가 있으면 hypothesis로 검증
 - [ ] `git log <head_commit>..HEAD` 로 그 사이 변경 확인
 - [ ] 검증 결과 한 단락 보고 후 사용자 지시 대기
 
 ## Prompt for New Chat
 \`\`\`
-다음 단계로 docs/handoffs/2026-05-04-153012-fix-skills-subskill-chaining.md 를 먼저 Read 도구로 읽어라.
-그 다음 CLAUDE.md를 읽고, 이미 거기서 다룬 내용은 재진술하지 마라.
-"Relevant Files"의 파일들을 실제 Read 도구로 읽고, 이 문서의 주장(라인 번호 포함)을 코드와 대조해 검증하라.
-features/<feature-name>/ 디렉토리가 있다면 task-index.md와 진행 중인 tdd-state/slice-N.md도 hypothesis로 검증하라.
+docs/handoffs/2026-05-04-153012-fix-skills-subskill-chaining.md 를 먼저 읽어라.
+그 다음 프로젝트 지침 파일(CLAUDE.md 또는 AGENTS.md)을 읽고, 이미 거기서 다룬 내용은 재진술하지 마라.
+"Relevant Files"의 파일들을 실제로 읽고, 이 문서의 주장(라인 번호 포함)을 코드와 대조해 검증하라.
+features/<feature-name>/task-index.md가 있다면 hypothesis로 검증하라.
 "Verification Checklist"의 모든 항목을 수행한 뒤, 검증 결과를 한 단락으로 보고하고 내 지시를 기다려라.
 \`\`\`
 ```
@@ -187,85 +205,26 @@ features/<feature-name>/ 디렉토리가 있다면 task-index.md와 진행 중�
 ## 실행 흐름
 
 1. **git 상태 수집** (위 명령들; git repo 아니면 생략)
-2. **연결된 features/<feature-name>/ 식별**
-   - 현재 브랜치명·작업 디렉토리·세션 트랜스크립트에서 어떤 feature 작업인지 추론
-   - `features/*/task-index.md` 존재 여부 확인 (`ls features/*/task-index.md 2>/dev/null` 후 가장 관련 높은 것 선택)
-   - 여러 후보면 사용자에게 번호로 제시, 선택받음
-   - **슬롯이 없으면 Step 2.5로 진입** (단순히 건너뛰지 않는다 — 다음 세션 takeover가 정상 인식하려면 feature_name이 필요)
-2.5. **handoff-initiated features/ 슬롯 생성** (Step 2에서 슬롯 미발견 시)
-
-   handoff를 호출했다는 건 이번 세션 작업이 다음 세션으로 이어질 만큼 의미 있다는 뜻이다.
-   takeover가 정상 인식하려면 `feature_name`과 task-index.md 슬롯이 필요하므로 사용자에게 명시 승인을 받아 생성한다.
-
-   **사용자 제시 형식**:
-   ```
-   [handoff] features/ 슬롯이 발견되지 않았습니다.
-
-   이번 세션 작업이 다음 세션으로 이어질 만큼 의미 있다고 판단됩니다.
-   takeover가 정상적으로 인식하려면 feature 슬롯이 필요합니다.
-
-   추론된 feature 이름: "auth-bug-fix"
-     (브랜치: fix/auth-bug, 트랜스크립트 키워드: 'race condition', 'token refresh')
-
-   이 이름으로 features/auth-bug-fix/task-index.md를 생성할까요?
-
-   선택:
-     y       — 'auth-bug-fix'로 생성
-     rename  — 다른 이름 입력 받음
-     skip    — features/ 동기화 없이 handoff 문서만 작성
-                (→ 다음 세션 takeover의 feature 검증 비활성화)
-   ```
-
-   - `y` → 추론 이름 사용
-   - `rename` → 사용자 입력 이름으로 변경 (kebab-case 권장, plan 컨벤션 준수)
-   - `skip` → 슬롯 생성 안 함, frontmatter에 `feature_name: (skipped)` 명시 박고 Step 3 진입
-
-   **y/rename 선택 시 생성되는 간소형 task-index.md**:
-
-   ```markdown
-   ---
-   feature_name: <feature-name>
-   created_by: handoff
-   created_at: <YYYY-MM-DD>
-   plan_status: not_run
-   ---
-
-   # <feature-name>
-
-   ## Slices
-   > /plan 미실행. 슬라이스로 분해하려면 /plan을 호출하세요.
-   > (plan은 frontmatter의 `created_by: handoff` 인식 시 4번째 옵션 'fill'로 Slices 섹션 채움)
-
-   ## TODO
-   (이번 세션에서 발견·완료된 항목으로 채움 — Step 7에서 사용자 y/n 후)
-
-   ## Decisions
-   (없음)
-   ```
-
-   **frontmatter 핵심 필드**:
-   - `created_by: handoff` — plan이 4번째 옵션 'fill'을 노출하기 위한 마커
-   - `plan_status: not_run` — Slices 섹션이 비어있음을 명시. takeover가 경고 아닌 정보로 처리
-
-   생성 직후 git에 staging만 하고 commit은 하지 않는다 (사용자가 직접 commit 결정).
-
+2. **features/ 슬롯 식별** (있을 때만)
+   - `ls features/*/task-index.md` 결과가 있으면 현재 브랜치명·작업 디렉토리·세션 내용으로 가장 관련 높은 것 선택. 여러 후보면 사용자에게 번호로 제시.
+   - 없으면 `feature_name`은 브랜치명에서 kebab-case slug로 추론해 frontmatter에만 기록하고 Step 7을 건너뛴다. **슬롯을 만들지 않고, 만들지 묻지도 않는다.**
 3. **트랜스크립트에서 추출**
    - 사용자가 명시한 결정/제약 → Key Decisions, Working Agreements
    - 시도→실패 접근 (대화에서 "그건 안 돼", "그 방식 말고 다른 방법", 사용자 거부 표현) → Traps to Avoid
    - 마지막 작업 지점 → Observed State, Blocked By
-   - 이번 세션에서 명시적으로 완료된 *슬라이스 외* 작업 → task-index.md TODO 섹션 체크 후보
-   - 이번 세션에서 새로 발견된 *슬라이스 외* 작업·후속 과제 → task-index.md TODO 섹션 추가 후보
-   - (슬라이스 자체의 진행 마커는 slice-tdd가 이미 토글했어야 함. 누락된 게 있으면 보고만)
+   - 이번 세션에서 명시적으로 완료된 TODO 항목 → 체크 후보 (슬롯 있을 때)
+   - 이번 세션에서 새로 발견된 후속 과제 → 추가 후보 (슬롯 있을 때)
+   - 이 세션에 자동 압축이 선행했는지 확인 → `compacted_before_handoff`
 4. **Relevant Files 선정**
-   - 이번 세션에 Edit/Write/Read한 파일 중 다음 세션이 반드시 봐야 할 5-8개로 압축
-   - 라인 번호까지 명시. 광범위 Read한 파일은 핵심 함수의 라인 범위만
-   - features/<feature-name>/ 의 task-index.md 와 진행 중인 tdd-state/slice-N.md가 있으면 우선 포함
+   - 이번 세션에 편집·작성·읽은 파일 중 다음 세션이 반드시 봐야 할 5-8개로 압축
+   - 라인 번호까지 명시. 광범위하게 읽은 파일은 핵심 함수의 라인 범위만
+   - task-index.md가 있으면 우선 포함
 5. **명령형 검사** (자체 lint)
    - "Open Work"는 출력 문서의 `## Observed State` / `## Blocked By` / `## Candidate Next Action` 3개 섹션을 묶어 부르는 *논리 그룹명*이다 (실제 마크다운 헤더 아님).
    - 위 3개 섹션의 모든 문장이 "Implement", "Add", "Fix", "Do" 등 명령형 동사로 시작하는지 검사
    - 명령형이면 상태 서술형으로 재작성
 6. **`docs/handoffs/<YYYY-MM-DD>-<HHMMSS>-<branch-slug>.md` 작성**
-7. **task-index.md TODO 섹션 변경 후보 사용자 확인 + 적용** (Step 2에서 features/ 슬롯을 찾은 경우만)
+7. **task-index.md TODO 섹션 변경 후보 사용자 확인 + 적용** (Step 2에서 슬롯을 찾은 경우만)
    - 다음 형식으로 사용자에게 변경 후보 제시:
      ```
      [task-index.md 변경 제안: features/payment-msa/task-index.md, TODO 섹션]
@@ -280,11 +239,10 @@ features/<feature-name>/ 디렉토리가 있다면 task-index.md와 진행 중�
      적용하시겠습니까? (y/n/edit)
      ```
    - `y` → 적용
-   - `n` → 건너뜀 (handoff 문서에는 "TODO Impact (미적용)" 섹션으로만 기록)
+   - `n` → 건너뜀 (handoff 문서에는 "TODO Impact (미적용)"으로만 기록)
    - `edit` → 사용자가 수정한 변경분으로 적용
-   - **사용자 확인 없이 자동 수정 금지** (task-index.md는 source of truth). Slices·Decisions 섹션은 절대 수정 X (plan/slice-tdd 영역).
-8. **사용자에게 종합 보고**: handoff 경로 + task-index.md TODO 섹션 변경 요약 + 한 줄 요약
-9. **(옵션)** "/clear 하시겠습니까?" 묻기
+   - **사용자 확인 없이 자동 수정 금지** (task-index.md는 source of truth). Decisions 섹션은 수정하지 않는다.
+8. **사용자에게 종합 보고**: handoff 경로 + TODO 변경 요약 + 한 줄 요약. 질문 없이 끝낸다.
 
 ## 예시: Open Work 변환
 
@@ -311,39 +269,22 @@ features/<feature-name>/ 디렉토리가 있다면 task-index.md와 진행 중�
 - 엔드포인트 테스트는 fixture 재사용 가능성이 높음
 ```
 
-## 상태 갱신 책임 매트릭스 (4개 자산 공통)
-
-이 표는 plan / slice-tdd / handoff / takeover 4개 자산이 모두 동일하게 따른다.
-
-| 파일 | 생성 | 갱신 | 읽기만 |
-|------|------|------|--------|
-| `task-index.md` | plan / **handoff (Step 2.5 신규 슬롯 생성 시)** | plan (재진입 시 overwrite/append/abort/fill), slice-tdd (슬라이스 진행 마커 토글 y/n + Decisions 섹션 vault 인용 시), **handoff (TODO 섹션 일괄 y/n)** | takeover |
-| `tdd-state/slice-N.md` | slice-tdd (슬라이스 시작 시) | slice-tdd (RED→GREEN 사이클마다) | **handoff**, takeover |
-
-handoff는 `task-index.md`의 *TODO 섹션*만 수정한다 (Step 2.5의 신규 슬롯 생성 시 task-index.md 자체를 만들기도 한다). Slices·Decisions 섹션 본문 및 `tdd-state/slice-N.md`는 Relevant Files에 포함만 하고 읽기 전용.
-
-**별도 파일 정책**: 모든 결정·트랩은 `task-index.md`의 `## Decisions` 섹션 안에서 관리한다. 별도의 `decisions.md` / `pending-decisions.md` 파일은 사용하지 않는다 (단일 source of truth 원칙). Decisions 섹션 항목은 `[<상태>][<출처>]` 두 태그를 머리에 박는다 — 상태는 `[resolved] / [pending] / [trap]`, 출처는 `[plan] / [slice-N]` (plan Step 4-3 템플릿 참조).
-
-## features/ 통합 추가 규칙
-
-`features/<feature-name>/task-index.md`의 *TODO 섹션*을 다룰 때:
+## task-index.md TODO 섹션 규칙
 
 - **체크박스 추론 보수적으로**: 코드/테스트로 명시 검증된 항목만 `[x]` 체크. "구현한 것 같다" 수준은 건너뛰고 사용자에게 보고만.
 - **항목 삭제 금지**: 폐기된 항목은 `~~취소선~~`으로 표시하고 이유 주석 추가, 실제 삭제는 사용자가 직접.
-- **task-index.md 상위 섹션 구조 보존**: 기존 헤더(Slices / TODO / Decisions)·우선순위 표기를 그대로 둠. 신규 항목은 *TODO 섹션* 끝에 배치 (Slices·Decisions 섹션은 절대 수정 X).
-- **Slices · tdd-state/는 읽기만**: handoff는 task-index.md의 TODO 섹션만 수정한다. slice 분해 변경은 `/plan` 재호출, slice 진행 마커는 slice-tdd가 토글, behavior 진행은 tdd-state/slice-N.md의 자동 갱신을 통해서만 일어난다.
-- **tdd-state/slice-N.md의 트리 구조는 그대로 인용**: 평면이든 트리든 형식·들여쓰기를 변형하지 않고 Relevant Files 본문에 인용. 트리 깊이 5 초과 슬라이스는 *"plan 재진입 후보"* 로 Candidate Next Action에 포함.
-- **task-index.md가 git에 커밋된 파일이면 변경 후 staging 상태**로 두고 사용자에게 알림 (자동 commit 금지)
+- **섹션 구조 보존**: 기존 헤더·우선순위 표기를 그대로 둠. 신규 항목은 TODO 섹션 끝에 배치. Decisions 섹션은 수정하지 않는다.
+- **git에 커밋된 파일이면 변경 후 staging 상태**로 두고 사용자에게 알림 (자동 commit 금지)
 
 ## Done When
 
 - `docs/handoffs/<YYYY-MM-DD>-<HHMMSS>-<branch-slug>.md` 가 작성됨
 - frontmatter에 `head_commit`, `merge_base_with_main` 포함됨 (git repo인 경우)
+- frontmatter에 `feature_name`, `compacted_before_handoff` 존재
 - Relevant Files 개수가 8개 이하
 - "Open Work" 그룹(=`## Observed State` / `## Blocked By` / `## Candidate Next Action` 3섹션)이 모두 출력 문서에 존재
 - 위 3섹션의 모든 문장이 명령형 동사("Implement", "Add", "Fix", "Do")로 시작하지 않음
 - `.gitignore`에 `docs/handoffs/` 포함됨
-- 연결된 features/ 슬롯이 있었다면 사용자 확인 후 task-index.md TODO 섹션이 갱신되었거나, 미적용 사실이 handoff 문서에 기록됨
-- handoff 문서에 `## TODO Impact` 섹션 존재 (task-index.md 없으면 "(연결된 task-index.md 없음)" 명시)
-- frontmatter `feature_name`이 항상 존재 (Step 2.5 y/rename 선택 시 신규 슬롯명, skip 선택 시 `(skipped)`로 명시 박음)
-- Step 2에서 슬롯 미발견 시 Step 2.5의 사용자 명시 승인 절차를 거쳤음
+- handoff 문서에 `## TODO Impact` 섹션 존재 (슬롯 없으면 "(features/ 슬롯 없음 — TODO 동기화 생략)" 명시)
+- 슬롯이 있었다면 사용자 확인 후 TODO 섹션이 갱신되었거나, 미적용 사실이 handoff 문서에 기록됨
+- 사용자에게 던진 질문이 기존 handoff 충돌(overwrite/append/새 파일)과 TODO 적용(y/n/edit) 외에 없음
