@@ -40,6 +40,28 @@ export const AGENT_CLI = {
     cursor: { bin: 'cursor-agent', hint: 'install cursor-agent CLI' },
 };
 
+/**
+ * Drop claude session-binding args (--resume <sid>, --session-id <uuid>, ...)
+ * before launch_args are persisted to the manifest. They are valid for this one
+ * launch only: add-worker copies the caller's persisted launch_args, so a kept
+ * `--resume <sid>` would boot the new peer inside the caller's conversation.
+ * Claude-only: other CLIs reuse these letters (codex `-c <key=value>` is config).
+ */
+export function stripSessionArgs(args, agentType) {
+    if (agentType !== 'claude') return [...args];
+    const out = [];
+    for (let i = 0; i < args.length; i++) {
+        const a = args[i];
+        if (a === '--resume' || a === '-r' || a === '--session-id') {
+            if (args[i + 1] !== undefined && !args[i + 1].startsWith('-')) i++;
+        } else if (!(a.startsWith('--resume=') || a.startsWith('--session-id=')
+            || a === '--continue' || a === '-c' || a === '--fork-session')) {
+            out.push(a);
+        }
+    }
+    return out;
+}
+
 export function commandExists(cmd) {
     try {
         const lookup = process.platform === 'win32' ? 'where' : 'which';
@@ -239,7 +261,7 @@ export async function runStart(opts) {
             // add-worker's overlay carry the same one-liner peers saw at boot.
             description: (w.description || w.extra_prompt || '').split('\n')[0].trim(),
             // Persisted so a worker-initiated add-worker can inherit them.
-            launch_args: launchArgs,
+            launch_args: stripSessionArgs(launchArgs, w.agent_type),
             overlay_path: overlayPath,
         });
     }

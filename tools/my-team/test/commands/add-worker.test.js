@@ -22,6 +22,7 @@ import { join } from 'path';
 import { execFileSync } from 'child_process';
 
 import { runAddWorker } from '../../src/commands/add-worker.js';
+import { stripSessionArgs } from '../../src/commands/start.js';
 
 /** A real, existing dir to use as a valid --cwd (the worker's cwd must exist). */
 const VALID_CWD = tmpdir();
@@ -669,4 +670,34 @@ test('without --extra-prompt the new worker\'s AGENTS.md has no Role Context sec
         const body = readFileSync(join(ctx.stateRoot, 'workers', 'carol', 'AGENTS.md'), 'utf-8');
         assert.doesNotMatch(body, /^## Role Context/m);
     } finally { cleanup(ctx); }
+});
+
+test('stripSessionArgs drops claude session-binding args and keeps the rest', () => {
+    assert.deepEqual(
+        stripSessionArgs(['--dangerously-skip-permissions', '--resume', 'sid-a', '-r', 'sid-b', '--resume=sid-c',
+            '--session-id', 'sid-d', '--continue', '-c', '--fork-session', '--model', 'opus'], 'claude'),
+        ['--dangerously-skip-permissions', '--model', 'opus'],
+    );
+    assert.deepEqual(stripSessionArgs(['--resume', '--verbose'], 'claude'), ['--verbose'], 'bare --resume (picker) does not eat the next flag');
+    // codex `-c <key=value>` is a config flag, not claude's --continue
+    assert.deepEqual(stripSessionArgs(['-c', 'model_reasoning_effort=high'], 'codex'), ['-c', 'model_reasoning_effort=high']);
+});
+
+test('does not inherit or persist the caller\'s --resume <sid> (a peer must not open the caller\'s session)', async () => {
+    const ctx = setupTeam();
+    try {
+        const manifestPath = join(ctx.stateRoot, 'manifest.json');
+        const m = JSON.parse(readFileSync(manifestPath, 'utf-8'));
+        m.workers[0].launch_args = ['--dangerously-skip-permissions', '--resume', 'alice-sid'];
+        writeFileSync(manifestPath, JSON.stringify(m), 'utf-8');
+        process.env.MY_TEAM_WORKER = 't1/alice';
+
+        let spawned;
+        await runAddWorker(validOpts(), okDeps({ spawnWorkerInPane: async (_s, _p, config) => { spawned = config; } }));
+        assert.deepEqual(spawned.launchArgs, ['--dangerously-skip-permissions']);
+        assert.deepEqual(readManifest(ctx).workers.find((w) => w.name === 'carol').launch_args, ['--dangerously-skip-permissions']);
+    } finally {
+        delete process.env.MY_TEAM_WORKER;
+        cleanup(ctx);
+    }
 });

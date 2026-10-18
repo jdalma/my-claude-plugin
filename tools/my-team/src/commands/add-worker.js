@@ -25,7 +25,7 @@ import { homedir } from 'os';
 
 import { loadManifest, manifestPathForTeam, resolveTeamManifest } from './_manifest.js';
 import { WORKER_NAME_PATTERN, validateWorker } from '../config/parser.js';
-import { AGENT_CLI, validateAgentCLIs } from './start.js';
+import { AGENT_CLI, stripSessionArgs, validateAgentCLIs } from './start.js';
 import { sanitizeName } from '../lib/team-name.js';
 import { ensureWorkerStateDir, generateWorkerOverlay } from '../lib/worker-bootstrap.js';
 import { atomicWriteJson } from '../lib/fs-utils.js';
@@ -215,7 +215,7 @@ async function addValidatedWorker(opts, deps, manifest, anchor, newWorker) {
     let launchArgs = Array.isArray(opts.launchArgs) ? opts.launchArgs : [];
     const callerName = process.env.MY_TEAM_WORKER?.startsWith(`${opts.team}/`) ? process.env.MY_TEAM_WORKER.slice(opts.team.length + 1) : null;
     const caller = callerName ? manifest.workers.find((w) => w.name === callerName) : null;
-    if (launchArgs.length === 0 && Array.isArray(caller?.launch_args)) launchArgs = [...caller.launch_args];
+    if (launchArgs.length === 0 && Array.isArray(caller?.launch_args)) launchArgs = stripSessionArgs(caller.launch_args, caller.agent_type);
 
     // ── Step 2: state dir + new worker AGENTS.md (idempotent; no pane yet) ──
     const stateRoot = manifest.state_root;
@@ -287,7 +287,7 @@ async function addValidatedWorker(opts, deps, manifest, anchor, newWorker) {
             agent_type: opts.agentType,
             role: workerRole,
             description,
-            launch_args: launchArgs,
+            launch_args: stripSessionArgs(launchArgs, opts.agentType),
             overlay_path: overlayPath,
         });
         atomicWriteJson(manifestPathForTeam(opts.team, opts.stateRoot), fresh);
