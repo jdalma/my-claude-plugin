@@ -25,13 +25,21 @@ enum FocusRunner {
         let err = Pipe()
         p.standardError = err
         p.standardOutput = FileHandle.nullDevice
-        try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, Error>) in
-            p.terminationHandler = { p in
-                if p.terminationStatus == 0 { return c.resume() }
-                let text = String(decoding: err.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
-                c.resume(throwing: CommandError(argv: argv, output: text.trimmingCharacters(in: .whitespacesAndNewlines)))
+        // Drain stderr while the child runs: a full pipe (64 KB) would block it from exiting.
+        let drained = Task.detached { err.fileHandleForReading.readDataToEndOfFile() }
+        let status: Int32
+        do {
+            status = try await withCheckedThrowingContinuation { c in
+                p.terminationHandler = { c.resume(returning: $0.terminationStatus) }
+                do { try p.run() } catch { c.resume(throwing: error) }
             }
-            do { try p.run() } catch { c.resume(throwing: error) }
+        } catch {
+            try? err.fileHandleForWriting.close()  // never launched: end the drain
+            throw error
+        }
+        let text = String(decoding: await drained.value, as: UTF8.self)
+        guard status == 0 else {
+            throw CommandError(argv: argv, output: text.trimmingCharacters(in: .whitespacesAndNewlines))
         }
     }
 }
