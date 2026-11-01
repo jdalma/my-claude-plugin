@@ -19,6 +19,10 @@ struct TowerApp: App {
             BoardView(tower: tower)
         }
         .defaultSize(width: 1200, height: 760)
+
+        Settings {
+            SettingsView()
+        }
     }
 }
 
@@ -44,6 +48,8 @@ struct MenuContent: View {
                 NSApp.activate()
             }
             .keyboardShortcut("b")
+            SettingsLink { Text("Settings…") }
+                .keyboardShortcut(",")
             Divider().padding(.vertical, 4)
             Button("Quit Control Tower") { NSApp.terminate(nil) }
                 .keyboardShortcut("q")
