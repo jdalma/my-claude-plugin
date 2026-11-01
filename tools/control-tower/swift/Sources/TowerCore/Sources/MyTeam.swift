@@ -2,11 +2,18 @@ import Foundation
 
 // Read-only: only `my-team status --all --json` is ever run.
 
+/// The installed `my-team` (`/my-team-install` npm-links it onto PATH) first, so a build from a
+/// worktree or a moved checkout still finds one with its dependencies; the sibling package otherwise.
+func myTeamBinary(in dirs: [String] = searchPath, fallback: String = checkoutMyTeamBin) -> String {
+    resolveExecutable("my-team", in: dirs) ?? fallback
+}
+
 /// The sibling `tools/my-team` package, located from this source file as Node locates it from its module.
-/// ponytail: a binary moved off this checkout loses it and the board degrades to no teams.
-let myTeamBin = URL(fileURLWithPath: #filePath)
+let checkoutMyTeamBin = URL(fileURLWithPath: #filePath)
     .appending(path: "../../../../../../my-team/bin/my-team")
     .standardizedFileURL.path
+
+let myTeamBin = myTeamBinary()
 
 struct MyTeamStatus: Decodable {
     var teams: [RawTeam]
@@ -35,6 +42,28 @@ struct RawWorker: Decodable {
     var unread: Int
     var sentPending: Int
     var oldestPendingAt: String?
+
+    enum CodingKeys: CodingKey {
+        case name, paneId, cwd, agentType, role, description, alive, state, reason, spool, unread, sentPending, oldestPendingAt
+    }
+
+    init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        name = try c.decode(String.self, forKey: .name)
+        paneId = try c.decode(String.self, forKey: .paneId)
+        cwd = try c.decodeIfPresent(String.self, forKey: .cwd)
+        agentType = try c.decodeIfPresent(String.self, forKey: .agentType)
+        role = try c.decodeIfPresent(String.self, forKey: .role)
+        description = try c.decodeIfPresent(String.self, forKey: .description)
+        alive = try c.decode(Bool.self, forKey: .alive)
+        // a worker LLM writes its own status.json; a non-string value drops that field, not the team
+        state = try? c.decode(String.self, forKey: .state)
+        reason = try? c.decode(String.self, forKey: .reason)
+        spool = try c.decode(Int.self, forKey: .spool)
+        unread = try c.decode(Int.self, forKey: .unread)
+        sentPending = try c.decode(Int.self, forKey: .sentPending)
+        oldestPendingAt = try c.decodeIfPresent(String.self, forKey: .oldestPendingAt)
+    }
 }
 
 /// The my-team-owned part of a Team; collect adds the process-level Session fields.

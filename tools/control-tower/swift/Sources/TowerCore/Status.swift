@@ -10,8 +10,9 @@ public func deriveMyTurn(status: Status, spool: Int = 0, permissionPrompt: Bool 
 
 /// The last 14 non-empty, trimmed lines: what is on screen, not what scrolled past.
 private func screenTail(_ captured: String, stripCR: Bool) -> [String] {
-    let lines = captured.split(separator: "\n", omittingEmptySubsequences: false)
-        .map { (stripCR ? String($0).replacing("\r", with: "") : String($0)).trimmed }
+    // split on scalars: as a Character, "\r\n" is one grapheme and matches neither "\n" nor "\r"
+    let lines = captured.unicodeScalars.split(separator: "\n", omittingEmptySubsequences: false)
+        .map { line in String(String.UnicodeScalarView(stripCR ? line.filter { $0 != "\r" } : Array(line))).trimmed }
         .filter { !$0.isEmpty }
     return Array(lines.suffix(14))
 }

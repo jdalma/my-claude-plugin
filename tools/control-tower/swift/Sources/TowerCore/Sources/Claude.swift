@@ -29,7 +29,12 @@ struct SessionJson: Decodable {
     var tmux: String?
 }
 
-let homeDir = FileManager.default.homeDirectoryForCurrentUser.path
+/// Node `os.homedir()`: `$HOME` first, the user database otherwise.
+func homeDirectory(_ env: [String: String] = ProcessInfo.processInfo.environment) -> String {
+    env["HOME"].nonEmpty ?? NSHomeDirectory()
+}
+
+let homeDir = homeDirectory()
 let claudeProjectsDir = "\(homeDir)/.claude/projects"
 
 /// JS `cwd.replace(/[^A-Za-z0-9]/g, '-')`, which works on UTF-16 units: an astral char becomes two dashes.
@@ -89,7 +94,8 @@ func fromSessionJson(
 
 func loadClaudeSessions(dir: String = "\(homeDir)/.claude/sessions", projectsDir: String = claudeProjectsDir) -> [ClaudeRecord] {
     guard let files = try? FileManager.default.contentsOfDirectory(atPath: dir) else { return [] }
-    return files.filter { $0.hasSuffix(".json") }.compactMap { f in
+    // name order, as readdirSync: it decides loose order and which of two processes claims a worker pane
+    return files.filter { $0.hasSuffix(".json") }.sorted().compactMap { f in
         // unparsable or unexpected shape (e.g. no cwd): skip this file only
         guard let data = FileManager.default.contents(atPath: "\(dir)/\(f)"),
               let json = try? JSONDecoder().decode(SessionJson.self, from: data) else { return nil }

@@ -82,8 +82,7 @@ func join(teams: [TeamSeed], panes: [Pane], claude: [ClaudeRecord], codex: [Code
 
     for c in claude where !stale(c) {
         let pane = c.tmux.flatMap { paneById[$0.pane] }
-        var tmux = c.tmux
-        if tmux?.window.isEmpty == true, let w = pane?.window { tmux?.window = w }
+        let tmux = c.tmux
         let title = pane?.title.nonEmpty ?? c.name.nonEmpty ?? ""
         let proc = Proc(pid: c.pid, cwd: c.cwd, startedAt: c.startedAt, status: c.status, since: c.since,
                         transcript: c.transcript, title: title)
@@ -149,13 +148,23 @@ func enrich(_ board: Board, deps: CollectDeps) -> Board {
     return b
 }
 
+/// A board plus why it may be missing teams. The error stays outside Board so
+/// `--once` keeps the Node JSON shape.
+public struct Snapshot: Sendable {
+    public var board: Board
+    /// Set when `my-team status --all --json` failed and `board.teams` is empty for that reason.
+    public var myTeamError: String?
+}
+
 /// One full collection pass. A failing my-team degrades to no teams instead of failing the board.
-func collect(deps: CollectDeps, now: Date = Date()) -> Board {
+func snapshot(deps: CollectDeps, now: Date = Date()) -> Snapshot {
     let rows = deps.psSnapshot()
     let rawTeams: [RawTeam]
+    var myTeamError: String?
     do {
         rawTeams = try deps.loadTeams()
     } catch {
+        myTeamError = "\(error)"
         warn("\(error)")
         rawTeams = []
     }
@@ -164,12 +173,17 @@ func collect(deps: CollectDeps, now: Date = Date()) -> Board {
     let teams = rawTeams.map { toTeam($0, clients: clients) }
     let board = join(teams: teams, panes: deps.listPanes(), claude: deps.loadClaudeSessions(), codex: codex, rows: rows,
                      at: isoString(now))
-    return enrich(board, deps: deps)
+    return Snapshot(board: enrich(board, deps: deps), myTeamError: myTeamError)
 }
 
 /// One snapshot of every my-team worker and local Claude / Codex session.
 /// ponytail: sources run one after another, as blocking reads off the caller's
 /// executor; run my-team and lsof concurrently if a pass gets slow.
 public func collect() async -> Board {
-    collect(deps: .live)
+    snapshot(deps: .live).board
+}
+
+/// `collect()` plus the my-team failure reason, for a UI that has no stderr to show.
+public func collectSnapshot() async -> Snapshot {
+    snapshot(deps: .live)
 }
