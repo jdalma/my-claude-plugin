@@ -1,0 +1,28 @@
+#!/bin/sh
+# Build TowerApp in release mode and wrap it in an ad-hoc signed .app bundle.
+# Usage: scripts/bundle-app.sh   → .build/ControlTower.app
+set -eu
+cd "$(dirname "$0")/.."
+swift build -c release --product TowerApp
+app=.build/ControlTower.app
+rm -rf "$app"
+mkdir -p "$app/Contents/MacOS"
+cp "$(swift build -c release --show-bin-path)/TowerApp" "$app/Contents/MacOS/TowerApp"
+cat > "$app/Contents/Info.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleExecutable</key><string>TowerApp</string>
+    <key>CFBundleIdentifier</key><string>local.control-tower</string>
+    <key>CFBundleName</key><string>Control Tower</string>
+    <key>CFBundlePackageType</key><string>APPL</string>
+    <key>CFBundleShortVersionString</key><string>0.1</string>
+    <key>CFBundleVersion</key><string>1</string>
+    <key>LSMinimumSystemVersion</key><string>14.0</string>
+    <key>LSUIElement</key><true/>
+</dict>
+</plist>
+PLIST
+codesign --force --sign - "$app"
+echo "$app"
