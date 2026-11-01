@@ -74,3 +74,9 @@ func displayTitle(_ s: Session, in board: Board) -> String {
 func sessions(_ b: Board) -> [Session] {
     b.teams.flatMap { $0.workers.map(\.session) } + b.loose
 }
+
+extension Session {
+    /// A list id unique across teams and loose. A handle alone repeats when two processes
+    /// claim one pane; a pid alone repeats as 0 for workers with no recognized process.
+    var rowID: String { "\(handle)#\(pid)" }
+}

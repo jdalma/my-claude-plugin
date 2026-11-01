@@ -116,7 +116,7 @@ private struct SessionColumn: View {
         Column {
             Text(title).font(.title3.bold())
         } content: {
-            ForEach(sessions, id: \.pid) { s in
+            ForEach(sessions, id: \.rowID) { s in
                 CardButton(card: s, at: at, tower: tower) {
                     if let sub = s.subtitle {
                         Text(sub).font(.caption).foregroundStyle(.secondary).lineLimit(1)

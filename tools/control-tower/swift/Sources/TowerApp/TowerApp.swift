@@ -40,8 +40,7 @@ struct MenuContent: View {
                 if mine.isEmpty {
                     Text("Nobody is waiting for you").foregroundStyle(.secondary).padding(.vertical, 4)
                 }
-                // A pane two processes claim puts one handle in both a team and loose; pids stay unique.
-                ForEach(mine, id: \.pid) { s in
+                ForEach(mine, id: \.rowID) { s in
                     MenuCard(title: displayTitle(s, in: board), status: statusLine(s, at: board.at).label,
                              message: s.lastAssistant) { tower.focus(s.handle) }
                 }
