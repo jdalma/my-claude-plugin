@@ -66,13 +66,29 @@ struct CommandError: Error, CustomStringConvertible {
     var description: String
 }
 
-let searchPath = (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":").map(String.init)
-    // a GUI app inherits launchd's PATH, which lacks Homebrew
-    + ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"]
+/// `PATH` plus the usual install dirs: a GUI app inherits launchd's PATH, which lacks Homebrew.
+func searchDirs(_ path: String?) -> [String] {
+    var seen = Set<String>()
+    return ((path ?? "").split(separator: ":").map(String.init)
+        + ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"])
+        .filter { !$0.isEmpty && seen.insert($0).inserted }
+}
+
+let searchPath = searchDirs(ProcessInfo.processInfo.environment["PATH"])
 
 func resolveExecutable(_ name: String, in dirs: [String] = searchPath) -> String? {
     if name.contains("/") { return name }
     return dirs.map { "\($0)/\(name)" }.first { FileManager.default.isExecutableFile(atPath: $0) }
+}
+
+/// What a child process runs with. Children get the same search dirs we use, because
+/// my-team shells out to `tmux`. Without any locale (launchd gives none) tmux prints
+/// the tabs of a `-F` format as `_`, which breaks every pane listing, so default to UTF-8.
+func childEnvironment(base: [String: String], extra: [String: String]) -> [String: String] {
+    var env = base
+    env["PATH"] = searchDirs(base["PATH"]).joined(separator: ":")
+    if ["LC_ALL", "LC_CTYPE", "LANG"].allSatisfy({ base[$0].nonEmpty == nil }) { env["LC_CTYPE"] = "UTF-8" }
+    return env.merging(extra) { $1 }
 }
 
 /// Runs `argv` directly, never through a shell. A non-zero exit is a result, not a
@@ -83,7 +99,7 @@ func runCommand(_ argv: [String], timeout: TimeInterval, env: [String: String] =
     let p = Process()
     p.executableURL = URL(fileURLWithPath: exe)
     p.arguments = Array(argv.dropFirst())
-    if !env.isEmpty { p.environment = ProcessInfo.processInfo.environment.merging(env) { $1 } }
+    p.environment = childEnvironment(base: ProcessInfo.processInfo.environment, extra: env)
     // stderr goes to a file so a chatty child can never fill a second pipe while we drain stdout
     let errURL = FileManager.default.temporaryDirectory.appending(path: "tower-\(UUID().uuidString).err")
     FileManager.default.createFile(atPath: errURL.path, contents: nil)
