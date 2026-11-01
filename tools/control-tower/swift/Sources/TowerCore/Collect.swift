@@ -82,8 +82,7 @@ func join(teams: [TeamSeed], panes: [Pane], claude: [ClaudeRecord], codex: [Code
 
     for c in claude where !stale(c) {
         let pane = c.tmux.flatMap { paneById[$0.pane] }
-        var tmux = c.tmux
-        if tmux?.window.isEmpty == true, let w = pane?.window { tmux?.window = w }
+        let tmux = c.tmux
         let title = pane?.title.nonEmpty ?? c.name.nonEmpty ?? ""
         let proc = Proc(pid: c.pid, cwd: c.cwd, startedAt: c.startedAt, status: c.status, since: c.since,
                         transcript: c.transcript, title: title)
