@@ -32,6 +32,9 @@ struct MenuContent: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+            if let error = tower.myTeamError {
+                MyTeamErrorLine(error: error).padding(.bottom, 4)
+            }
             if let board = tower.board {
                 let mine = sortCards(sessions(board).filter(\.myTurn))
                 if mine.isEmpty {
@@ -85,5 +88,19 @@ private struct MenuCard: View {
             .padding(.vertical, 4)
         }
         .accessibilityHint("Focus this session's terminal")
+    }
+}
+
+/// One line saying teams are missing because my-team failed; the full text is in the tooltip.
+struct MyTeamErrorLine: View {
+    let error: String
+
+    var body: some View {
+        Label("Teams unavailable: \(error)", systemImage: "exclamationmark.triangle.fill")
+            .font(.callout)
+            .foregroundStyle(.orange)
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .help(error)
     }
 }

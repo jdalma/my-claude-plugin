@@ -7,6 +7,21 @@ struct BoardView: View {
     let tower: Tower
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if let error = tower.myTeamError {
+                MyTeamErrorLine(error: error).padding([.horizontal, .top])
+            }
+            board
+        }
+        .frame(minWidth: 640, minHeight: 400)
+        .toolbar {
+            ToolbarItem {
+                Text("\(tower.myTurn) my turn").font(.headline)
+            }
+        }
+    }
+
+    @ViewBuilder private var board: some View {
         Group {
             if let board = tower.board {
                 ScrollView([.horizontal, .vertical]) {
@@ -23,12 +38,6 @@ struct BoardView: View {
                 }
             } else {
                 ProgressView("Collecting…").frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
-        }
-        .frame(minWidth: 640, minHeight: 400)
-        .toolbar {
-            ToolbarItem {
-                Text("\(tower.myTurn) my turn").font(.headline)
             }
         }
     }

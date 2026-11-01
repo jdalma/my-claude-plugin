@@ -6,6 +6,8 @@ import TowerCore
 @MainActor @Observable
 final class Tower {
     private(set) var board: Board?
+    /// Why the board has no teams, when my-team failed. A GUI app's stderr is invisible.
+    private(set) var myTeamError: String?
     @ObservationIgnored private var notifier: Notifier?
 
     init() {
@@ -21,7 +23,9 @@ final class Tower {
 
     private func refresh() async {
         // collect blocks for about a second; keep it off the main actor.
-        let next = await Task.detached { await collect() }.value
+        let snap = await Task.detached { await collectSnapshot() }.value
+        let next = snap.board
+        myTeamError = snap.myTeamError
         for s in newlyMyTurn(prev: board, next: next) {
             notifier?.post(s, title: displayTitle(s, in: next))
         }
