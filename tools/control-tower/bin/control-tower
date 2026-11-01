@@ -1,0 +1,49 @@
+#!/usr/bin/env node
+import { randomBytes } from 'node:crypto';
+
+import { collect } from '../src/collect.js';
+import { runFocus } from '../src/focus.js';
+import { startServer } from '../src/server.js';
+import { listClients } from '../src/sources/tmux.js';
+
+const argv = process.argv.slice(2);
+const opt = (name, dflt) => {
+    const i = argv.indexOf(name);
+    return i >= 0 ? Number(argv[i + 1]) : dflt;
+};
+
+if (argv.includes('--once')) {
+    process.stdout.write(JSON.stringify(await collect(), null, 2) + '\n', () => process.exit(0));
+}
+
+const port = opt('--port', 47700);
+const intervalMs = opt('--interval', 5) * 1000;
+const token = randomBytes(16).toString('hex');
+
+let board = await collect();
+const tick = async () => {
+    try {
+        board = await collect();
+    } catch (err) {
+        console.error(`control-tower: collect failed, keeping last board: ${err.message}`);
+    }
+    setTimeout(tick, intervalMs);
+};
+setTimeout(tick, intervalMs);
+
+const { server, url } = await startServer({
+    port,
+    getBoard: () => board,
+    focus: (h) => runFocus(h, { board, clients: listClients() }),
+    token,
+    intervalMs,
+});
+console.log(`control-tower: ${url}`);
+
+// close() alone waits on keep-alive polling connections; exit right away.
+const stop = () => {
+    server.close();
+    process.exit(0);
+};
+process.on('SIGINT', stop);
+process.on('SIGTERM', stop);

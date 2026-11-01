@@ -1,0 +1,23 @@
+{
+  "name": "control-tower",
+  "version": "0.1.0",
+  "description": "One board for every my-team worker and local Claude Code / Codex session: who is waiting for you, where, and jump there.",
+  "type": "module",
+  "bin": {
+    "control-tower": "./bin/control-tower"
+  },
+  "scripts": {
+    "test": "node --test \"test/**/*.test.js\""
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "license": "MIT",
+  "files": [
+    "bin",
+    "src",
+    "public",
+    "scripts",
+    "README.md"
+  ]
+}
