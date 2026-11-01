@@ -6,8 +6,10 @@ import TowerCore
 @MainActor @Observable
 final class Tower {
     private(set) var board: Board?
+    @ObservationIgnored private var notifier: Notifier?
 
     init() {
+        notifier = Notifier { [weak self] in self?.focus($0) }
         // Lives as long as the app.
         Task {
             while true {
@@ -20,6 +22,9 @@ final class Tower {
     private func refresh() async {
         // collect blocks for about a second; keep it off the main actor.
         let next = await Task.detached { await collect() }.value
+        for s in newlyMyTurn(prev: board, next: next) {
+            notifier?.post(s, title: displayTitle(s, in: next))
+        }
         board = next
     }
 

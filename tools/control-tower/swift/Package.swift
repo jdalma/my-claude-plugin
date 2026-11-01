@@ -13,5 +13,6 @@ let package = Package(
         .executableTarget(name: "tower-cli", dependencies: ["TowerCore"]),
         .executableTarget(name: "TowerApp", dependencies: ["TowerCore"]),
         .testTarget(name: "TowerCoreTests", dependencies: ["TowerCore"]),
+        .testTarget(name: "TowerAppTests", dependencies: ["TowerApp", "TowerCore"]),
     ]
 )
