@@ -6,9 +6,11 @@ let package = Package(
     platforms: [.macOS(.v14)],
     products: [
         .library(name: "TowerCore", targets: ["TowerCore"]),
+        .executable(name: "tower-cli", targets: ["tower-cli"]),
     ],
     targets: [
         .target(name: "TowerCore"),
+        .executableTarget(name: "tower-cli", dependencies: ["TowerCore"]),
         .testTarget(name: "TowerCoreTests", dependencies: ["TowerCore"]),
     ]
 )
