@@ -35,6 +35,28 @@ struct RawWorker: Decodable {
     var unread: Int
     var sentPending: Int
     var oldestPendingAt: String?
+
+    enum CodingKeys: CodingKey {
+        case name, paneId, cwd, agentType, role, description, alive, state, reason, spool, unread, sentPending, oldestPendingAt
+    }
+
+    init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        name = try c.decode(String.self, forKey: .name)
+        paneId = try c.decode(String.self, forKey: .paneId)
+        cwd = try c.decodeIfPresent(String.self, forKey: .cwd)
+        agentType = try c.decodeIfPresent(String.self, forKey: .agentType)
+        role = try c.decodeIfPresent(String.self, forKey: .role)
+        description = try c.decodeIfPresent(String.self, forKey: .description)
+        alive = try c.decode(Bool.self, forKey: .alive)
+        // a worker LLM writes its own status.json; a non-string value drops that field, not the team
+        state = try? c.decode(String.self, forKey: .state)
+        reason = try? c.decode(String.self, forKey: .reason)
+        spool = try c.decode(Int.self, forKey: .spool)
+        unread = try c.decode(Int.self, forKey: .unread)
+        sentPending = try c.decode(Int.self, forKey: .sentPending)
+        oldestPendingAt = try c.decodeIfPresent(String.self, forKey: .oldestPendingAt)
+    }
 }
 
 /// The my-team-owned part of a Team; collect adds the process-level Session fields.
