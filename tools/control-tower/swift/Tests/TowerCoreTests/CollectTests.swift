@@ -168,7 +168,7 @@ private func deps(
     d.listPanes = { i.panes }
     d.listClients = { [] }
     d.loadClaudeSessions = { i.claude }
-    let b = collect(deps: d)
+    let b = snapshot(deps: d).board
     #expect(b.teams.isEmpty)
     #expect(b.loose.map(\.pid).sorted() == [101, 202, 501, 701, 901])
 }

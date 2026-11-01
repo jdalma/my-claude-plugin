@@ -66,13 +66,13 @@ struct CommandError: Error, CustomStringConvertible {
     var description: String
 }
 
-private let searchPath = (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":").map(String.init)
+let searchPath = (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":").map(String.init)
     // a GUI app inherits launchd's PATH, which lacks Homebrew
     + ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"]
 
-func resolveExecutable(_ name: String) -> String? {
+func resolveExecutable(_ name: String, in dirs: [String] = searchPath) -> String? {
     if name.contains("/") { return name }
-    return searchPath.map { "\($0)/\(name)" }.first { FileManager.default.isExecutableFile(atPath: $0) }
+    return dirs.map { "\($0)/\(name)" }.first { FileManager.default.isExecutableFile(atPath: $0) }
 }
 
 /// Runs `argv` directly, never through a shell. A non-zero exit is a result, not a

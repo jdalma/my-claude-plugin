@@ -2,11 +2,18 @@ import Foundation
 
 // Read-only: only `my-team status --all --json` is ever run.
 
+/// The installed `my-team` (`/my-team-install` npm-links it onto PATH) first, so a build from a
+/// worktree or a moved checkout still finds one with its dependencies; the sibling package otherwise.
+func myTeamBinary(in dirs: [String] = searchPath, fallback: String = checkoutMyTeamBin) -> String {
+    resolveExecutable("my-team", in: dirs) ?? fallback
+}
+
 /// The sibling `tools/my-team` package, located from this source file as Node locates it from its module.
-/// ponytail: a binary moved off this checkout loses it and the board degrades to no teams.
-let myTeamBin = URL(fileURLWithPath: #filePath)
+let checkoutMyTeamBin = URL(fileURLWithPath: #filePath)
     .appending(path: "../../../../../../my-team/bin/my-team")
     .standardizedFileURL.path
+
+let myTeamBin = myTeamBinary()
 
 struct MyTeamStatus: Decodable {
     var teams: [RawTeam]

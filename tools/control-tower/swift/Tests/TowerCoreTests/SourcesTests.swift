@@ -150,8 +150,8 @@ private func rawTeams() throws -> [RawTeam] {
 }
 
 @Test func myTeamBinPointsAtTheSiblingMyTeamPackage() {
-    #expect(myTeamBin.hasSuffix("tools/my-team/bin/my-team"))
-    #expect(FileManager.default.fileExists(atPath: myTeamBin))
+    #expect(checkoutMyTeamBin.hasSuffix("tools/my-team/bin/my-team"))
+    #expect(FileManager.default.fileExists(atPath: checkoutMyTeamBin))
 }
 
 @Test func loadTeamsRunsStatusAllJsonAndKeepsOnlyLiveTeams() throws {
