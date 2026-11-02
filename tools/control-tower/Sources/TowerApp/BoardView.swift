@@ -48,14 +48,16 @@ struct BoardView: View {
                     Section {
                         ForEach(team.rows, id: \.id) { LiveRowView(row: $0).tag($0.id) }
                     } header: {
-                        GroupHeader(title: team.name, detail: team.summary)
+                        GroupHeader(group: team.name == model.teams.first?.name ? "my-team" : nil,
+                                    title: team.name, detail: team.summary)
                     }
                 }
                 ForEach(model.workspaces, id: \.path) { ws in
                     Section {
                         ForEach(ws.rows, id: \.id) { LiveRowView(row: $0).tag($0.id) }
                     } header: {
-                        GroupHeader(title: ws.name, detail: ws.path)
+                        GroupHeader(group: ws.path == model.workspaces.first?.path ? "individual" : nil,
+                                    title: ws.name, detail: ws.path)
                     }
                 }
                 Section {
@@ -128,11 +130,16 @@ struct BoardView: View {
 }
 
 private struct GroupHeader: View {
+    /// `my-team` or `individual` above the first group of its kind.
+    let group: String?
     let title: String
     let detail: String
 
     var body: some View {
         VStack(alignment: .leading, spacing: 1) {
+            if let group {
+                Text(group).font(.caption).foregroundStyle(.secondary).padding(.bottom, 2)
+            }
             Text(title).font(.subheadline.bold())
             Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
         }
