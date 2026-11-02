@@ -28,13 +28,8 @@ private func tempDir() throws -> String {
 }
 
 private func failingDeps(_ teams: @escaping () throws -> [RawTeam]) -> CollectDeps {
-    var d = CollectDeps.live
-    d.psSnapshot = { [] }
+    var d = CollectDeps.stub
     d.loadTeams = teams
-    d.loadCodexSessions = { _ in [] }
-    d.listPanes = { [] }
-    d.listClients = { [] }
-    d.loadClaudeSessions = { [] }
     return d
 }
 

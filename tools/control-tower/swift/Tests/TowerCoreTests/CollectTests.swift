@@ -34,7 +34,7 @@ private func deps(
     lastMessages: @escaping (String, AgentKind) -> LastMessages = { _, _ in LastMessages() },
     envOf: @escaping (Int, [String]) -> [String: String] = { _, _ in [:] }
 ) -> CollectDeps {
-    var d = CollectDeps.live
+    var d = CollectDeps.stub
     d.capturePane = capturePane
     d.lastMessages = lastMessages
     d.envOf = envOf
@@ -166,7 +166,6 @@ private func deps(
     d.loadTeams = { throw MyTeamError(description: "boom") }
     d.loadCodexSessions = { _ in i.codex }
     d.listPanes = { i.panes }
-    d.listClients = { [] }
     d.loadClaudeSessions = { i.claude }
     let b = snapshot(deps: d).board
     #expect(b.teams.isEmpty)

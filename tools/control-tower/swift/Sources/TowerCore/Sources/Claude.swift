@@ -29,6 +29,28 @@ struct SessionJson: Decodable {
     var tmux: String?
 }
 
+extension SessionJson {
+    enum CodingKeys: String, CodingKey {
+        case pid, sessionId, cwd, startedAt, procStart, status, statusUpdatedAt, updatedAt, name, entrypoint, tmux
+    }
+
+    /// pid and cwd are required; any other field of an unexpected type reads as absent.
+    init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        pid = try c.decode(Int.self, forKey: .pid)
+        cwd = try c.decode(String.self, forKey: .cwd)
+        sessionId = try? c.decodeIfPresent(String.self, forKey: .sessionId)
+        startedAt = try? c.decodeIfPresent(Double.self, forKey: .startedAt)
+        procStart = try? c.decodeIfPresent(String.self, forKey: .procStart)
+        status = try? c.decodeIfPresent(String.self, forKey: .status)
+        statusUpdatedAt = try? c.decodeIfPresent(Double.self, forKey: .statusUpdatedAt)
+        updatedAt = try? c.decodeIfPresent(Double.self, forKey: .updatedAt)
+        name = try? c.decodeIfPresent(String.self, forKey: .name)
+        entrypoint = try? c.decodeIfPresent(String.self, forKey: .entrypoint)
+        tmux = try? c.decodeIfPresent(String.self, forKey: .tmux)
+    }
+}
+
 /// Node `os.homedir()`: `$HOME` first, the user database otherwise.
 func homeDirectory(_ env: [String: String] = ProcessInfo.processInfo.environment) -> String {
     env["HOME"].nonEmpty ?? NSHomeDirectory()

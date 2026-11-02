@@ -47,3 +47,23 @@ import Testing
     #expect(homeDirectory(["HOME": "/tmp/nowhere"]) == "/tmp/nowhere")
     #expect(homeDirectory([:]) == NSHomeDirectory())
 }
+
+@Test func aMistypedSessionFieldIsDroppedNotTheWholeFile() throws {
+    let root = FileManager.default.temporaryDirectory.appending(path: "ct-l3-\(UUID().uuidString)").path
+    defer { try? FileManager.default.removeItem(atPath: root) }
+    let dir = "\(root)/sessions"
+    try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+    let me = Int(ProcessInfo.processInfo.processIdentifier)
+    let files = [
+        "a.json": #"{"pid":\#(me),"cwd":"/c/a","sessionId":5,"startedAt":"x","status":1,"name":123,"tmux":{},"updatedAt":1798000000000}"#,
+        "b.json": #"{"pid":\#(me),"sessionId":"s"}"#, // no cwd
+        "c.json": #"{"pid":"\#(me)","cwd":"/c/c"}"#, // pid is not a number
+    ]
+    for (name, json) in files { FileManager.default.createFile(atPath: "\(dir)/\(name)", contents: Data(json.utf8)) }
+    let got = loadClaudeSessions(dir: dir, projectsDir: "\(root)/projects")
+    #expect(got.map(\.cwd) == ["/c/a"])
+    let a = try #require(got.first)
+    #expect(a.sessionId == nil && a.startedAt == nil && a.name == nil && a.tmux == nil && a.transcript == nil)
+    #expect(a.status == .wait)
+    #expect(a.since == isoString(ms: 1_798_000_000_000))
+}

@@ -3,85 +3,87 @@ import Foundation
 struct PsRow: Decodable, Hashable {
     var pid: Int
     var ppid: Int
-    var tty = ""
-    var comm = ""
     var args = ""
     var lstart: String?
 
-    init(pid: Int, ppid: Int, tty: String = "", comm: String = "", args: String = "", lstart: String? = nil) {
+    init(pid: Int, ppid: Int, args: String = "", lstart: String? = nil) {
         self.pid = pid
         self.ppid = ppid
-        self.tty = tty
-        self.comm = comm
         self.args = args
         self.lstart = lstart
     }
 
-    enum CodingKeys: String, CodingKey { case pid, ppid, tty, comm, args, lstart }
+    enum CodingKeys: String, CodingKey { case pid, ppid, args, lstart }
 
     init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         pid = try c.decode(Int.self, forKey: .pid)
         ppid = try c.decode(Int.self, forKey: .ppid)
-        tty = try c.decodeIfPresent(String.self, forKey: .tty) ?? ""
-        comm = try c.decodeIfPresent(String.self, forKey: .comm) ?? ""
         args = try c.decodeIfPresent(String.self, forKey: .args) ?? ""
         lstart = try c.decodeIfPresent(String.self, forKey: .lstart)
     }
 }
 
-private let cLocale = ["LC_ALL": "C"]
+/// A process's argv and initial environment, from the `KERN_PROCARGS2` buffer:
+/// `argc` (int32), exec path, NUL padding, argv[0..<argc], env strings, an empty
+/// string, then the kernel's own `apple[]` strings, which are not environment.
+struct ProcArgs: Equatable {
+    var argv: [String]
+    var env: [String: String]
+}
 
-// ponytail: BSD ps pads/truncates a non-last `comm` column to 16 chars (MAXCOMLEN).
-// comm is unreliable for matching (`/opt/homebrew/li`); match on args instead.
-private let commWidth = 16
+func parseProcArgs(_ buf: [UInt8]) -> ProcArgs? {
+    guard buf.count >= 4 else { return nil }
+    let argc = buf[0..<4].withUnsafeBytes { Int($0.loadUnaligned(as: Int32.self)) }
+    let strings = buf[4...].split(separator: 0, omittingEmptySubsequences: false)
+        .map { String(decoding: $0, as: UTF8.self) }
+    guard let first = strings.dropFirst().firstIndex(where: { !$0.isEmpty }) else { return ProcArgs(argv: [], env: [:]) }
+    let argv = Array(strings[first...].prefix(argc))
+    var env: [String: String] = [:]
+    for e in strings[(first + argv.count)...].prefix(while: { !$0.isEmpty }) {
+        guard let eq = e.firstIndex(of: "=") else { continue }
+        let key = String(e[..<eq])
+        if env[key] == nil { env[key] = String(e[e.index(after: eq)...]) } // getenv returns the first
+    }
+    return ProcArgs(argv: argv, env: env)
+}
 
-/// Parses `ps -axo pid=,ppid=,tty=,lstart=,comm=,args=`; lstart is local time.
-func parsePs(_ text: String) -> [PsRow] {
-    // `  pid  ppid tty  Thu Oct 29 21:15:20 2026     <comm, 16 cols> <args>`
-    let psLine = #/\s*(\d+)\s+(\d+)\s+(\S+)\s+\w{3} (\w{3}) +(\d{1,2}) (\d\d):(\d\d):(\d\d) (\d{4})\s+(.*)/#
-    return text.split(separator: "\n", omittingEmptySubsequences: false).compactMap { line -> PsRow? in
-        guard let m = line.wholeMatch(of: psLine) else { return nil }
-        let rest = String(m.10)
-        var comm = rest.utf16Slice(0, commWidth)
-        while comm.last?.isWhitespace == true { comm.removeLast() }
+/// nil when the pid is gone or not ours to read (EPERM/EINVAL).
+func procArgs(_ pid: Int) -> ProcArgs? {
+    var argMaxMib: [Int32] = [CTL_KERN, KERN_ARGMAX]
+    var argMax = 0, argMaxSize = MemoryLayout<Int>.size
+    guard sysctl(&argMaxMib, 2, &argMax, &argMaxSize, nil, 0) == 0 else { return nil }
+    var mib: [Int32] = [CTL_KERN, KERN_PROCARGS2, Int32(pid)]
+    var buf = [UInt8](repeating: 0, count: argMax)
+    var size = argMax
+    guard sysctl(&mib, 3, &buf, &size, nil, 0) == 0 else { return nil }
+    return parseProcArgs(Array(buf.prefix(size)))
+}
+
+/// Every process from one `KERN_PROC_ALL` read; args from `KERN_PROCARGS2`, empty when unreadable.
+func psSnapshot() -> [PsRow] {
+    var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_ALL]
+    let stride = MemoryLayout<kinfo_proc>.stride
+    var size = 0
+    guard sysctl(&mib, 3, nil, &size, nil, 0) == 0 else { return [] }
+    // processes started between the two calls: leave room for a few
+    var procs = [kinfo_proc](repeating: kinfo_proc(), count: size / stride + 32)
+    size = procs.count * stride
+    guard sysctl(&mib, 3, &procs, &size, nil, 0) == 0 else { return [] }
+    return procs.prefix(size / stride).map { k in
+        let pid = Int(k.kp_proc.p_pid)
         return PsRow(
-            pid: Int(m.1)!, ppid: Int(m.2)!, tty: String(m.3), comm: comm, args: rest.utf16Slice(commWidth + 1),
-            lstart: ctimeISO(month: m.4, day: m.5, hour: m.6, minute: m.7, second: m.8, year: m.9, zone: .current)
+            pid: pid,
+            ppid: Int(k.kp_eproc.e_ppid),
+            args: procArgs(pid)?.argv.joined(separator: " ") ?? "",
+            lstart: isoString(ms: Int64(k.kp_proc.p_un.__p_starttime.tv_sec) * 1000)
         )
     }
 }
 
-func psSnapshot() -> [PsRow] {
-    guard let r = try? runCommand(["ps", "-axo", "pid=,ppid=,tty=,lstart=,comm=,args="], timeout: 5, env: cLocale),
-          r.status == 0 else { return [] }
-    return parsePs(r.stdout)
-}
-
-/// Picks `keys` out of `ps -E -o command=` output. macOS appends the environment
-/// after the args, space separated, so a value runs until the next ` NAME=`.
-/// ponytail: a value that itself contains ` NAME=` gets cut short there.
-func parseEnv(_ text: String, keys: [String]) -> [String: String] {
-    let ns = text as NSString
-    let boundaries = try! NSRegularExpression(pattern: #"\s([A-Za-z_][A-Za-z0-9_]*)="#)
-        .matches(in: text, range: NSRange(location: 0, length: ns.length))
-    var out: [String: String] = [:]
-    for key in keys {
-        // last occurrence: the env block follows the args, which may contain KEY=… too
-        guard let i = boundaries.lastIndex(where: { ns.substring(with: $0.range(at: 1)) == key }) else { continue }
-        let start = NSMaxRange(boundaries[i].range)
-        let end = i + 1 < boundaries.count ? boundaries[i + 1].range.location : ns.length
-        var value = ns.substring(with: NSRange(location: start, length: end - start))
-        if value.hasSuffix("\n") { value.removeLast() }
-        out[key] = value
-    }
-    return out
-}
-
 func envOf(pid: Int, keys: [String]) -> [String: String] {
-    guard let r = try? runCommand(["ps", "-E", "-o", "command=", "-p", String(pid)], timeout: 5, env: cLocale),
-          r.status == 0 else { return [:] }
-    return parseEnv(r.stdout, keys: keys)
+    guard let env = procArgs(pid)?.env else { return [:] }
+    return env.filter { keys.contains($0.key) }
 }
 
 /// Ancestor pids of `pid`, nearest first. Stops at 0/1 or after 40 hops.

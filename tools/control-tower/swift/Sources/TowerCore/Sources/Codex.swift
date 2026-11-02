@@ -49,28 +49,29 @@ struct OpenFiles: Equatable {
     var paths: [String]
 }
 
-/// `lsof -Fpfn` → pid → (cwd, other file names).
-func parseLsof(_ text: String) -> [Int: OpenFiles] {
-    var out: [Int: OpenFiles] = [:]
-    var cur: Int?
-    var fd: Substring?
-    for line in text.split(separator: "\n", omittingEmptySubsequences: false) {
-        guard let tag = line.first else { continue }
-        let val = line.dropFirst()
-        switch tag {
-        case "p":
-            cur = Int(val)
-            if let cur { out[cur] = OpenFiles(cwd: nil, paths: []) }
-        case "f":
-            fd = val
-        case "n":
-            guard let cur else { continue }
-            if fd == "cwd" { out[cur]?.cwd = String(val) } else { out[cur]?.paths.append(String(val)) }
-        default:
-            continue
-        }
+private func pathString<T>(_ tuple: T) -> String {
+    withUnsafeBytes(of: tuple) { String(decoding: $0.prefix { $0 != 0 }, as: UTF8.self) }
+}
+
+/// cwd and the paths of open vnode fds, or nil when the pid is gone or not ours (as lsof omits it).
+func openFiles(_ pid: Int) -> OpenFiles? {
+    let p = Int32(pid)
+    var vpi = proc_vnodepathinfo()
+    let vpiSize = Int32(MemoryLayout<proc_vnodepathinfo>.size)
+    guard proc_pidinfo(p, PROC_PIDVNODEPATHINFO, 0, &vpi, vpiSize) == vpiSize else { return nil }
+    let fdSize = MemoryLayout<proc_fdinfo>.stride
+    let bytes = proc_pidinfo(p, PROC_PIDLISTFDS, 0, nil, 0)
+    guard bytes > 0 else { return OpenFiles(cwd: pathString(vpi.pvi_cdir.vip_path), paths: []) }
+    var fds = [proc_fdinfo](repeating: proc_fdinfo(), count: Int(bytes) / fdSize + 8)
+    let got = proc_pidinfo(p, PROC_PIDLISTFDS, 0, &fds, Int32(fds.count * fdSize))
+    let infoSize = Int32(MemoryLayout<vnode_fdinfowithpath>.size)
+    let paths = fds.prefix(max(0, Int(got)) / fdSize).compactMap { fd -> String? in
+        guard fd.proc_fdtype == PROX_FDTYPE_VNODE else { return nil }
+        var info = vnode_fdinfowithpath()
+        guard proc_pidfdinfo(p, fd.proc_fd, PROC_PIDFDVNODEPATHINFO, &info, infoSize) == infoSize else { return nil }
+        return pathString(info.pvip.vip_path)
     }
-    return out
+    return OpenFiles(cwd: pathString(vpi.pvi_cdir.vip_path), paths: paths)
 }
 
 /// The last task_started vs task_complete/turn_aborted in a rollout tail.
@@ -86,14 +87,6 @@ func classifyRollout(_ tail: String) -> (status: Status, since: String?) {
     let ts = tail[lineStart..<lineEnd].firstMatch(of: #/"timestamp":"([^"]+)"/#).map { String($0.1) }
     let finished = (complete?.lowerBound).map { c in started.map { c > $0.lowerBound } ?? true } ?? false
     return (finished ? .wait : .busy, ts)
-}
-
-private func lsof(_ pids: [Int]) -> [Int: OpenFiles] {
-    guard !pids.isEmpty,
-          let r = try? runCommand(["lsof", "-nP", "-w", "-Fpfn", "-p", pids.map(String.init).joined(separator: ",")], timeout: 8)
-    else { return [:] }
-    // lsof exits 1 when any pid has vanished; the rest is still on stdout
-    return parseLsof(r.stdout)
 }
 
 /// The rollout's first line is `session_meta`; its payload carries id, cwd, timestamp.
@@ -145,7 +138,7 @@ func loadCodexSessions(
     let tuis = pickCandidates(rows, selfPid: selfPid)
     if tuis.isEmpty { return [] }
     let daemons = rows.filter { isCodexBin($0) && isAppServer($0) }
-    let open = lsof((tuis + daemons).map(\.pid))
+    let open = Dictionary(uniqueKeysWithValues: (tuis + daemons).compactMap { r in openFiles(r.pid).map { (r.pid, $0) } })
     let rollouts = { (pid: Int) in (open[pid]?.paths ?? []).filter(isRollout) }
 
     var metas: [String: [String: Any]?] = [:]

@@ -4,32 +4,79 @@ import Testing
 
 // MARK: - ps (test/sources/ps.test.js)
 
-private func psRows() throws -> [PsRow] { parsePs(try fixture("ps-codex.txt")) }
-
-private func localISO(_ y: Int, _ mo: Int, _ d: Int, _ h: Int, _ mi: Int, _ s: Int) -> String {
-    isoString(Calendar.current.date(from: DateComponents(year: y, month: mo, day: d, hour: h, minute: mi, second: s))!)
+/// The process tree of test/fixtures/ps-codex.txt.
+private func psRows() -> [PsRow] {
+    let bin = "/opt/homebrew/lib/node_modules/@openai/codex/vendor/bin"
+    return [
+        PsRow(pid: 1, ppid: 0, args: "/sbin/launchd"),
+        PsRow(pid: 900, ppid: 1, args: "-zsh"),
+        PsRow(pid: 1000, ppid: 900, args: "node /opt/homebrew/bin/codex --dangerously-bypass-approvals-and-sandbox"),
+        PsRow(pid: 1001, ppid: 1000, args: "\(bin)/codex --dangerously-bypass-approvals-and-sandbox"),
+        PsRow(pid: 1002, ppid: 1001, args: "\(bin)/codex-code-mode-host"),
+        PsRow(pid: 2000, ppid: 1, args: "\(bin)/codex app-server --listen stdio"),
+        PsRow(pid: 3000, ppid: 1, args: "codex exec --ephemeral -s read-only summarize"),
+        PsRow(pid: 4000, ppid: 1, args: "node /tools/control-tower/bin/control-tower"),
+        PsRow(pid: 4001, ppid: 4000, args: "codex -m some-model"),
+        PsRow(pid: 5000, ppid: 900, args: "codex resume"),
+    ]
 }
 
-@Test func parsePsSplitsFixedWidthCommFromArgsAndConvertsLstart() throws {
-    let rows = try psRows()
-    #expect(rows.count == 10)
-    let child = try #require(rows.first { $0.pid == 1001 })
-    #expect(child.ppid == 1000)
-    #expect(child.tty == "ttys001")
-    #expect(child.comm == "/opt/homebrew/li")
-    #expect(child.args == "/opt/homebrew/lib/node_modules/@openai/codex/vendor/bin/codex --dangerously-bypass-approvals-and-sandbox")
-    #expect(child.lstart == localISO(2026, 10, 29, 21, 15, 20))
-    // space-padded day of month
-    #expect(rows.first { $0.pid == 2000 }?.lstart == localISO(2026, 10, 2, 8, 0, 0))
-    #expect(rows.first { $0.pid == 900 }?.comm == "-zsh")
+/// A KERN_PROCARGS2 buffer as the kernel lays it out.
+private func procArgsBuffer(exec: String, argv: [String], env: [String], apple: [String]) -> [UInt8] {
+    var buf = withUnsafeBytes(of: Int32(argv.count).littleEndian, Array.init)
+    buf += Array(exec.utf8) + [0, 0, 0, 0]
+    for s in argv + env { buf += Array(s.utf8) + [0] }
+    buf.append(0)
+    for s in apple { buf += Array(s.utf8) + [0] }
+    return buf
 }
 
-@Test func parsePsSkipsGarbageLines() {
-    #expect(parsePs("\nnot a ps line\n").isEmpty)
+@Test func parseProcArgsSplitsArgvFromTheEnvironment() {
+    let buf = procArgsBuffer(
+        exec: "/bin/codex", argv: ["/bin/codex", "--x", "FOO=args-not-env"],
+        env: ["TERM_PROGRAM=ghostty", "FOO=a b=c", "FOO=second", "EMPTY="],
+        apple: ["executable_path=/bin/codex", "ptr_munge="]
+    )
+    #expect(parseProcArgs(buf) == ProcArgs(
+        argv: ["/bin/codex", "--x", "FOO=args-not-env"],
+        env: ["TERM_PROGRAM": "ghostty", "FOO": "a b=c", "EMPTY": ""]
+    ))
+    #expect(parseProcArgs([1, 0]) == nil)
+}
+
+@Test func psSnapshotSeesThisProcessWithItsParentArgsAndStart() throws {
+    let rows = psSnapshot()
+    let me = try #require(rows.first { $0.pid == Int(getpid()) })
+    #expect(me.ppid == Int(getppid()))
+    #expect(me.args == CommandLine.arguments.joined(separator: " "))
+    let started = try #require(parseISO(me.lstart))
+    #expect(started <= Date().timeIntervalSince1970 * 1000)
+    #expect(started > Date().timeIntervalSince1970 * 1000 - 3_600_000)
+    #expect(rows.contains { $0.pid == 1 })
+}
+
+// Apple platform binaries (/bin/sleep, /bin/sh) hide their environment, from `ps -E` too;
+// codex and this test runner do not.
+@Test func envOfReadsTheExecEnvironmentAndOnlyRequestedKeys() throws {
+    let env = ProcessInfo.processInfo.environment
+    let home = try #require(env["HOME"])
+    #expect(envOf(pid: Int(getpid()), keys: ["HOME", "CT_SURELY_UNSET"]) == ["HOME": home])
+}
+
+@Test func unreadableOrVanishedPidsAreSkippedQuietly() throws {
+    let p = Process()
+    p.executableURL = URL(fileURLWithPath: "/usr/bin/true")
+    try p.run()
+    p.waitUntilExit()
+    let gone = Int(p.processIdentifier)
+    #expect(envOf(pid: gone, keys: ["PATH"]).isEmpty)
+    #expect(openFiles(gone) == nil)
+    #expect(envOf(pid: 1, keys: ["PATH"]).isEmpty) // launchd: root's, EPERM
+    #expect(openFiles(1) == nil)
 }
 
 @Test func ancestorsWalksNearestFirstAndStopsBeforeLaunchd() throws {
-    let rows = try psRows()
+    let rows = psRows()
     #expect(ancestors(of: 1002, in: rows) == [1001, 1000, 900])
     #expect(ancestors(of: 1, in: rows) == [])
     #expect(ancestors(of: 99999, in: rows) == [])
@@ -39,12 +86,6 @@ private func localISO(_ y: Int, _ mo: Int, _ d: Int, _ h: Int, _ mi: Int, _ s: I
 
 @Test func ancestorsStopsOnACycleAfter40Hops() {
     #expect(ancestors(of: 10, in: [PsRow(pid: 10, ppid: 11), PsRow(pid: 11, ppid: 10)]).count == 40)
-}
-
-@Test func parseEnvTakesValuesUpToTheNextNameAndOnlyRequestedKeys() {
-    let out = "/bin/codex --x FOO=args-not-env TERM_PROGRAM=ghostty FOO=a b c HOME=/Users/me PATH=/bin:/usr/bin\n"
-    #expect(parseEnv(out, keys: ["TERM_PROGRAM", "FOO", "PATH", "MISSING"])
-        == ["TERM_PROGRAM": "ghostty", "FOO": "a b c", "PATH": "/bin:/usr/bin"])
 }
 
 // MARK: - tmux (test/sources/tmux.test.js)
@@ -89,24 +130,24 @@ private func localISO(_ y: Int, _ mo: Int, _ d: Int, _ h: Int, _ mi: Int, _ s: I
 // MARK: - codex (test/sources/codex.test.js)
 
 @Test func pickCandidatesKeepsTheNativeTUIChildOnly() throws {
-    let rows = try psRows()
+    let rows = psRows()
     #expect(pickCandidates(rows, selfPid: 4000).map(\.pid) == [1001, 5000])
     // without the self filter the helper under 4000 is a TUI too
     #expect(pickCandidates(rows, selfPid: 1).map(\.pid) == [1001, 4001, 5000])
 }
 
-@Test func parseLsofGroupsCwdAndFileNamesByPid() {
-    let text = [
-        "p1001", "fcwd", "n/Users/me/proj", "ftxt", "n/bin/codex",
-        "f25", "n/Users/me/.codex/sessions/2026/10/29/rollout-2026-10-29T21-15-26-aaaa.jsonl",
-        "p2000", "fcwd", "n/", "f30", "n/Users/me/.codex/sessions/2026/10/30/rollout-b.jsonl", "",
-    ].joined(separator: "\n")
-    let m = parseLsof(text)
-    #expect(m[1001] == OpenFiles(cwd: "/Users/me/proj", paths: [
-        "/bin/codex", "/Users/me/.codex/sessions/2026/10/29/rollout-2026-10-29T21-15-26-aaaa.jsonl",
-    ]))
-    #expect(m[2000]?.paths == ["/Users/me/.codex/sessions/2026/10/30/rollout-b.jsonl"])
-    #expect(parseLsof("").isEmpty)
+@Test func openFilesGivesTheCwdAndTheOpenRolloutPath() throws {
+    let dir = FileManager.default.temporaryDirectory.appending(path: "ct-\(UUID().uuidString)/sessions/2026/10/29")
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: dir.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()) }
+    let rollout = dir.appending(path: "rollout-2026-10-29T21-15-26-aaaa.jsonl")
+    FileManager.default.createFile(atPath: rollout.path, contents: Data())
+    let fh = try FileHandle(forReadingFrom: rollout)
+    defer { try? fh.close() }
+    let mine = try #require(openFiles(Int(getpid())))
+    #expect(mine.cwd == FileManager.default.currentDirectoryPath)
+    let real = rollout.resolvingSymlinksInPath().path
+    #expect(mine.paths.contains { URL(fileURLWithPath: $0).resolvingSymlinksInPath().path == real })
 }
 
 @Test func classifyRolloutCompleteAfterStartedIsWait() throws {
