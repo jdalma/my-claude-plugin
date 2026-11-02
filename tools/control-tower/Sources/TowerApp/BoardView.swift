@@ -9,6 +9,7 @@ struct BoardView: View {
     @State private var filter = AgentFilter.all
     @State private var selection: RowID?
     @FocusState private var searchFocused: Bool
+    @AppStorage(FontScale.storageKey) private var storedScale = FontScale.standard.value
 
     private let home = NSHomeDirectory()
 
@@ -23,23 +24,33 @@ struct BoardView: View {
                 ProgressView("Collecting…").frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
+        .scaledFont(.body)
         .frame(minWidth: 760, minHeight: 440)
         .toolbar {
             ToolbarItem {
                 TextField("검색", text: $query, prompt: Text("세션, 팀, 워크스페이스, 제목 (⌘K)"))
                     .textFieldStyle(.roundedBorder)
-                    .frame(width: 280)
+                    .scaledFont(.body)
+                    .frame(width: 280 * scale.value)
                     .focused($searchFocused)
             }
         }
         .background {
-            Button("검색") { searchFocused = true }
-                .keyboardShortcut("k")
-                .opacity(0)
-                .frame(width: 0, height: 0)
-                .accessibilityHidden(true)
+            Group {
+                Button("검색") { searchFocused = true }.keyboardShortcut("k")
+                Button("글자 크게") { storedScale = scale.bigger().value }.keyboardShortcut("+")
+                Button("글자 크게") { storedScale = scale.bigger().value }.keyboardShortcut("=")
+                Button("글자 작게") { storedScale = scale.smaller().value }.keyboardShortcut("-")
+                Button("기본 크기") { storedScale = FontScale.standard.value }.keyboardShortcut("0")
+            }
+            .opacity(0)
+            .frame(width: 0, height: 0)
+            .accessibilityHidden(true)
         }
+        .environment(\.boardFontScale, scale.value)
     }
+
+    private var scale: FontScale { FontScale(stored: storedScale) }
 
     private func content(_ board: Board, _ model: SidebarModel) -> some View {
         NavigationSplitView {
@@ -106,11 +117,11 @@ struct BoardView: View {
 
     private func sidebarHeader(_ model: SidebarModel) -> some View {
         HStack {
-            Text("실행 중").font(.headline)
+            Text("실행 중").scaledFont(.headline, weight: .semibold)
             Spacer()
             if model.myTurn > 0 {
                 Text("내 차례 \(model.myTurn)")
-                    .font(.caption.bold())
+                    .scaledFont(.caption1, weight: .bold)
                     .padding(.horizontal, 8).padding(.vertical, 2)
                     .background(Color.orange, in: .capsule)
                     .foregroundStyle(.white)
@@ -138,10 +149,10 @@ private struct GroupHeader: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 1) {
             if let group {
-                Text(group).font(.caption).foregroundStyle(.secondary).padding(.bottom, 2)
+                Text(group).scaledFont(.caption1).foregroundStyle(.secondary).padding(.bottom, 2)
             }
-            Text(title).font(.subheadline.bold())
-            Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+            Text(title).scaledFont(.subheadline, weight: .bold)
+            Text(detail).scaledFont(.caption1).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
         }
         .textCase(nil)
     }
@@ -155,13 +166,13 @@ private struct BadgeView: View {
         case .permission:
             Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.orange).help(badgeLabel(badge))
         case .waitingForUser:
-            Text(badgeLabel(badge)).font(.caption).foregroundStyle(.orange)
+            Text(badgeLabel(badge)).scaledFont(.caption1).foregroundStyle(.orange)
         case .working:
-            Text(badgeLabel(badge)).font(.caption).foregroundStyle(.blue)
+            Text(badgeLabel(badge)).scaledFont(.caption1).foregroundStyle(.blue)
         case .done:
-            Label(badgeLabel(badge), systemImage: "checkmark.circle.fill").font(.caption).foregroundStyle(.green)
+            Label(badgeLabel(badge), systemImage: "checkmark.circle.fill").scaledFont(.caption1).foregroundStyle(.green)
         case .idle:
-            Text(badgeLabel(badge)).font(.caption).foregroundStyle(.secondary)
+            Text(badgeLabel(badge)).scaledFont(.caption1).foregroundStyle(.secondary)
         }
     }
 }
@@ -172,9 +183,9 @@ private struct LiveRowView: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(row.title).font(.body).lineLimit(1)
+                Text(row.title).scaledFont(.body).lineLimit(1)
                 if !row.line.isEmpty {
-                    Text(row.line).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    Text(row.line).scaledFont(.caption1).foregroundStyle(.secondary).lineLimit(1)
                 }
             }
             Spacer(minLength: 8)
@@ -192,11 +203,11 @@ private struct HistoryRowView: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(historyTitle(h)).font(.body).lineLimit(1)
-                Text(historySubtitle(h)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                Text(historyTitle(h)).scaledFont(.body).lineLimit(1)
+                Text(historySubtitle(h)).scaledFont(.caption1).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer(minLength: 8)
-            Text(relativeTime(h.updatedAt, now: now)).font(.caption).foregroundStyle(.secondary)
+            Text(relativeTime(h.updatedAt, now: now)).scaledFont(.caption1).foregroundStyle(.secondary)
         }
         .help(historyTooltip(h, home: home))
     }
@@ -223,7 +234,7 @@ private struct DetailView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             Divider()
             Text("더블 클릭: 실행 중이면 pane으로 이동 · 종료된 세션이면 Ghostty에서 resume · 우클릭: resume 명령 복사")
-                .font(.caption).foregroundStyle(.secondary)
+                .scaledFont(.caption1).foregroundStyle(.secondary)
                 .padding(10)
         }
     }
@@ -257,7 +268,7 @@ private struct DetailView: View {
     private func past(_ h: HistorySession) -> some View {
         detailBody(
             title: historyTitle(h),
-            badges: { Text(h.live ? "실행 중" : "종료됨").font(.caption).foregroundStyle(.secondary) },
+            badges: { Text(h.live ? "실행 중" : "종료됨").scaledFont(.caption1).foregroundStyle(.secondary) },
             facts: [
                 ("에이전트", agentName(h.agent)),
                 ("워크스페이스", abbreviate(h.workspace, home: home)),
@@ -272,7 +283,7 @@ private struct DetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 8) {
-                    Text(title).font(.title2.bold()).lineLimit(2)
+                    Text(title).scaledFont(.title2, weight: .bold).lineLimit(2)
                     badges()
                 }
                 Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 12, verticalSpacing: 6) {
@@ -286,10 +297,10 @@ private struct DetailView: View {
                 let talk = conversation.filter { !$0.1.isEmpty }
                 if !talk.isEmpty {
                     Divider()
-                    Text("최근 대화").font(.headline)
+                    Text("최근 대화").scaledFont(.headline, weight: .semibold)
                     ForEach(talk, id: \.0) { who, text in
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(who).font(.caption).foregroundStyle(.secondary)
+                            Text(who).scaledFont(.caption1).foregroundStyle(.secondary)
                             Text(text).textSelection(.enabled)
                         }
                     }
@@ -305,7 +316,7 @@ private struct Pill: View {
     let text: String
 
     var body: some View {
-        Text(text).font(.caption)
+        Text(text).scaledFont(.caption1)
             .padding(.horizontal, 8).padding(.vertical, 2)
             .background(.quaternary, in: .capsule)
     }
