@@ -34,11 +34,12 @@ private func pane(_ session: String, _ id: String, _ worker: String?) -> Pane {
 }
 
 @Test func stateRootBaseHonoursTheOverrideLikeMyTeam() {
-    let home = FileManager.default.homeDirectoryForCurrentUser.path
-    #expect(stateRootBase([:]) == "\(home)/.my-team/sessions")
-    #expect(stateRootBase(["MY_TEAM_STATE_ROOT_BASE": "  "]) == "\(home)/.my-team/sessions")
-    #expect(stateRootBase(["MY_TEAM_STATE_ROOT_BASE": " ~/x/../teams \n"]) == "\(home)/teams")
-    #expect(stateRootBase(["MY_TEAM_STATE_ROOT_BASE": "/tmp/t"]) == "/tmp/t")
+    let home = ["HOME": "/h/me"]
+    #expect(stateRootBase(home) == "/h/me/.my-team/sessions")
+    #expect(stateRootBase(home.merging(["MY_TEAM_STATE_ROOT_BASE": "  "]) { $1 }) == "/h/me/.my-team/sessions")
+    #expect(stateRootBase(home.merging(["MY_TEAM_STATE_ROOT_BASE": " ~/x/../teams \n"]) { $1 }) == "/h/me/teams")
+    #expect(stateRootBase(home.merging(["MY_TEAM_STATE_ROOT_BASE": "~"]) { $1 }) == "/h/me")
+    #expect(stateRootBase(home.merging(["MY_TEAM_STATE_ROOT_BASE": "/tmp/t"]) { $1 }) == "/tmp/t")
 }
 
 @Test func teamDirsSkipBakOmcAndPlainFilesAndComeSorted() throws {

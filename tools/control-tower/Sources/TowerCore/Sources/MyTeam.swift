@@ -3,10 +3,12 @@ import Foundation
 // Read-only: reads my-team's state files the way `my-team status --all --json`
 // does (tools/my-team/src/commands/status.js). Nothing here writes, absorbs or consumes.
 
-/// `MY_TEAM_STATE_ROOT_BASE` (trimmed, `~` expanded) or `~/.my-team/sessions`.
+/// `MY_TEAM_STATE_ROOT_BASE` (trimmed, `~` and `~/` expanded) or `~/.my-team/sessions`, home being `$HOME`.
 func stateRootBase(_ env: [String: String] = ProcessInfo.processInfo.environment) -> String {
-    let path = env["MY_TEAM_STATE_ROOT_BASE"]?.trimmed.nonEmpty.map { ($0 as NSString).expandingTildeInPath }
-        ?? FileManager.default.homeDirectoryForCurrentUser.appending(path: ".my-team/sessions").path
+    let home = homeDirectory(env)
+    let path = env["MY_TEAM_STATE_ROOT_BASE"]?.trimmed.nonEmpty.map { o in
+        o == "~" ? home : o.hasPrefix("~/") ? home + o.dropFirst() : o
+    } ?? "\(home)/.my-team/sessions"
     return URL(fileURLWithPath: path).standardizedFileURL.path
 }
 
