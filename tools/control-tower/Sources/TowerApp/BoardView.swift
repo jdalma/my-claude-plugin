@@ -34,6 +34,13 @@ struct BoardView: View {
                     .frame(width: 280 * scale.value)
                     .focused($searchFocused)
             }
+            ToolbarItem {
+                Menu("보기") {
+                    Button("글자 크게") { storedScale = scale.bigger().value }.keyboardShortcut("+")
+                    Button("글자 작게") { storedScale = scale.smaller().value }.keyboardShortcut("-")
+                    Button("기본 크기") { storedScale = FontScale.standard.value }.keyboardShortcut("0")
+                }
+            }
         }
         .background {
             Group {
