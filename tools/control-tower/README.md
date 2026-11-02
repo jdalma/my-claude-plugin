@@ -38,6 +38,7 @@ swift build -c release --product tower-cli
 .build/release/tower-cli --once | jq .   # one snapshot as JSON
 .build/release/tower-cli --count         # number of sessions waiting for you; prints nothing at 0
 .build/release/tower-cli --history --limit 20   # past interactive Claude Code / Codex sessions, newest first
+.build/release/tower-cli --diff <dir>    # a git workspace vs its base branch: base, merge-base, committed/uncommitted file counts, untracked paths
 ```
 
 ## tmux status-right badge (optional)
