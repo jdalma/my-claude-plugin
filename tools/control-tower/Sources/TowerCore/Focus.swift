@@ -65,11 +65,16 @@ public let resumeBins: [AgentKind: String] = [
     .codex: resolveExecutable("codex") ?? "codex",
 ]
 
-/// The argv that opens a new Ghostty window in the session's workspace and resumes it there.
+/// Our child PATH. A Ghostty window opened via `open` gets launchd's, which lacks the `node` that
+/// `codex` (`#!/usr/bin/env node`) and Claude's MCP servers need.
+public let resumePath = childEnvironment(base: ProcessInfo.processInfo.environment, extra: [:])["PATH"] ?? ""
+
+/// The argv that opens a new Ghostty window in the session's workspace and resumes it there,
+/// through `/usr/bin/env PATH=…` so no shell is involved.
 /// nil for a live session (resuming would start a second process on it) or one without a workspace.
 public func planResume(_ s: HistorySession, ghosttyApp: String = "Ghostty",
-                       bins: [AgentKind: String] = resumeBins) -> [String]? {
+                       bins: [AgentKind: String] = resumeBins, path: String = resumePath) -> [String]? {
     guard !s.live, !s.workspace.isEmpty, let program = s.resumeCommand.first else { return nil }
     return ["open", "-na", "\(ghosttyApp).app", "--args", "--working-directory=\(s.workspace)", "-e",
-            bins[s.agent] ?? program] + s.resumeCommand.dropFirst()
+            "/usr/bin/env", "PATH=\(path)", bins[s.agent] ?? program] + s.resumeCommand.dropFirst()
 }

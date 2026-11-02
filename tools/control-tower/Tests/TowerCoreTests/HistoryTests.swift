@@ -84,7 +84,7 @@ private func userMessage(_ text: String, at: String) -> String {
 @Test func claudeFieldsComeFromTheTranscript() throws {
     let h = try Homes()
     defer { try? FileManager.default.removeItem(atPath: h.dir) }
-    let path = try h.claude("s1", [
+    let path = try h.claude("s1", project: "-w-app", [
         user("first", at: "2026-11-01T01:00:00.000Z"),
         "{broken json",
         #"{"type":"last-prompt","lastPrompt":"second\n  prompt"}"#,
@@ -92,9 +92,21 @@ private func userMessage(_ text: String, at: String) -> String {
     ])
     let s = try #require(h.history().first)
     #expect(s == HistorySession(
-        id: "s1", agent: .claude, title: "first", workspace: "/w/moved", branch: "feat/x",
+        id: "s1", agent: .claude, title: "first", workspace: "/w/app", branch: "feat/x",
         createdAt: "2026-11-01T01:00:00.000Z", updatedAt: "2026-11-01T03:00:00.000Z", lastPrompt: "second prompt",
         transcriptPath: path, live: false, resumeCommand: ["claude", "--resume", "s1"]))
+}
+
+@Test func claudeWorkspaceIsTheCwdTheTranscriptIsFiledUnderNotALaterCd() throws {
+    let h = try Homes()
+    defer { try? FileManager.default.removeItem(atPath: h.dir) }
+    let cd = { (cwd: String) in #"{"type":"assistant","cwd":"\#(cwd)","timestamp":"2026-11-01T02:00:00.000Z"}"# }
+    // filed under -p: /p, even though the first and last cwds are elsewhere
+    try h.claude("filed", project: "-p", [cd("/p/sub"), user("x"), cd("/p"), cd("/p/sub/deeper")])
+    // no cwd encodes to the project dir: the first cwd
+    try h.claude("odd", project: "-elsewhere", [user("x"), cd("/w/app/sub")])
+    let ws = Dictionary(uniqueKeysWithValues: h.history().map { ($0.id, $0.workspace) })
+    #expect(ws == ["filed": "/p", "odd": "/w/app"])
 }
 
 @Test func codexTitleIsTheIndexThreadNameThenTheFirstUserMessage() throws {
@@ -223,10 +235,15 @@ private func ended(_ agent: AgentKind, live: Bool = false, workspace: String = "
 
 @Test func planResumeOpensANewGhosttyWindowInTheWorkspace() {
     let bins: [AgentKind: String] = [.claude: "/bin/claude", .codex: "/bin/codex"]
-    #expect(planResume(ended(.claude), bins: bins) ==
-        ["open", "-na", "Ghostty.app", "--args", "--working-directory=/w/my app", "-e", "/bin/claude", "--resume", "S"])
-    #expect(planResume(ended(.codex), ghosttyApp: "G", bins: bins) ==
-        ["open", "-na", "G.app", "--args", "--working-directory=/w/my app", "-e", "/bin/codex", "resume", "S"])
+    let env = ["/usr/bin/env", "PATH=/opt/homebrew/bin:/usr/bin"]
+    #expect(planResume(ended(.claude), bins: bins, path: "/opt/homebrew/bin:/usr/bin") ==
+        ["open", "-na", "Ghostty.app", "--args", "--working-directory=/w/my app", "-e"] + env + ["/bin/claude", "--resume", "S"])
+    #expect(planResume(ended(.codex), ghosttyApp: "G", bins: bins, path: "/opt/homebrew/bin:/usr/bin") ==
+        ["open", "-na", "G.app", "--args", "--working-directory=/w/my app", "-e"] + env + ["/bin/codex", "resume", "S"])
+}
+
+@Test func theResumePathReachesHomebrewWhereNodeLives() {
+    #expect(resumePath.split(separator: ":").contains("/opt/homebrew/bin"))
 }
 
 @Test func aLiveOrPlacelessSessionIsNotResumed() {

@@ -157,7 +157,10 @@ private func messageText(_ content: Any?) -> String? {
 func claudeFacts(path: String, head: [[String: Any]], tail: [[String: Any]]) -> TranscriptFacts? {
     let type = { (r: [String: Any]) in r["type"] as? String }
     guard (head + tail).first(where: { type($0) == "user" })?["entrypoint"] as? String == "cli" else { return nil }
-    let place = latest(head, tail) { r in string(r["cwd"]).map { ($0, string(r["gitBranch"])) } }
+    // Claude files a transcript under projects/<encoded start cwd>, and `--resume` looks there:
+    // a later `cd` must not move the workspace. No matching cwd: the first one.
+    let project = ((path as NSString).deletingLastPathComponent as NSString).lastPathComponent
+    let cwds = (head + tail).compactMap { string($0["cwd"]) }
     let firstPrompt = head.lazy
         .filter { type($0) == "user" && $0["isMeta"] as? Bool != true }
         .compactMap { messageText(($0["message"] as? [String: Any])?["content"]).map { slashCommand($0) ?? $0 } }
@@ -170,8 +173,8 @@ func claudeFacts(path: String, head: [[String: Any]], tail: [[String: Any]]) -> 
             ?? latest(head, tail) { type($0) == "ai-title" ? string($0["aiTitle"]) : nil },
         firstPrompt: firstPrompt,
         lastPrompt: latest(head, tail) { type($0) == "last-prompt" ? string($0["lastPrompt"]) : nil },
-        cwd: place?.0 ?? "",
-        branch: place?.1,
+        cwd: cwds.first { transcriptDirName($0) == project } ?? cwds.first ?? "",
+        branch: latest(head, tail) { string($0["gitBranch"]) },
         createdAt: head.lazy.compactMap { string($0["timestamp"]) }.first,
         updatedAt: latest(head, tail) { string($0["timestamp"]) }
     )
