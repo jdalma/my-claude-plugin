@@ -81,9 +81,9 @@ func resolveExecutable(_ name: String, in dirs: [String] = searchPath) -> String
     return dirs.map { "\($0)/\(name)" }.first { FileManager.default.isExecutableFile(atPath: $0) }
 }
 
-/// What a child process runs with. Children get the same search dirs we use, because
-/// my-team shells out to `tmux`. Without any locale (launchd gives none) tmux prints
-/// the tabs of a `-F` format as `_`, which breaks every pane listing, so default to UTF-8.
+/// What a child process runs with. Children get the same search dirs we use. Without any
+/// locale (launchd gives none) tmux prints the tabs of a `-F` format as `_`, which breaks
+/// every pane listing, so default to UTF-8.
 func childEnvironment(base: [String: String], extra: [String: String]) -> [String: String] {
     var env = base
     env["PATH"] = searchDirs(base["PATH"]).joined(separator: ":")

@@ -163,7 +163,7 @@ private func deps(
     let i = try input()
     var d = deps()
     d.psSnapshot = { i.rows }
-    d.loadTeams = { throw MyTeamError(description: "boom") }
+    d.loadTeams = { _ in throw MyTeamError(description: "boom") }
     d.loadCodexSessions = { _ in i.codex }
     d.listPanes = { i.panes }
     d.loadClaudeSessions = { i.claude }

@@ -53,13 +53,13 @@ Prints `my turn N` while N > 0. Prints nothing and exits 0 when N is 0 or `.buil
 
 | Source | Used for |
 |---|---|
-| `my-team status --all --json` | live teams, workers, liveness, mail counts, status.json |
+| `~/.my-team/sessions/<team>/manifest.json`, then under its `state_root`: `workers/<w>/status.json`, `mailbox/<w>.json`, `incoming-spool/<w>/` | live teams, workers, mail counts, self-reported state (read the way `my-team status --all --json` does) |
 | `~/.claude/sessions/<pid>.json` | Claude pid, tmux pane, busy/idle, transcript |
 | `sysctl` / libproc | processes, Codex processes and their open rollout files |
-| `tmux list-panes` / `list-clients` / `capture-pane` | pane titles, attached sessions, permission prompts |
+| `tmux list-panes` / `list-clients` / `capture-pane` | worker liveness, pane titles, attached sessions, permission prompts |
 | transcript tails (last 200 KB) | last user / assistant message |
 
-my-team is found on `PATH` first, then in the sibling `tools/my-team` checkout. Requires `tmux` and `node` (my-team runs on node).
+`MY_TEAM_STATE_ROOT_BASE` overrides `~/.my-team/sessions`, as it does for my-team. The my-team CLI itself is never run, so neither it nor `node` needs to be installed. Requires `tmux`.
 
 ## Test
 

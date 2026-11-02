@@ -1,34 +1,43 @@
 import Foundation
 
-// Read-only: only `my-team status --all --json` is ever run.
+// Read-only: reads my-team's state files the way `my-team status --all --json`
+// does (tools/my-team/src/commands/status.js). Nothing here writes, absorbs or consumes.
 
-/// The installed `my-team` (`/my-team-install` npm-links it onto PATH) first, so a build from a
-/// worktree or a moved checkout still finds one with its dependencies; the sibling package otherwise.
-func myTeamBinary(in dirs: [String] = searchPath, fallback: String = checkoutMyTeamBin) -> String {
-    resolveExecutable("my-team", in: dirs) ?? fallback
+/// `MY_TEAM_STATE_ROOT_BASE` (trimmed, `~` expanded) or `~/.my-team/sessions`.
+func stateRootBase(_ env: [String: String] = ProcessInfo.processInfo.environment) -> String {
+    let path = env["MY_TEAM_STATE_ROOT_BASE"]?.trimmed.nonEmpty.map { ($0 as NSString).expandingTildeInPath }
+        ?? FileManager.default.homeDirectoryForCurrentUser.appending(path: ".my-team/sessions").path
+    return URL(fileURLWithPath: path).standardizedFileURL.path
 }
 
-/// The sibling `tools/my-team` package, located from this source file.
-let checkoutMyTeamBin = URL(fileURLWithPath: #filePath)
-    .appending(path: "../../../../../my-team/bin/my-team")
-    .standardizedFileURL.path
-
-let myTeamBin = myTeamBinary()
-
-struct MyTeamStatus: Decodable {
-    var teams: [RawTeam]
+/// The fields of `<team>/manifest.json` a status needs.
+struct Manifest: Decodable {
+    var teamName: String
+    var stateRoot: String
+    var sessionName: String
+    var startedAt: String?
+    var workers: [ManifestWorker]
 }
 
-/// One `.teams[]` entry of `my-team status --all --json`.
-struct RawTeam: Decodable {
+struct ManifestWorker: Decodable {
+    var name: String
+    var paneId: String
+    var cwd: String?
+    var agentType: String?
+    var role: String?
+    var description: String?
+}
+
+/// One team as `my-team status --all --json` reports it.
+struct RawTeam {
     var teamName: String
     var session: String
     var startedAt: String?
-    var teamAlive: Bool?
+    var teamAlive: Bool
     var workers: [RawWorker]
 }
 
-struct RawWorker: Decodable {
+struct RawWorker {
     var name: String
     var paneId: String
     var cwd: String?
@@ -42,28 +51,6 @@ struct RawWorker: Decodable {
     var unread: Int
     var sentPending: Int
     var oldestPendingAt: String?
-
-    enum CodingKeys: CodingKey {
-        case name, paneId, cwd, agentType, role, description, alive, state, reason, spool, unread, sentPending, oldestPendingAt
-    }
-
-    init(from decoder: any Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        name = try c.decode(String.self, forKey: .name)
-        paneId = try c.decode(String.self, forKey: .paneId)
-        cwd = try c.decodeIfPresent(String.self, forKey: .cwd)
-        agentType = try c.decodeIfPresent(String.self, forKey: .agentType)
-        role = try c.decodeIfPresent(String.self, forKey: .role)
-        description = try c.decodeIfPresent(String.self, forKey: .description)
-        alive = try c.decode(Bool.self, forKey: .alive)
-        // a worker LLM writes its own status.json; a non-string value drops that field, not the team
-        state = try? c.decode(String.self, forKey: .state)
-        reason = try? c.decode(String.self, forKey: .reason)
-        spool = try c.decode(Int.self, forKey: .spool)
-        unread = try c.decode(Int.self, forKey: .unread)
-        sentPending = try c.decode(Int.self, forKey: .sentPending)
-        oldestPendingAt = try c.decodeIfPresent(String.self, forKey: .oldestPendingAt)
-    }
 }
 
 /// The my-team-owned part of a Team; collect adds the process-level Session fields.
@@ -95,26 +82,98 @@ struct MyTeamError: Error, CustomStringConvertible {
     var description: String
 }
 
-/// Live teams. Throws on failure; the caller decides.
-func loadTeams(
-    bin: String = myTeamBin,
-    exec: (String, [String]) throws -> CommandResult = { bin, args in try runCommand(["node", bin] + args, timeout: 10) }
-) throws -> [RawTeam] {
-    let failed = "my-team status --all --json failed: "
-    let r: CommandResult
+/// Every team under `base`, dead ones included. No base dir means no team was ever started.
+/// Throws only when `base` exists but cannot be listed.
+func loadTeams(base: String = stateRootBase(), panes: [Pane]) throws -> [RawTeam] {
+    let fm = FileManager.default
+    let names: [String]
     do {
-        r = try exec(bin, ["status", "--all", "--json"])
+        names = try fm.contentsOfDirectory(atPath: base)
+    } catch CocoaError.fileReadNoSuchFile {
+        return []
     } catch {
-        throw MyTeamError(description: failed + "\(error)".trimmed)
+        throw MyTeamError(description: "cannot read my-team state dir \(base): \(error.localizedDescription)")
     }
-    guard r.status == 0 else { throw MyTeamError(description: failed + (r.stderr.trimmed.nonEmpty ?? "exit \(r.status)")) }
     let decoder = JSONDecoder()
     decoder.keyDecodingStrategy = .convertFromSnakeCase
+    return names
+        .filter { !$0.hasSuffix(".bak") && $0 != ".omc" }
+        .filter { (try? fm.attributesOfItem(atPath: "\(base)/\($0)"))?[.type] as? FileAttributeType == .typeDirectory }
+        .sorted()
+        .compactMap { name in
+            guard let data = fm.contents(atPath: "\(base)/\(name)/manifest.json") else { return nil }
+            do {
+                return teamStatus(try decoder.decode(Manifest.self, from: data), panes: panes)
+            } catch {
+                warn("skip \(name): \(error)")
+                return nil
+            }
+        }
+}
+
+/// Liveness by (session, @worker_name, pane id): pane ids are server-global and get reused,
+/// so a dead team's manifest can point at another team's live pane.
+func teamStatus(_ m: Manifest, panes: [Pane]) -> RawTeam {
+    let session = String(m.sessionName.prefix { $0 != ":" })
+    let inSession = panes.filter { $0.session == session }
+    let root = m.stateRoot.trimmed
+    return RawTeam(
+        teamName: m.teamName,
+        session: m.sessionName,
+        startedAt: m.startedAt,
+        teamAlive: !inSession.isEmpty,
+        workers: m.workers.map { w in
+            var r = RawWorker(
+                name: w.name, paneId: w.paneId, cwd: w.cwd, agentType: w.agentType, role: w.role,
+                description: w.description,
+                alive: inSession.contains { $0.workerName?.trimmed == w.name && $0.pane == w.paneId },
+                spool: spoolCount("\(root)/incoming-spool/\(w.name)"), unread: 0, sentPending: 0
+            )
+            // a worker LLM writes its own status.json; a non-string value drops that field only
+            if let data = FileManager.default.contents(atPath: "\(root)/workers/\(w.name)/status.json"),
+               let s = (try? JSONSerialization.jsonObject(with: data, options: .fragmentsAllowed)) as? [String: Any] {
+                r.state = s["state"] as? String
+                r.reason = s["reason"] as? String
+            }
+            let mailbox = "\(root)/mailbox/\(w.name).json"
+            if let data = FileManager.default.contents(atPath: mailbox) {
+                do {
+                    (r.unread, r.sentPending, r.oldestPendingAt) = try mailCounts(data, path: mailbox)
+                } catch {
+                    r.reason = r.reason ?? "mailbox unreadable: \(error)"
+                }
+            }
+            return r
+        }
+    )
+}
+
+private func spoolCount(_ dir: String) -> Int {
+    ((try? FileManager.default.contentsOfDirectory(atPath: dir)) ?? []).filter { $0.hasSuffix(".json") }.count
+}
+
+/// Inbox entries, pending questions and the earliest `sent_at` of a mailbox file.
+/// Throws like my-team's readMailboxFile: bad JSON, or a schema other than 2.
+func mailCounts(_ data: Data, path: String) throws -> (unread: Int, sentPending: Int, oldestPendingAt: String?) {
+    let parsed: Any
     do {
-        return try decoder.decode(MyTeamStatus.self, from: Data(r.stdout.utf8)).teams.filter { $0.teamAlive == true }
+        parsed = try JSONSerialization.jsonObject(with: data, options: .fragmentsAllowed)
     } catch {
-        throw MyTeamError(description: "my-team status --all --json: bad JSON: \(error)")
+        throw MyTeamError(description: "Mailbox at \(path) is not valid JSON: \(error.localizedDescription)")
     }
+    guard parsed is [Any] || parsed is [String: Any] else { return (0, 0, nil) }
+    let mb = parsed as? [String: Any] ?? [:]
+    guard mb["schema_version"] as? Int == 2 else {
+        let v = mb["schema_version"].flatMap { $0 is NSNull ? nil : "\($0)" } ?? "missing"
+        throw MyTeamError(description:
+            "Mailbox at \(path) has schema_version=\(v), expected 2. " +
+            "Shutdown the team (my-team shutdown) and restart to begin with a fresh schema; " +
+            "automatic migration is not supported.")
+    }
+    let entries = { (v: Any?) -> [Any] in (v as? [String: Any]).map { Array($0.values) } ?? (v as? [Any]) ?? [] }
+    let pending = entries(mb["sent_pending"])
+    let sentAt = pending.compactMap { (($0 as? [String: Any])?["sent_at"] as? String).nonEmpty }
+    return (entries(mb["inbox"]).count, pending.count, sentAt.sorted().first)
 }
 
 func toTeam(_ t: RawTeam, clients: [TmuxClient]) -> TeamSeed {

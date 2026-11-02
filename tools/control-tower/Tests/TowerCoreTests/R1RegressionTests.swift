@@ -5,16 +5,12 @@ import Testing
 // Regressions from review R1: places the Swift port parted ways with Node.
 
 @Test func aWorkerWithANonStringStatusReasonKeepsItsTeam() throws {
-    let raw = #"""
-    {"teams":[{"team_name":"t","session":"my-team-t-abc:0","started_at":null,"team_alive":true,"workers":[
-      {"name":"a","pane_id":"%1","cwd":"/x","agent_type":"claude","role":"worker","description":"","alive":true,
-       "state":"done","reason":{"x":1},"spool":0,"unread":0,"sent_pending":0,"oldest_pending_at":null},
-      {"name":"b","pane_id":"%2","cwd":"/y","agent_type":"claude","alive":true,
-       "state":7,"reason":"fine","spool":0,"unread":0,"sent_pending":0,"oldest_pending_at":null}]},
-     {"team_name":"dead","session":"my-team-dead-zzz:0","team_alive":false,"workers":[
-      {"name":"c","pane_id":"%9","alive":false,"state":["odd"],"spool":0,"unread":0,"sent_pending":0}]}]}
-    """#
-    let teams = try loadTeams(exec: { _, _ in CommandResult(status: 0, stdout: raw, stderr: "") })
+    let base = try myTeamBase()
+    defer { try? FileManager.default.removeItem(atPath: base) }
+    let root = try writeTeam(base, "t", workers: ["a", "b"])
+    try write("\(root)/workers/a/status.json", #"{"state":"done","reason":{"x":1}}"#)
+    try write("\(root)/workers/b/status.json", #"{"state":7,"reason":"fine"}"#)
+    let teams = try loadTeams(base: base, panes: [])
     #expect(teams.map(\.teamName) == ["t"])
     let w = toTeam(teams[0], clients: []).workers
     #expect(w.map(\.workerName) == ["a", "b"])

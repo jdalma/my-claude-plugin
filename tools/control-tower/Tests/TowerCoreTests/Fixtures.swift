@@ -18,7 +18,7 @@ extension CollectDeps {
     static var stub: CollectDeps {
         CollectDeps(
             psSnapshot: { [] },
-            loadTeams: { [] },
+            loadTeams: { _ in [] },
             loadCodexSessions: { _ in [] },
             listPanes: { [] },
             listClients: { [] },

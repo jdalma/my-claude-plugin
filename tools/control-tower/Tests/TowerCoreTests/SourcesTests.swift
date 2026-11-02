@@ -203,43 +203,30 @@ private func procArgsBuffer(exec: String, argv: [String], env: [String], apple: 
 // MARK: - my-team
 
 private let clients = [TmuxClient(session: "my-team-demo-team-mvtepzfv", pid: 1, tty: "/dev/ttys001")]
-private func ok(_ stdout: String) -> CommandResult { CommandResult(status: 0, stdout: stdout, stderr: "") }
-private func rawTeams() throws -> [RawTeam] {
-    let raw = try fixture("myteam-status.json")
-    return try loadTeams(exec: { _, _ in ok(raw) })
+private func rawWorker(_ name: String, _ pane: String, agent: String?, role: String? = nil, description: String? = nil,
+                       alive: Bool = true, state: String? = nil, reason: String? = nil,
+                       spool: Int = 0, unread: Int = 0, sentPending: Int = 0, oldest: String? = nil) -> RawWorker {
+    RawWorker(name: name, paneId: pane, cwd: "/Users/me/\(name)", agentType: agent, role: role, description: description,
+              alive: alive, state: state, reason: reason, spool: spool, unread: unread, sentPending: sentPending,
+              oldestPendingAt: oldest)
 }
 
-@Test func myTeamBinPointsAtTheSiblingMyTeamPackage() {
-    #expect(checkoutMyTeamBin.hasSuffix("tools/my-team/bin/my-team"))
-    #expect(FileManager.default.fileExists(atPath: checkoutMyTeamBin))
-}
-
-@Test func loadTeamsRunsStatusAllJsonAndKeepsOnlyLiveTeams() throws {
-    let raw = try fixture("myteam-status.json")
-    var call: [String] = []
-    let teams = try loadTeams(bin: "/x/my-team", exec: { bin, args in
-        call = [bin] + args
-        return ok(raw)
-    })
-    #expect(call == ["/x/my-team", "status", "--all", "--json"])
-    #expect(teams.map(\.teamName) == ["demo-team", "other-team"])
-}
-
-@Test func loadTeamsThrowsWithStderrWhenTheCommandFails() {
-    #expect {
-        try loadTeams(exec: { _, _ in CommandResult(status: 1, stdout: "", stderr: "boom: no manifest\n") })
-    } throws: { "\($0)".contains("boom: no manifest") }
-    #expect {
-        try loadTeams(exec: { _, _ in throw CommandError(description: "node: not found") })
-    } throws: { "\($0)".contains("node: not found") }
-}
-
-@Test func loadTeamsThrowsOnBadJSON() {
-    #expect { try loadTeams(exec: { _, _ in ok("not json") }) } throws: { "\($0)".contains("bad JSON") }
+private func rawTeams() -> [RawTeam] {
+    [
+        RawTeam(teamName: "demo-team", session: "my-team-demo-team-mvtepzfv:0", startedAt: "2026-10-31T01:00:00.000Z",
+                teamAlive: true, workers: [
+                    rawWorker("alpha", "%38", agent: "claude", role: "orchestrator", description: "Demo orchestrator",
+                              state: "idle", reason: "waiting for replies", sentPending: 2, oldest: "2026-10-31T05:10:00.000Z"),
+                    rawWorker("beta", "%39", agent: "codex", role: "worker", description: "Demo codex worker", spool: 1, unread: 1),
+                    rawWorker("gamma", "%40", agent: "gemini", alive: false, state: "done"),
+                ]),
+        RawTeam(teamName: "other-team", session: "my-team-other-team-abc12345:0", startedAt: "2026-10-30T09:00:00.000Z",
+                teamAlive: true, workers: [rawWorker("alpha", "%5", agent: "claude", role: "worker", description: "", state: "working")]),
+    ]
 }
 
 @Test func toTeamStripsTheWindowSuffixAndDerivesAttachedFromClients() throws {
-    let teams = try rawTeams().map { toTeam($0, clients: clients) }
+    let teams = rawTeams().map { toTeam($0, clients: clients) }
     #expect(teams[0].sessionName == "my-team-demo-team-mvtepzfv")
     #expect(teams[0].attached == true)
     #expect(teams[1].attached == false)
@@ -247,7 +234,7 @@ private func rawTeams() throws -> [RawTeam] {
 }
 
 @Test func toTeamMapsWorkerFields() throws {
-    let w = toTeam(try rawTeams()[0], clients: clients).workers
+    let w = toTeam(rawTeams()[0], clients: clients).workers
     #expect(w[0] == WorkerSeed(
         handle: "pane:my-team-demo-team-mvtepzfv:%38", workerName: "alpha", role: "orchestrator",
         description: "Demo orchestrator", paneId: "%38", alive: true, agent: .claude, cwd: "/Users/me/alpha",

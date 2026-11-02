@@ -15,7 +15,7 @@ private let launchd = ["HOME": "/Users/me", "PATH": "/usr/bin:/bin:/usr/sbin:/sb
     #expect(childEnvironment(base: launchd, extra: ["LC_ALL": "C"])["LC_ALL"] == "C")
 }
 
-@Test func childrenSearchHomebrewTooSoMyTeamFindsTmux() {
+@Test func childrenSearchHomebrewToo() {
     let path = childEnvironment(base: launchd, extra: [:])["PATH"]?.split(separator: ":").map(String.init) ?? []
     #expect(path.contains("/opt/homebrew/bin"))
     #expect(path.first == "/usr/bin")

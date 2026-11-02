@@ -3,7 +3,7 @@ import Foundation
 /// Every outside read collect makes. `live` runs the real commands; tests swap single fields.
 struct CollectDeps {
     var psSnapshot: () -> [PsRow]
-    var loadTeams: () throws -> [RawTeam]
+    var loadTeams: ([Pane]) throws -> [RawTeam]
     var loadCodexSessions: ([PsRow]) -> [CodexRecord]
     var listPanes: () -> [Pane]
     var listClients: () -> [TmuxClient]
@@ -15,7 +15,7 @@ struct CollectDeps {
     static var live: CollectDeps {
         CollectDeps(
             psSnapshot: { TowerCore.psSnapshot() },
-            loadTeams: { try TowerCore.loadTeams() },
+            loadTeams: { try TowerCore.loadTeams(panes: $0) },
             loadCodexSessions: { TowerCore.loadCodexSessions(rows: $0) },
             listPanes: { TowerCore.listPanes() },
             listClients: { TowerCore.listClients() },
@@ -152,17 +152,18 @@ func enrich(_ board: Board, deps: CollectDeps) -> Board {
 /// `--once` keeps its JSON shape.
 public struct Snapshot: Sendable {
     public var board: Board
-    /// Set when `my-team status --all --json` failed and `board.teams` is empty for that reason.
+    /// Set when my-team's state files could not be read and `board.teams` is empty for that reason.
     public var myTeamError: String?
 }
 
-/// One full collection pass. A failing my-team degrades to no teams instead of failing the board.
+/// One full collection pass. Unreadable my-team state degrades to no teams instead of failing the board.
 func snapshot(deps: CollectDeps, now: Date = Date()) -> Snapshot {
     let rows = deps.psSnapshot()
+    let panes = deps.listPanes()
     let rawTeams: [RawTeam]
     var myTeamError: String?
     do {
-        rawTeams = try deps.loadTeams()
+        rawTeams = try deps.loadTeams(panes).filter(\.teamAlive)
     } catch {
         myTeamError = "\(error)"
         warn("\(error)")
@@ -171,14 +172,14 @@ func snapshot(deps: CollectDeps, now: Date = Date()) -> Snapshot {
     let codex = deps.loadCodexSessions(rows)
     let clients = deps.listClients()
     let teams = rawTeams.map { toTeam($0, clients: clients) }
-    let board = join(teams: teams, panes: deps.listPanes(), claude: deps.loadClaudeSessions(), codex: codex, rows: rows,
+    let board = join(teams: teams, panes: panes, claude: deps.loadClaudeSessions(), codex: codex, rows: rows,
                      at: isoString(now))
     return Snapshot(board: enrich(board, deps: deps), myTeamError: myTeamError)
 }
 
 /// One snapshot of every my-team worker and local Claude / Codex session.
 /// ponytail: sources run one after another, as blocking reads off the caller's
-/// executor; run my-team and lsof concurrently if a pass gets slow.
+/// executor; run them concurrently if a pass gets slow.
 public func collect() async -> Board {
     snapshot(deps: .live).board
 }
