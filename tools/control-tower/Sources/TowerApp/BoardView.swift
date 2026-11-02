@@ -262,6 +262,7 @@ private struct DetailView: View {
                 } ?? ""),
                 ("메일", row.worker.map { mailSummary([$0], at: board.at) } ?? ""),
             ],
+            workspace: s.cwd,
             conversation: [("나", s.lastUser), ("에이전트", s.lastAssistant)])
     }
 
@@ -275,11 +276,12 @@ private struct DetailView: View {
                 ("branch", h.branch ?? ""),
                 ("최근 활동", fullTime(h.updatedAt)),
             ],
+            workspace: h.workspace,
             conversation: [("최근 프롬프트", h.lastPrompt ?? "")])
     }
 
     private func detailBody(title: String, @ViewBuilder badges: () -> some View,
-                            facts: [(String, String)], conversation: [(String, String)]) -> some View {
+                            facts: [(String, String)], workspace: String, conversation: [(String, String)]) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 8) {
@@ -294,6 +296,7 @@ private struct DetailView: View {
                         }
                     }
                 }
+                ChangesView(workspace: workspace, at: board.at)
                 let talk = conversation.filter { !$0.1.isEmpty }
                 if !talk.isEmpty {
                     Divider()

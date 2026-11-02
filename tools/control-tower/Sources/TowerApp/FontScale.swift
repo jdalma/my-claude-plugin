@@ -36,15 +36,16 @@ private struct ScaledFont: ViewModifier {
     @Environment(\.boardFontScale) private var scale
     let style: NSFont.TextStyle
     let weight: Font.Weight
+    let design: Font.Design
 
     func body(content: Content) -> some View {
-        content.font(.system(size: NSFont.preferredFont(forTextStyle: style).pointSize * scale, weight: weight))
+        content.font(.system(size: NSFont.preferredFont(forTextStyle: style).pointSize * scale, weight: weight, design: design))
     }
 }
 
 extension View {
     /// A system text style's size times the board's font scale. SF Symbols in the view follow it.
-    func scaledFont(_ style: NSFont.TextStyle, weight: Font.Weight = .regular) -> some View {
-        modifier(ScaledFont(style: style, weight: weight))
+    func scaledFont(_ style: NSFont.TextStyle, weight: Font.Weight = .regular, design: Font.Design = .default) -> some View {
+        modifier(ScaledFont(style: style, weight: weight, design: design))
     }
 }
