@@ -138,7 +138,8 @@ public func looseColumns(_ board: Board) -> [(agent: AgentKind, sessions: [Sessi
 }
 
 /// How the board shows a worker. Highest priority first: a dead worker is stopped,
-/// a worker that reported `done` stays done even on its turn, then my turn, working, idle.
+/// a worker that reported `done` stays done even on its turn (unless a busy turn began
+/// after that report), then my turn, working, idle.
 public enum WorkerDisplayState: Equatable, Sendable {
     case stopped
     case done(since: String?)
@@ -163,7 +164,12 @@ public enum WorkerDisplayState: Equatable, Sendable {
 
 public func displayState(_ w: Worker) -> WorkerDisplayState {
     if !w.alive { return .stopped }
-    if w.stateFile?.state == "done" { return .done(since: w.stateFile?.updatedAt) }
+    if w.stateFile?.state == "done" {
+        // For a busy session `since` is when the turn started; an unparseable time keeps done.
+        let reported = parseISO(w.stateFile?.updatedAt), turnStart = parseISO(w.since)
+        if w.status == .busy, !w.myTurn, let reported, let turnStart, reported < turnStart { return .working }
+        return .done(since: w.stateFile?.updatedAt)
+    }
     if w.myTurn { return .waitingForUser(since: w.since) }
     if w.status == .busy { return .working }
     return .idle(since: w.since)

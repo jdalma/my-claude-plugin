@@ -224,6 +224,25 @@ private func worker(alive: Bool = true, state: String? = nil, myTurn: Bool = fal
     #expect(displayState(worker(myTurn: false, status: .unknown)) == .idle(since: "S"))
 }
 
+@Test func staleDoneGivesWayToANewerBusyTurn() {
+    let old = "2026-11-02T04:00:00Z", new = "2026-11-02T05:00:00.000Z"
+    func w(updatedAt: String?, since: String?, alive: Bool = true, myTurn: Bool = false, status: Status = .busy) -> Worker {
+        var x = worker(alive: alive, state: "done", myTurn: myTurn, status: status)
+        x.since = since
+        x.stateFile?.updatedAt = updatedAt
+        return x
+    }
+    #expect(displayState(w(updatedAt: old, since: new)) == .working)
+    #expect(displayState(w(updatedAt: new, since: old)) == .done(since: new))
+    #expect(displayState(w(updatedAt: old, since: nil)) == .done(since: old))
+    #expect(displayState(w(updatedAt: "garbage", since: new)) == .done(since: "garbage"))
+    #expect(displayState(w(updatedAt: old, since: new, myTurn: true)) == .done(since: old))
+    #expect(displayState(w(updatedAt: old, since: new, alive: false)) == .stopped)
+    let team = Team(name: "t", sessionName: "s", startedAt: nil, attached: false,
+                    workers: [w(updatedAt: old, since: new), w(updatedAt: new, since: old)])
+    #expect(stateCounts(team).byKind == [.working: 1, .done: 1])
+}
+
 @Test func teamCountsIncludeStoppedWorkers() {
     let team = Team(name: "t", sessionName: "s", startedAt: nil, attached: false, workers: [
         worker(alive: false), worker(state: "done"), worker(myTurn: true), worker(myTurn: true), worker(status: .busy),
