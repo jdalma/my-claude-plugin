@@ -2,7 +2,7 @@
 
 One view of every my-team worker and every Claude Code / Codex session on this Mac: who is waiting for you, for how long, and a click to jump to that tmux pane.
 
-Read-only except for moving focus. It never types into a pane, never closes a session, and never reads a my-team mailbox in a way that consumes it.
+Read-only except for two things the user asks for: moving focus, and resuming an ended session they double-click (a new Ghostty window runs `claude --resume <id>` or `codex resume <id>` in that session's directory). It never types into a pane, never closes a session, and never reads a my-team mailbox in a way that consumes it.
 
 A Swift package for macOS 14+. `TowerCore` collects and judges, `TowerApp` is the menu bar app, and `tower-cli` prints the same data for scripts.
 
@@ -37,6 +37,7 @@ Clicking a card:
 swift build -c release --product tower-cli
 .build/release/tower-cli --once | jq .   # one snapshot as JSON
 .build/release/tower-cli --count         # number of sessions waiting for you; prints nothing at 0
+.build/release/tower-cli --history --limit 20   # past interactive Claude Code / Codex sessions, newest first
 ```
 
 ## tmux status-right badge (optional)
@@ -58,6 +59,7 @@ Prints `my turn N` while N > 0. Prints nothing and exits 0 when N is 0 or `.buil
 | `sysctl` / libproc | processes, Codex processes and their open rollout files |
 | `tmux list-panes` / `list-clients` / `capture-pane` | worker liveness, pane titles, attached sessions, permission prompts |
 | transcript tails (last 200 KB) | last user / assistant message |
+| `~/.claude/projects/*/<id>.jsonl` (`CLAUDE_CONFIG_DIR`), `~/.codex/sessions/**/rollout-*.jsonl` and `session_index.jsonl` (`CODEX_HOME`), first and last 256 KB each | session history: title, workspace, branch, last prompt; only `entrypoint: cli` Claude sessions and Codex TUI / CLI / Desktop sessions |
 
 `MY_TEAM_STATE_ROOT_BASE` overrides `~/.my-team/sessions`, as it does for my-team. The my-team CLI itself is never run, so neither it nor `node` needs to be installed. Requires `tmux`.
 

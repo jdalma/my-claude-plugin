@@ -49,6 +49,7 @@ struct RawWorker {
     var alive: Bool
     var state: String?
     var reason: String?
+    var stateUpdatedAt: String? = nil
     var spool: Int
     var unread: Int
     var sentPending: Int
@@ -136,6 +137,7 @@ func teamStatus(_ m: Manifest, panes: [Pane]) -> RawTeam {
                let s = (try? JSONSerialization.jsonObject(with: data, options: .fragmentsAllowed)) as? [String: Any] {
                 r.state = s["state"] as? String
                 r.reason = s["reason"] as? String
+                r.stateUpdatedAt = s["updated_at"] as? String
             }
             let mailbox = "\(root)/mailbox/\(w.name).json"
             if let data = FileManager.default.contents(atPath: mailbox) {
@@ -201,9 +203,8 @@ func toTeam(_ t: RawTeam, clients: [TmuxClient]) -> TeamSeed {
                 inbox: w.unread,
                 sentPending: w.sentPending,
                 oldestPendingAt: w.oldestPendingAt,
-                // updated_at is not in the status output
                 stateFile: w.state.nonEmpty != nil || w.reason.nonEmpty != nil
-                    ? StateFile(state: w.state, reason: w.reason, updatedAt: nil) : nil
+                    ? StateFile(state: w.state, reason: w.reason, updatedAt: w.stateUpdatedAt) : nil
             )
         }
     )

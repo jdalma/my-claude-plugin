@@ -1,7 +1,7 @@
 import Foundation
 
 /// The argv lists that move focus to a session, run in order by the caller.
-/// TowerCore only plans; it never executes these.
+/// TowerCore only plans; it never executes these (nor planResume's).
 public struct FocusPlan: Equatable, Sendable {
     public enum Kind: String, Sendable {
         /// tmux session with an attached client: select the pane, raise Ghostty.
@@ -57,4 +57,19 @@ public func planFocus(handle: String, board: Board, clients: [TmuxClient],
     }
     return FocusPlan(kind: .detached,
                      commands: tmux + [["open", "-na", "\(ghosttyApp).app", "--args", "-e", tmuxBin, "attach", "-t", t.session]])
+}
+
+/// `claude` usually lives in `~/.local/bin`, which a GUI app's PATH lacks.
+public let resumeBins: [AgentKind: String] = [
+    .claude: resolveExecutable("claude", in: searchPath + ["\(homeDir)/.local/bin"]) ?? "claude",
+    .codex: resolveExecutable("codex") ?? "codex",
+]
+
+/// The argv that opens a new Ghostty window in the session's workspace and resumes it there.
+/// nil for a live session (resuming would start a second process on it) or one without a workspace.
+public func planResume(_ s: HistorySession, ghosttyApp: String = "Ghostty",
+                       bins: [AgentKind: String] = resumeBins) -> [String]? {
+    guard !s.live, !s.workspace.isEmpty, let program = s.resumeCommand.first else { return nil }
+    return ["open", "-na", "\(ghosttyApp).app", "--args", "--working-directory=\(s.workspace)", "-e",
+            bins[s.agent] ?? program] + s.resumeCommand.dropFirst()
 }

@@ -136,3 +136,40 @@ public func looseColumns(_ board: Board) -> [(agent: AgentKind, sessions: [Sessi
         return list.isEmpty ? nil : (agent, sortCards(list))
     }
 }
+
+/// How the board shows a worker. Highest priority first: a dead worker is stopped,
+/// a worker that reported `done` stays done even on its turn, then my turn, working, idle.
+public enum WorkerDisplayState: Equatable, Sendable {
+    case stopped
+    case done(since: String?)
+    case waitingForUser(since: String?)
+    case working
+    case idle(since: String?)
+
+    public enum Kind: String, CaseIterable, Sendable {
+        case stopped, done, waitingForUser, working, idle
+    }
+
+    public var kind: Kind {
+        switch self {
+        case .stopped: .stopped
+        case .done: .done
+        case .waitingForUser: .waitingForUser
+        case .working: .working
+        case .idle: .idle
+        }
+    }
+}
+
+public func displayState(_ w: Worker) -> WorkerDisplayState {
+    if !w.alive { return .stopped }
+    if w.stateFile?.state == "done" { return .done(since: w.stateFile?.updatedAt) }
+    if w.myTurn { return .waitingForUser(since: w.since) }
+    if w.status == .busy { return .working }
+    return .idle(since: w.since)
+}
+
+/// Worker count and how many are in each display state, stopped included.
+public func stateCounts(_ team: Team) -> (total: Int, byKind: [WorkerDisplayState.Kind: Int]) {
+    (team.workers.count, Dictionary(team.workers.map { (displayState($0).kind, 1) }, uniquingKeysWith: +))
+}

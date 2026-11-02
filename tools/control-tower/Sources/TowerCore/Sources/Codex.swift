@@ -105,7 +105,7 @@ private func readHead(_ path: String) -> [String: Any]? {
     return json?["payload"] as? [String: Any]
 }
 
-private func readTail(_ path: String, bytes: Int) -> String {
+func readTail(_ path: String, bytes: Int) -> String {
     guard let fh = FileHandle(forReadingAtPath: path) else { return "" }
     defer { try? fh.close() }
     guard let size = try? fh.seekToEnd() else { return "" }
@@ -119,7 +119,7 @@ private func mtime(_ path: String) -> Double {
     return date?.timeIntervalSince1970 ?? 0
 }
 
-private func loadTitles(codexHome: String) -> [String: String] {
+func loadTitles(codexHome: String) -> [String: String] {
     guard let text = try? String(contentsOfFile: "\(codexHome)/session_index.jsonl", encoding: .utf8) else { return [:] }
     var titles: [String: String] = [:]
     for line in text.split(separator: "\n") {
