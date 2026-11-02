@@ -284,11 +284,19 @@ func parseTranscript(_ f: TranscriptFile) -> TranscriptFacts? {
     return facts.map { var x = $0; x.updatedAt = x.updatedAt ?? isoString(f.mtime); return x }
 }
 
+/// The first prompt my-team types into a worker pane names its state dir; `<team> · <worker>` says more
+/// than the sentence, which is the same for every worker. nil for any other text or when the path is missing.
+func myTeamBootstrapTitle(_ prompt: String) -> String? {
+    guard prompt.hasPrefix("Team is live.") || prompt.hasPrefix("You just joined team "),
+          let m = prompt.firstMatch(of: #//sessions/([^/\s]+)/workers/([^/\s]+)//#) else { return nil }
+    return "\(m.1) · \(m.2)"
+}
+
 /// Facts → sessions, newest first. The Codex title comes from `codexTitles` (session_index.jsonl), then the first prompt.
 func historySessions(_ facts: [TranscriptFacts], codexTitles: [String: String],
                      liveTranscripts: Set<String>) -> [HistorySession] {
     let sessions = facts.map { f in
-        let title = f.title ?? (f.agent == .codex ? codexTitles[f.id].nonEmpty : nil) ?? f.firstPrompt ?? ""
+        let title = f.title ?? (f.agent == .codex ? codexTitles[f.id].nonEmpty : nil) ?? f.firstPrompt.map { myTeamBootstrapTitle($0) ?? $0 } ?? ""
         return HistorySession(
             id: f.id, agent: f.agent, title: oneLine(title), workspace: f.cwd, branch: f.branch,
             createdAt: f.createdAt, updatedAt: f.updatedAt ?? "", lastPrompt: f.lastPrompt.map(oneLine),

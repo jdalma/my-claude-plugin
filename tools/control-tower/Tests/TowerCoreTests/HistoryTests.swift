@@ -134,6 +134,23 @@ private func userMessage(_ text: String, at: String) -> String {
     #expect(byId["C"]?.title == "real ask")
 }
 
+@Test func aMyTeamBootstrapPromptBecomesTeamAndWorker() throws {
+    let h = try Homes()
+    defer { try? FileManager.default.removeItem(atPath: h.dir) }
+    let live = "Team is live. Follow /u/.my-team/sessions/shop/workers/be/AGENTS.md for the peer protocol; wait for user input"
+    let joined = "You just joined team 'shop'. First action: read /u/.my-team/sessions/shop/workers/fe/AGENTS.md"
+    let noPath = "You just joined team 'shop'. First action: say hi"
+    for (id, text) in [("live", live), ("joined", joined), ("nopath", noPath), ("named", live)] {
+        try h.codex(id, [meta(id, originator: "codex-tui"), userMessage(text, at: "2026-11-01T02:00:01.000Z")])
+    }
+    try write("\(h.dir)/codex/session_index.jsonl", #"{"id":"named","thread_name":"Named"}"#)
+    try h.claude("ai", [user(live), #"{"type":"ai-title","aiTitle":"Ai title"}"#])
+    try h.claude("plain", [user(live)])
+    let title = Dictionary(uniqueKeysWithValues: h.history().map { ($0.id, $0.title) })
+    #expect(title == ["live": "shop · be", "joined": "shop · fe", "nopath": noPath, "named": "Named",
+                      "ai": "Ai title", "plain": "shop · be"])
+}
+
 @Test func newestFirstAcrossAgents() throws {
     let h = try Homes()
     defer { try? FileManager.default.removeItem(atPath: h.dir) }
