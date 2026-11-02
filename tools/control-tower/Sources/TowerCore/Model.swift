@@ -1,6 +1,6 @@
-// The board model, field for field the JSON that Node `control-tower --once`
-// prints (src/model.js). Optional fields encode as an explicit `null`, never as
-// a missing key, so both outputs share one key set.
+// The board model, field for field the JSON that `tower-cli --once` prints.
+// Optional fields encode as an explicit `null`, never as a missing key, so every
+// record of a kind has the same key set.
 
 public enum AgentKind: String, Codable, Sendable {
     case claude, codex
@@ -50,7 +50,7 @@ public struct StateFile: Codable, Hashable, Sendable {
     }
 }
 
-/// One running agent process. Timestamps are ISO 8601 strings exactly as Node prints them.
+/// One running agent process. Timestamps are ISO 8601 UTC strings with milliseconds.
 ///
 /// `handle` is the id a focus request names: `pane:<session>:<pane>` inside tmux,
 /// `pid:<pid>` outside. Workers always use the pane form, even when dead.
@@ -131,7 +131,7 @@ public struct Session: Codable, Hashable, Sendable {
 }
 
 /// A my-team worker: a Session plus what my-team knows. In JSON the session
-/// fields sit flat next to the worker fields, as in Node. A dead worker stays
+/// fields sit flat next to the worker fields. A dead worker stays
 /// on the board so the user sees the hole in the team.
 @dynamicMemberLookup
 public struct Worker: Codable, Hashable, Sendable {

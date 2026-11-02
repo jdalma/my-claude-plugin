@@ -8,9 +8,9 @@ func myTeamBinary(in dirs: [String] = searchPath, fallback: String = checkoutMyT
     resolveExecutable("my-team", in: dirs) ?? fallback
 }
 
-/// The sibling `tools/my-team` package, located from this source file as Node locates it from its module.
+/// The sibling `tools/my-team` package, located from this source file.
 let checkoutMyTeamBin = URL(fileURLWithPath: #filePath)
-    .appending(path: "../../../../../../my-team/bin/my-team")
+    .appending(path: "../../../../../my-team/bin/my-team")
     .standardizedFileURL.path
 
 let myTeamBin = myTeamBinary()

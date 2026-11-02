@@ -1,6 +1,6 @@
 import Foundation
 
-// The board's display rules from src/render.js, without the HTML, so every UI
+// The board's display rules, without any view code, so every UI
 // shows the same order, labels and summaries.
 
 /// A board card: a loose Session, or a my-team Worker (which can be dead).

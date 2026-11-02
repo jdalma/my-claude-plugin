@@ -2,9 +2,9 @@ import Foundation
 import Testing
 @testable import TowerCore
 
-// MARK: - ps (test/sources/ps.test.js)
+// MARK: - ps
 
-/// The process tree of test/fixtures/ps-codex.txt.
+/// The process tree of Fixtures/ps-codex.txt.
 private func psRows() -> [PsRow] {
     let bin = "/opt/homebrew/lib/node_modules/@openai/codex/vendor/bin"
     return [
@@ -107,7 +107,7 @@ private func procArgsBuffer(exec: String, argv: [String], env: [String], apple: 
     #expect(ancestors(of: 10, in: [PsRow(pid: 10, ppid: 11), PsRow(pid: 11, ppid: 10)]).count == 40)
 }
 
-// MARK: - tmux (test/sources/tmux.test.js)
+// MARK: - tmux
 
 @Test func paneFormatHasThe8FieldsAndNoPaneCurrentCommand() {
     #expect(paneFormat.split(separator: "\t").count == 8)
@@ -146,7 +146,7 @@ private func procArgsBuffer(exec: String, argv: [String], env: [String], apple: 
     ])
 }
 
-// MARK: - codex (test/sources/codex.test.js)
+// MARK: - codex
 
 @Test func pickCandidatesKeepsTheNativeTUIChildOnly() throws {
     let rows = psRows()
@@ -200,7 +200,7 @@ private func procArgsBuffer(exec: String, argv: [String], env: [String], apple: 
     #expect(r.status == .wait && r.since == "T2")
 }
 
-// MARK: - my-team (test/sources/myteam.test.js)
+// MARK: - my-team
 
 private let clients = [TmuxClient(session: "my-team-demo-team-mvtepzfv", pid: 1, tty: "/dev/ttys001")]
 private func ok(_ stdout: String) -> CommandResult { CommandResult(status: 0, stdout: stdout, stderr: "") }
@@ -268,7 +268,7 @@ private func rawTeams() throws -> [RawTeam] {
     #expect(w[2].stateFile == StateFile(state: "done", reason: nil, updatedAt: nil))
 }
 
-// MARK: - claude (test/sources/claude.test.js)
+// MARK: - claude
 
 private let sid = "065c71b5-0000-4000-8000-000000000001"
 private let base = SessionJson(

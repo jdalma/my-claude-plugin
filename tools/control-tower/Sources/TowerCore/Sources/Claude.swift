@@ -51,7 +51,7 @@ extension SessionJson {
     }
 }
 
-/// Node `os.homedir()`: `$HOME` first, the user database otherwise.
+/// `$HOME` first, the user database otherwise.
 func homeDirectory(_ env: [String: String] = ProcessInfo.processInfo.environment) -> String {
     env["HOME"].nonEmpty ?? NSHomeDirectory()
 }
@@ -116,7 +116,7 @@ func fromSessionJson(
 
 func loadClaudeSessions(dir: String = "\(homeDir)/.claude/sessions", projectsDir: String = claudeProjectsDir) -> [ClaudeRecord] {
     guard let files = try? FileManager.default.contentsOfDirectory(atPath: dir) else { return [] }
-    // name order, as readdirSync: it decides loose order and which of two processes claims a worker pane
+    // name order: it decides loose order and which of two processes claims a worker pane
     return files.filter { $0.hasSuffix(".json") }.sorted().compactMap { f in
         // unparsable or unexpected shape (e.g. no cwd): skip this file only
         guard let data = FileManager.default.contents(atPath: "\(dir)/\(f)"),

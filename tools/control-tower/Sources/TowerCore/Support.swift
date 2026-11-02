@@ -1,6 +1,6 @@
 import Foundation
 
-// MARK: - Time, in the exact string forms Node produces and accepts
+// MARK: - Time, in the string forms `--once` JSON writes and reads
 
 /// `new Date(ms).toISOString()`: UTC, always three fraction digits.
 func isoString(ms: Int64) -> String {
@@ -92,7 +92,7 @@ func childEnvironment(base: [String: String], extra: [String: String]) -> [Strin
 }
 
 /// Runs `argv` directly, never through a shell. A non-zero exit is a result, not a
-/// throw; the caller decides, as Node callers do with `e.stdout`. Throws only when
+/// throw; the caller decides what to do with the output. Throws only when
 /// the program cannot be found or started.
 func runCommand(_ argv: [String], timeout: TimeInterval, env: [String: String] = [:]) throws -> CommandResult {
     guard let exe = resolveExecutable(argv[0]) else { throw CommandError(description: "\(argv[0]): not found") }

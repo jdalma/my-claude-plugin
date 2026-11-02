@@ -61,7 +61,6 @@ private struct TeamColumn: View {
     let at: String
     let tower: Tower
 
-    /// Same fields as the Node team card's meta line.
     private var meta: String {
         ["\(team.workers.count) workers", team.attached ? "attached" : "detached",
          elapsed(from: team.startedAt, to: at), mailSummary(team.workers, at: at)]

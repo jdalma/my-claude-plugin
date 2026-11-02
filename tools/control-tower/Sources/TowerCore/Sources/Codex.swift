@@ -163,7 +163,7 @@ func loadCodexSessions(
             transcript = mine[0]
         } else {
             let pool = (mine.isEmpty ? daemonPool : mine).filter { p in cwd != nil && meta(p)?["cwd"] as? String == cwd }
-            // max(by:) keeps the first of equal mtimes, like Node's stable sort
+            // max(by:) keeps the first of equal mtimes
             transcript = pool.max { mtime($0) < mtime($1) }
         }
         let m = transcript.flatMap(meta)

@@ -149,7 +149,7 @@ func enrich(_ board: Board, deps: CollectDeps) -> Board {
 }
 
 /// A board plus why it may be missing teams. The error stays outside Board so
-/// `--once` keeps the Node JSON shape.
+/// `--once` keeps its JSON shape.
 public struct Snapshot: Sendable {
     public var board: Board
     /// Set when `my-team status --all --json` failed and `board.teams` is empty for that reason.

@@ -1,10 +1,7 @@
 import Foundation
 
-/// `tools/control-tower/test/fixtures`, shared with the Node tests; never copied.
-let fixtures = URL(fileURLWithPath: #filePath)
-    .deletingLastPathComponent()
-    .appending(path: "../../../test/fixtures")
-    .standardizedFileURL
+/// Test data next to this file, read in place (excluded from the target in Package.swift).
+let fixtures = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appending(path: "Fixtures")
 
 func fixture(_ name: String) throws -> String {
     try String(contentsOf: fixtures.appending(path: name), encoding: .utf8)
