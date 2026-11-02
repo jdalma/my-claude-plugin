@@ -117,6 +117,12 @@ private func badge(_ state: WorkerDisplayState, at: String) -> RowBadge? {
     }
 }
 
+/// The dropdown's status wording: the board's badge text for the same session, a worker judged as a worker.
+func menuStatus(_ s: Session, in board: Board) -> String {
+    let worker = board.teams.lazy.flatMap(\.workers).first { $0.session.rowID == s.rowID }
+    return badge(worker.map(displayState) ?? displayState(s), at: board.at).map(badgeLabel) ?? "멈춤"
+}
+
 func teamSummaryLine(_ team: Team) -> String {
     let (total, by) = stateCounts(team)
     let waiting = by[.waitingForUser, default: 0] + by[.idle, default: 0]

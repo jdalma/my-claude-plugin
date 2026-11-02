@@ -176,3 +176,19 @@ private func isoOf(_ d: Date) -> String { d.formatted(.iso8601) }
     #expect(g.rows.first { $0.title == "b" }?.badge == .done(minutesAgo: 10))
     #expect(g.summary == "워커 2 · 대기 1 · 완료 1")
 }
+
+@Test func theMenuBarSaysWhatTheBoardSays() {
+    let done = StateFile(state: "done", reason: nil, updatedAt: ago10)
+    let doneW = worker("a", session: session("pane:t:%1", myTurn: true), state: done)
+    let permW = worker("b", session: session("pane:t:%2", myTurn: true, permission: true), state: done)
+    let deadW = worker("c", session: session("pane:t:%3"), alive: false)
+    let loose = session("pid:9", myTurn: true)
+    let board = Board(at: at, teams: [team("t", [doneW, permW, deadW])], loose: [loose])
+    #expect(menuStatus(doneW.session, in: board) == "10분 전 완료")
+    #expect(menuStatus(permW.session, in: board) == "권한 요청")
+    #expect(menuStatus(deadW.session, in: board) == "멈춤")
+    #expect(menuStatus(loose, in: board) == "사용자 대기 10분")
+    let rows = model(board).teams[0].rows
+    #expect(menuStatus(doneW.session, in: board) == badgeLabel(rows.first { $0.title == "a" }!.badge))
+    #expect(myTurnCount(board) == 3)
+}

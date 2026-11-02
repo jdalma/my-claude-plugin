@@ -16,12 +16,12 @@ struct BoardView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if let error = tower.myTeamError {
-                MyTeamErrorLine(error: error).padding([.horizontal, .top])
+                MyTeamErrorLine(error: error).scaledFont(.callout).padding([.horizontal, .top])
             }
             if let board = tower.board {
                 content(board, sidebarModel(board: board, history: tower.history, query: query, filter: filter, home: home))
             } else {
-                ProgressView("Collecting…").frame(maxWidth: .infinity, maxHeight: .infinity)
+                ProgressView("수집 중…").frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .scaledFont(.body)

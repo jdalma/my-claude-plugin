@@ -33,28 +33,28 @@ struct MenuContent: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if let error = tower.myTeamError {
-                MyTeamErrorLine(error: error).padding(.bottom, 4)
+                MyTeamErrorLine(error: error).font(.callout).padding(.bottom, 4)
             }
             if let board = tower.board {
                 let mine = sortCards(sessions(board).filter(\.myTurn))
                 if mine.isEmpty {
-                    Text("Nobody is waiting for you").foregroundStyle(.secondary).padding(.vertical, 4)
+                    Text("기다리는 세션 없음").foregroundStyle(.secondary).padding(.vertical, 4)
                 }
                 ForEach(mine, id: \.rowID) { s in
-                    MenuCard(title: displayTitle(s, in: board), status: statusLine(s, at: board.at).label,
+                    MenuCard(title: displayTitle(s, in: board), status: menuStatus(s, in: board),
                              message: s.lastAssistant) { tower.focus(s.handle) }
                 }
                 Divider().padding(.vertical, 4)
             }
-            Button("Open Board") {
+            Button("보드 열기") {
                 openWindow(id: "board")
                 NSApp.activate()
             }
             .keyboardShortcut("b")
-            SettingsLink { Text("Settings…") }
+            SettingsLink { Text("설정…") }
                 .keyboardShortcut(",")
             Divider().padding(.vertical, 4)
-            Button("Quit Control Tower") { NSApp.terminate(nil) }
+            Button("Control Tower 종료") { NSApp.terminate(nil) }
                 .keyboardShortcut("q")
         }
         .buttonStyle(.borderless)
@@ -86,17 +86,17 @@ private struct MenuCard: View {
             .contentShape(.rect)
             .padding(.vertical, 4)
         }
-        .accessibilityHint("Focus this session's terminal")
+        .accessibilityHint("이 세션의 터미널로 이동")
     }
 }
 
 /// One line saying teams are missing because my-team failed; the full text is in the tooltip.
+/// The caller sets the font: fixed in the dropdown, scaled in the board window.
 struct MyTeamErrorLine: View {
     let error: String
 
     var body: some View {
-        Label("Teams unavailable: \(error)", systemImage: "exclamationmark.triangle.fill")
-            .font(.callout)
+        Label("팀 정보를 읽지 못함: \(error)", systemImage: "exclamationmark.triangle.fill")
             .foregroundStyle(.orange)
             .lineLimit(1)
             .truncationMode(.tail)

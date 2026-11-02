@@ -40,24 +40,6 @@ public func elapsed(from: String?, to: String?) -> String {
     return "\(m / 1440)d \((m % 1440) / 60)h"
 }
 
-public enum StatusKind: String, Sendable {
-    case dead, perm, mine, busy, idle, unknown
-}
-
-public func statusLine(_ card: some Card, at: String) -> (kind: StatusKind, label: String) {
-    let s = card.session
-    let t = elapsed(from: s.since, to: at)
-    let withTime = { (label: String) in t.isEmpty ? label : "\(label) · \(t)" }
-    if !card.isAlive { return (.dead, "Dead") }
-    if s.permissionPrompt { return (.perm, "Permission prompt") }
-    if s.myTurn { return (.mine, withTime("My turn")) }
-    switch s.status {
-    case .busy: return (.busy, withTime("Working"))
-    case .wait: return (.idle, withTime("Idle"))
-    case .unknown: return (.unknown, "Unknown")
-    }
-}
-
 /// my_turn first, then the oldest `since`; dead workers last. Stable.
 public func sortCards<C: Card>(_ list: [C]) -> [C] {
     func key(_ c: C) -> (Int, Int, Double) {

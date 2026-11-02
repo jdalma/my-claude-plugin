@@ -9,7 +9,7 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
-            Toggle("Open at Login", isOn: Binding(get: { enabled }, set: { setLoginItem($0) }))
+            Toggle("로그인 시 열기", isOn: Binding(get: { enabled }, set: { setLoginItem($0) }))
             if let error {
                 Text(error).font(.caption).foregroundStyle(.red)
             }

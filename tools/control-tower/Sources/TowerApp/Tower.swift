@@ -56,7 +56,7 @@ final class Tower {
                 guard plan.kind != .none else { throw FocusError.unreachable(handle) }
                 try await FocusRunner.run(plan.commands)
             } catch {
-                showAlert("Could not focus session", error)
+                showAlert("세션으로 이동하지 못함", error)
             }
         }
     }
@@ -74,7 +74,7 @@ final class Tower {
                 guard let argv = planResume(ended) else { throw FocusError.noWorkspace(h.workspace) }
                 try await FocusRunner.run([argv])
             } catch {
-                showAlert("Could not resume session", error)
+                showAlert("세션을 resume하지 못함", error)
             }
         }
     }
@@ -93,8 +93,8 @@ enum FocusError: LocalizedError {
     case noWorkspace(String)
     var errorDescription: String? {
         switch self {
-        case .unreachable(let h): "\(h) is no longer on the board or has no terminal to bring forward."
-        case .noWorkspace(let w): "Cannot resume: the session has no workspace (\(w))."
+        case .unreachable(let h): "\(h)이(가) 보드에 없거나 앞으로 가져올 터미널이 없습니다."
+        case .noWorkspace(let w): "resume할 수 없음: 세션의 워크스페이스가 없습니다(\(w))."
         }
     }
 }

@@ -9,10 +9,10 @@ private func fixtureBoard() throws -> Board { try JSONDecoder().decode(Board.sel
     #expect(sortCards(try fixtureBoard().teams[0].workers).map(\.paneId) == ["%38", "%40", "%39", "%41"])
 }
 
-@Test func deadWorkerGetsTheDeadStatus() throws {
+@Test func deadWorkerIsStopped() throws {
     let b = try fixtureBoard()
     let dead = b.teams[0].workers.first { $0.paneId == "%41" }!
-    #expect(statusLine(dead, at: b.at) == (kind: .dead, label: "Dead"))
+    #expect(displayState(dead) == .stopped)
 }
 
 @Test func teamSummaryComesFromTheOrchestrator() throws {
@@ -34,12 +34,12 @@ private func fixtureBoard() throws -> Board { try JSONDecoder().decode(Board.sel
     #expect(mailSummary(b.teams[1].workers, at: b.at) == "")
 }
 
-@Test func statusLineAndMyTurnTotal() throws {
+@Test func displayStatesAndMyTurnTotal() throws {
     let b = try fixtureBoard()
-    let labels = (b.teams.flatMap { $0.workers.map { statusLine($0, at: b.at) } } + b.loose.map { statusLine($0, at: b.at) })
-    #expect(labels.contains { $0.label == "My turn · 20m" })
-    #expect(labels.contains { $0.label == "Working · 1m" })
-    #expect(labels.contains { $0.kind == .perm })
+    let states = b.teams.flatMap { $0.workers.map(displayState) } + b.loose.map(displayState)
+    #expect(states.contains(.waitingForUser(since: b.teams.flatMap(\.workers).first { $0.myTurn }?.since)))
+    #expect(states.contains(.working))
+    #expect(states.contains { if case .permission = $0 { true } else { false } })
     #expect(b.teams.flatMap(\.workers).contains { elapsed(from: $0.since, to: b.at) == "20m" })
     #expect(myTurnCount(b) == 3)
     #expect(elapsed(from: "2026-10-29T12:16:44Z", to: "2026-10-31T06:00:00Z") == "41h 43m")
@@ -71,8 +71,7 @@ private func fixtureBoard() throws -> Board { try JSONDecoder().decode(Board.sel
     let cols = looseColumns(b)
     #expect(cols.map(\.agent) == [.claude, .codex])
     let codex = try #require(cols.last?.sessions.first { $0.handle == "pid:51170" })
-    #expect(statusLine(codex, at: b.at).kind == .mine)
-    #expect(statusLine(codex, at: b.at).label.hasPrefix("My turn · "))
+    #expect(displayState(codex) == .waitingForUser(since: codex.since))
     #expect(codex.subtitle == "career brief context handover")
     #expect(codex.lastAssistant.contains("Context received. Nothing further unless you want edits."))
 }
@@ -91,4 +90,13 @@ private func fixtureBoard() throws -> Board { try JSONDecoder().decode(Board.sel
     #expect(w.cardName == "brief fact-check aggregation")
     #expect(b.loose.first { $0.handle == "pid:51170" }?.cardName == basename(b.loose.first { $0.handle == "pid:51170" }!.cwd))
     #expect(cleanTitle("⠋ scanning ADR records") == "scanning ADR records")
+}
+
+@Test func aDoneWorkerStillCountsAsMyTurn() throws {
+    var b = try fixtureBoard()
+    let before = myTurnCount(b)
+    let i = try #require(b.teams[0].workers.firstIndex { $0.myTurn })
+    b.teams[0].workers[i].stateFile = StateFile(state: "done", reason: nil, updatedAt: b.at)
+    #expect(displayState(b.teams[0].workers[i]).kind == .done)
+    #expect(myTurnCount(b) == before)
 }
