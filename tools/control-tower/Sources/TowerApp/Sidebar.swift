@@ -136,12 +136,22 @@ func teamSummaryLine(_ team: Team) -> String {
 
 func badgeLabel(_ b: RowBadge) -> String {
     switch b {
-    case .waitingForUser(let m): m.map { "사용자 대기 \($0)분" } ?? "사용자 대기"
+    case .waitingForUser(let m): m.map { "사용자 대기 \(duration(minutes: $0))" } ?? "사용자 대기"
     case .permission: "권한 요청"
     case .working: "작업 중"
-    case .done(let m): m.map { "\($0)분 전 완료" } ?? "완료"
-    case .idle(let m): m.map { "대기 \($0)분" } ?? "대기"
+    case .done(let m): m.map { "\(duration(minutes: $0)) 전 완료" } ?? "완료"
+    case .idle(let m): m.map { "대기 \(duration(minutes: $0))" } ?? "대기"
     }
+}
+
+/// `N분` under an hour, `N시간 M분` under a day, then `N일 M시간`; a zero second part is left out.
+func duration(minutes m: Int) -> String {
+    func join(_ big: Int, _ bigUnit: String, _ small: Int, _ smallUnit: String) -> String {
+        small == 0 ? "\(big)\(bigUnit)" : "\(big)\(bigUnit) \(small)\(smallUnit)"
+    }
+    if m < 60 { return "\(m)분" }
+    if m < 1440 { return join(m / 60, "시간", m % 60, "분") }
+    return join(m / 1440, "일", (m % 1440) / 60, "시간")
 }
 
 /// `방금` under a minute, then `N분 전`, `N시간 전`, `어제`, `N일 전`; '' when the time is unknown.

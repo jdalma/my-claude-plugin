@@ -192,3 +192,12 @@ private func isoOf(_ d: Date) -> String { d.formatted(.iso8601) }
     #expect(menuStatus(doneW.session, in: board) == badgeLabel(rows.first { $0.title == "a" }!.badge))
     #expect(myTurnCount(board) == 3)
 }
+
+@Test func durationsRollUpIntoHoursAndDays() {
+    let cases = [(0, "0분"), (59, "59분"), (60, "1시간"), (61, "1시간 1분"), (1439, "23시간 59분"),
+                 (1440, "1일"), (1500, "1일 1시간"), (2503, "1일 17시간")]
+    for (m, text) in cases { #expect(duration(minutes: m) == text) }
+    #expect(badgeLabel(.waitingForUser(minutes: 2503)) == "사용자 대기 1일 17시간")
+    #expect(badgeLabel(.done(minutesAgo: 61)) == "1시간 1분 전 완료")
+    #expect(badgeLabel(.idle(minutes: 60)) == "대기 1시간")
+}
