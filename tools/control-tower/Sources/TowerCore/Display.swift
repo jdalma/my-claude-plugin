@@ -137,11 +137,13 @@ public func looseColumns(_ board: Board) -> [(agent: AgentKind, sessions: [Sessi
     }
 }
 
-/// How the board shows a worker. Highest priority first: a dead worker is stopped,
-/// a worker that reported `done` stays done even on its turn (unless a busy turn began
-/// after that report), then my turn, working, idle.
+/// How the board shows a session or worker. Highest priority first: a dead worker is stopped,
+/// a permission prompt always needs the user, a worker that reported `done` stays done even on
+/// its turn (unless a busy turn began after that report), then my turn, working, idle.
 public enum WorkerDisplayState: Equatable, Sendable {
     case stopped
+    /// A permission or trust prompt is on screen. Counted with `waitingForUser`.
+    case permission(since: String?)
     case done(since: String?)
     case waitingForUser(since: String?)
     case working
@@ -155,24 +157,31 @@ public enum WorkerDisplayState: Equatable, Sendable {
         switch self {
         case .stopped: .stopped
         case .done: .done
-        case .waitingForUser: .waitingForUser
+        case .permission, .waitingForUser: .waitingForUser
         case .working: .working
         case .idle: .idle
         }
     }
 }
 
+/// A live session's state, no my-team report involved.
+public func displayState(_ s: Session) -> WorkerDisplayState {
+    if s.permissionPrompt { return .permission(since: s.since) }
+    if s.myTurn { return .waitingForUser(since: s.since) }
+    if s.status == .busy { return .working }
+    return .idle(since: s.since)
+}
+
 public func displayState(_ w: Worker) -> WorkerDisplayState {
     if !w.alive { return .stopped }
+    if w.permissionPrompt { return displayState(w.session) }
     if w.stateFile?.state == "done" {
         // For a busy session `since` is when the turn started; an unparseable time keeps done.
         let reported = parseISO(w.stateFile?.updatedAt), turnStart = parseISO(w.since)
         if w.status == .busy, !w.myTurn, let reported, let turnStart, reported < turnStart { return .working }
         return .done(since: w.stateFile?.updatedAt)
     }
-    if w.myTurn { return .waitingForUser(since: w.since) }
-    if w.status == .busy { return .working }
-    return .idle(since: w.since)
+    return displayState(w.session)
 }
 
 /// Worker count and how many are in each display state, stopped included.

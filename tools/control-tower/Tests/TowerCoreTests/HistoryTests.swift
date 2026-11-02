@@ -286,3 +286,31 @@ private func ended(_ agent: AgentKind, live: Bool = false, workspace: String = "
     #expect(planResume(ended(.claude, live: true)) == nil)
     #expect(planResume(ended(.claude, workspace: "")) == nil)
 }
+
+@Test func aPermissionPromptOutranksDone() {
+    func w(alive: Bool = true, state: String? = "done", myTurn: Bool = false, perm: Bool) -> Worker {
+        var x = worker(alive: alive, state: state, myTurn: myTurn)
+        x.permissionPrompt = perm
+        return x
+    }
+    #expect(displayState(w(myTurn: true, perm: true)) == .permission(since: "S"))
+    #expect(displayState(w(myTurn: true, perm: false)) == .done(since: "U"))
+    #expect(displayState(w(alive: false, perm: true)) == .stopped)
+    #expect(displayState(w(state: nil, myTurn: true, perm: true)) == .permission(since: "S"))
+    #expect(displayState(w(perm: true)).kind == .waitingForUser)
+
+    let team = Team(name: "t", sessionName: "s", startedAt: nil, attached: false, workers: [w(myTurn: true, perm: true)])
+    #expect(stateCounts(team).byKind == [.waitingForUser: 1])
+}
+
+@Test func aLooseSessionUsesTheSameRules() {
+    var s = session(status: .busy, myTurn: false)
+    s.since = "S"
+    #expect(displayState(s) == .working)
+    s.status = .wait; s.myTurn = true
+    #expect(displayState(s) == .waitingForUser(since: "S"))
+    s.permissionPrompt = true
+    #expect(displayState(s) == .permission(since: "S"))
+    s = session(status: .unknown, myTurn: false)
+    #expect(displayState(s) == .idle(since: s.since))
+}

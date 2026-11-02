@@ -164,3 +164,15 @@ private func isoOf(_ d: Date) -> String { d.formatted(.iso8601) }
     #expect(abbreviate("/Users/me/a", home: "/Users/me") == "~/a")
     #expect(abbreviate("/Users/mex/a", home: "/Users/me") == "/Users/mex/a")
 }
+
+@Test func aDoneWorkerOnAPermissionPromptIsWaitingInBothRowAndSummary() {
+    let done = StateFile(state: "done", reason: nil, updatedAt: ago10)
+    let board = Board(at: at, teams: [team("t", [
+        worker("a", session: session("pane:t:%1", myTurn: true, permission: true), state: done),
+        worker("b", session: session("pane:t:%2", myTurn: true), state: done),
+    ])], loose: [])
+    let g = model(board).teams[0]
+    #expect(g.rows.first { $0.title == "a" }?.badge == .permission)
+    #expect(g.rows.first { $0.title == "b" }?.badge == .done(minutesAgo: 10))
+    #expect(g.summary == "워커 2 · 대기 1 · 완료 1")
+}

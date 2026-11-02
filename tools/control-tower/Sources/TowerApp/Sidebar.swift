@@ -70,7 +70,7 @@ func sidebarModel(board: Board, history: [HistorySession], query: String, filter
     var teams: [TeamGroup] = []
     for team in sortTeams(board.teams) {
         let rows = sortCards(team.workers).compactMap { w -> LiveRow? in
-            guard let badge = workerBadge(w, at: board.at) else { return nil }
+            guard let badge = badge(displayState(w), at: board.at) else { return nil }
             let reason = w.stateFile?.reason ?? ""
             return LiveRow(id: .live(w.session.rowID), session: w.session, worker: w, teamName: team.name,
                            title: w.cardName, line: oneLine(reason.isEmpty ? w.lastAssistant : reason),
@@ -88,7 +88,7 @@ func sidebarModel(board: Board, history: [HistorySession], query: String, filter
         let row = LiveRow(id: .live(s.rowID), session: s, worker: nil, teamName: nil,
                           title: agentName(s.agent),
                           line: oneLine(s.lastAssistant.isEmpty ? s.lastUser : s.lastAssistant),
-                          badge: looseBadge(s, at: board.at), matched: s.transcript.flatMap { byTranscript[$0] })
+                          badge: badge(displayState(s), at: board.at) ?? .idle(minutes: nil), matched: s.transcript.flatMap { byTranscript[$0] })
         guard matches(row) else { continue }
         let path = abbreviate(s.cwd, home: home)
         if let i = workspaces.firstIndex(where: { $0.path == path }) {
@@ -105,23 +105,16 @@ func sidebarModel(board: Board, history: [HistorySession], query: String, filter
     return SidebarModel(myTurn: myTurnCount(board), teams: teams, workspaces: workspaces, history: past)
 }
 
-/// nil for a stopped worker: it is counted in the team summary, not listed.
-private func workerBadge(_ w: Worker, at: String) -> RowBadge? {
-    switch displayState(w) {
+/// Maps Core's display state to a row badge; nil for a stopped worker (counted in the team summary, not listed).
+private func badge(_ state: WorkerDisplayState, at: String) -> RowBadge? {
+    switch state {
     case .stopped: nil
-    case _ where w.permissionPrompt: .permission
+    case .permission: .permission
     case .done(let since): .done(minutesAgo: minutes(from: since, to: at))
     case .waitingForUser(let since): .waitingForUser(minutes: minutes(from: since, to: at))
     case .working: .working
     case .idle(let since): .idle(minutes: minutes(from: since, to: at))
     }
-}
-
-private func looseBadge(_ s: Session, at: String) -> RowBadge {
-    if s.permissionPrompt { return .permission }
-    if s.myTurn { return .waitingForUser(minutes: minutes(from: s.since, to: at)) }
-    if s.status == .busy { return .working }
-    return .idle(minutes: minutes(from: s.since, to: at))
 }
 
 func teamSummaryLine(_ team: Team) -> String {
