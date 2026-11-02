@@ -60,25 +60,36 @@ func procArgs(_ pid: Int) -> ProcArgs? {
     return parseProcArgs(Array(buf.prefix(size)))
 }
 
-/// Every process from one `KERN_PROC_ALL` read; args from `KERN_PROCARGS2`, empty when unreadable.
-func psSnapshot() -> [PsRow] {
+private func kinfoProcs() -> [kinfo_proc] {
     var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_ALL]
     let stride = MemoryLayout<kinfo_proc>.stride
-    var size = 0
-    guard sysctl(&mib, 3, nil, &size, nil, 0) == 0 else { return [] }
-    // processes started between the two calls: leave room for a few
-    var procs = [kinfo_proc](repeating: kinfo_proc(), count: size / stride + 32)
-    size = procs.count * stride
-    guard sysctl(&mib, 3, &procs, &size, nil, 0) == 0 else { return [] }
-    return procs.prefix(size / stride).map { k in
-        let pid = Int(k.kp_proc.p_pid)
-        return PsRow(
-            pid: pid,
-            ppid: Int(k.kp_eproc.e_ppid),
-            args: procArgs(pid)?.argv.joined(separator: " ") ?? "",
-            lstart: isoString(ms: Int64(k.kp_proc.p_un.__p_starttime.tv_sec) * 1000)
-        )
+    // ENOMEM: more processes started between sizing and reading than the slack covers; size again once
+    for _ in 0..<2 {
+        var size = 0
+        guard sysctl(&mib, 3, nil, &size, nil, 0) == 0 else { return [] }
+        var procs = [kinfo_proc](repeating: kinfo_proc(), count: size / stride + 32)
+        size = procs.count * stride
+        if sysctl(&mib, 3, &procs, &size, nil, 0) == 0 { return Array(procs.prefix(size / stride)) }
+        if errno != ENOMEM { return [] }
     }
+    return []
+}
+
+/// Every process from one `KERN_PROC_ALL` read; args from `KERN_PROCARGS2`, empty when unreadable.
+/// Sorted as ps sorts by default, controlling tty then pid: codex candidates, loose order
+/// and which process claims a worker pane all follow row order.
+func psSnapshot() -> [PsRow] {
+    kinfoProcs()
+        .sorted { ($0.kp_eproc.e_tdev, $0.kp_proc.p_pid) < ($1.kp_eproc.e_tdev, $1.kp_proc.p_pid) }
+        .map { k in
+            let pid = Int(k.kp_proc.p_pid)
+            return PsRow(
+                pid: pid,
+                ppid: Int(k.kp_eproc.e_ppid),
+                args: procArgs(pid)?.argv.joined(separator: " ") ?? "",
+                lstart: isoString(ms: Int64(k.kp_proc.p_un.__p_starttime.tv_sec) * 1000)
+            )
+        }
 }
 
 func envOf(pid: Int, keys: [String]) -> [String: String] {

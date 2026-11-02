@@ -63,6 +63,25 @@ private func procArgsBuffer(exec: String, argv: [String], env: [String], apple: 
     #expect(envOf(pid: Int(getpid()), keys: ["HOME", "CT_SURELY_UNSET"]) == ["HOME": home])
 }
 
+/// codex candidates, loose order and pane claims follow row order, so rows keep ps's (tty, pid) order.
+@Test func psSnapshotKeepsPsRowOrder() throws {
+    let rows = psSnapshot().map(\.pid)
+    let p = Process()
+    let out = Pipe()
+    p.executableURL = URL(fileURLWithPath: "/bin/ps")
+    p.arguments = ["-axo", "pid="]
+    p.standardOutput = out
+    try p.run()
+    let text = String(decoding: out.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+    p.waitUntilExit()
+    let ps = text.split(separator: "\n").compactMap { Int($0.trimmingCharacters(in: .whitespaces)) }
+    let common = Set(rows).intersection(ps)
+    #expect(common.count > 10)
+    let mine = rows.filter(common.contains), theirs = ps.filter(common.contains)
+    let at = zip(mine, theirs).enumerated().first { $0.element.0 != $0.element.1 }?.offset
+    #expect(at == nil, "first difference at \(at ?? -1): \(at.map { mine[$0] } ?? 0) vs ps \(at.map { theirs[$0] } ?? 0)")
+}
+
 @Test func unreadableOrVanishedPidsAreSkippedQuietly() throws {
     let p = Process()
     p.executableURL = URL(fileURLWithPath: "/usr/bin/true")
