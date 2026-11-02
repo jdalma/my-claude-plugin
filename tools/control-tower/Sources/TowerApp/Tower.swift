@@ -8,6 +8,8 @@ final class Tower {
     private(set) var board: Board?
     /// Why the board has no teams, when my-team failed. A GUI app's stderr is invisible.
     private(set) var myTeamError: String?
+    /// Past sessions, newest first. Its own loop: the first scan takes 2-3 s and must not delay the board.
+    private(set) var history: [HistorySession] = []
     @ObservationIgnored private var notifier: Notifier?
 
     init() {
@@ -17,6 +19,16 @@ final class Tower {
             while true {
                 await refresh()
                 try? await Task.sleep(for: .seconds(5))
+            }
+        }
+        Task {
+            while true {
+                guard let board else {
+                    try? await Task.sleep(for: .seconds(1))
+                    continue
+                }
+                history = await Task.detached { await collectHistory(board: board) }.value
+                try? await Task.sleep(for: .seconds(15))
             }
         }
     }
@@ -44,21 +56,45 @@ final class Tower {
                 guard plan.kind != .none else { throw FocusError.unreachable(handle) }
                 try await FocusRunner.run(plan.commands)
             } catch {
-                NSApp.activate()
-                let alert = NSAlert(error: error)
-                alert.messageText = "Could not focus session"
-                alert.informativeText = error.localizedDescription
-                alert.runModal()
+                showAlert("Could not focus session", error)
             }
         }
+    }
+
+    /// Double click on a history row: focus the running session that reads it, else resume it in a new Ghostty window.
+    func open(_ h: HistorySession) {
+        if let s = sessions(board ?? Board(at: "", teams: [], loose: [])).first(where: { $0.transcript == h.transcriptPath }) {
+            focus(s.handle)
+            return
+        }
+        var ended = h
+        ended.live = false
+        Task {
+            do {
+                guard let argv = planResume(ended) else { throw FocusError.noWorkspace(h.workspace) }
+                try await FocusRunner.run([argv])
+            } catch {
+                showAlert("Could not resume session", error)
+            }
+        }
+    }
+
+    private func showAlert(_ title: String, _ error: any Error) {
+        NSApp.activate()
+        let alert = NSAlert(error: error)
+        alert.messageText = title
+        alert.informativeText = error.localizedDescription
+        alert.runModal()
     }
 }
 
 enum FocusError: LocalizedError {
     case unreachable(String)
+    case noWorkspace(String)
     var errorDescription: String? {
         switch self {
         case .unreachable(let h): "\(h) is no longer on the board or has no terminal to bring forward."
+        case .noWorkspace(let w): "Cannot resume: the session has no workspace (\(w))."
         }
     }
 }

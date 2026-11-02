@@ -1,192 +1,305 @@
 import SwiftUI
 import TowerCore
 
-/// One column per live team, then Claude Code and Codex sessions outside any team.
-/// Order, status wording, and summaries come from TowerCore's display rules.
+/// Sidebar of running sessions (teams, then workspaces) and history; detail of the selected row.
+/// Grouping, wording and search live in Sidebar.swift.
 struct BoardView: View {
     let tower: Tower
+    @State private var query = ""
+    @State private var filter = AgentFilter.all
+    @State private var selection: RowID?
+    @FocusState private var searchFocused: Bool
+
+    private let home = NSHomeDirectory()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if let error = tower.myTeamError {
                 MyTeamErrorLine(error: error).padding([.horizontal, .top])
             }
-            board
-        }
-        .frame(minWidth: 640, minHeight: 400)
-        .toolbar {
-            ToolbarItem {
-                Text("\(tower.myTurn) my turn").font(.headline)
-            }
-        }
-    }
-
-    @ViewBuilder private var board: some View {
-        Group {
             if let board = tower.board {
-                ScrollView([.horizontal, .vertical]) {
-                    HStack(alignment: .top, spacing: 16) {
-                        ForEach(sortTeams(board.teams), id: \.name) { team in
-                            TeamColumn(team: team, at: board.at, tower: tower)
-                        }
-                        ForEach(looseColumns(board), id: \.agent) { col in
-                            SessionColumn(title: col.agent == .claude ? "Claude Code" : "Codex",
-                                          sessions: col.sessions, at: board.at, tower: tower)
-                        }
-                    }
-                    .padding()
-                }
+                content(board, sidebarModel(board: board, history: tower.history, query: query, filter: filter, home: home))
             } else {
                 ProgressView("Collecting…").frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-    }
-}
-
-private struct Column<Header: View, Content: View>: View {
-    @ViewBuilder let header: Header
-    @ViewBuilder let content: Content
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            header
-            content
+        .frame(minWidth: 760, minHeight: 440)
+        .toolbar {
+            ToolbarItem {
+                TextField("검색", text: $query, prompt: Text("세션, 팀, 워크스페이스, 제목 (⌘K)"))
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 280)
+                    .focused($searchFocused)
+            }
         }
-        .frame(width: 280, alignment: .topLeading)
-    }
-}
-
-private struct TeamColumn: View {
-    let team: Team
-    let at: String
-    let tower: Tower
-
-    private var meta: String {
-        ["\(team.workers.count) workers", team.attached ? "attached" : "detached",
-         elapsed(from: team.startedAt, to: at), mailSummary(team.workers, at: at)]
-            .filter { !$0.isEmpty }.joined(separator: " · ")
+        .background {
+            Button("검색") { searchFocused = true }
+                .keyboardShortcut("k")
+                .opacity(0)
+                .frame(width: 0, height: 0)
+                .accessibilityHidden(true)
+        }
     }
 
-    var body: some View {
-        Column {
-            VStack(alignment: .leading, spacing: 2) {
-                HStack {
-                    Text(team.name).font(.title3.bold())
-                    let mine = team.workers.filter(\.myTurn).count
-                    if mine > 0 {
-                        Text("\(mine) my turn").font(.caption.bold()).foregroundStyle(Color.accentColor)
+    private func content(_ board: Board, _ model: SidebarModel) -> some View {
+        NavigationSplitView {
+            List(selection: $selection) {
+                ForEach(model.teams, id: \.name) { team in
+                    Section {
+                        ForEach(team.rows, id: \.id) { LiveRowView(row: $0).tag($0.id) }
+                    } header: {
+                        GroupHeader(title: team.name, detail: team.summary)
                     }
                 }
-                Text(meta).font(.caption).foregroundStyle(.secondary)
-                let summary = teamSummary(team)
-                if let reason = summary?.reason {
-                    Text(reason).font(.callout)
+                ForEach(model.workspaces, id: \.path) { ws in
+                    Section {
+                        ForEach(ws.rows, id: \.id) { LiveRowView(row: $0).tag($0.id) }
+                    } header: {
+                        GroupHeader(title: ws.name, detail: ws.path)
+                    }
                 }
-                if let voice = summary?.voice {
-                    (Text(voice.workerName).bold() + Text(" ") + Text(voice.lastAssistant))
-                        .font(.callout).foregroundStyle(.secondary).lineLimit(4)
-                }
-                if summary?.reason == nil && summary?.voice == nil {
-                    Text("no report yet").font(.callout).foregroundStyle(.tertiary)
-                }
-            }
-        } content: {
-            ForEach(sortCards(team.workers), id: \.handle) { w in
-                CardButton(card: w, at: at, tower: tower) {
-                    let mail = mailSummary([w], at: at)
-                    if !mail.isEmpty { Text(mail).font(.caption).foregroundStyle(.secondary) }
-                    if let state = w.stateFile?.state {
-                        Text([state, w.stateFile?.reason].compactMap { $0 }.joined(separator: " — "))
-                            .font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                Section {
+                    ForEach(model.history, id: \.transcriptPath) { h in
+                        HistoryRowView(h: h, now: Date(), home: home).tag(RowID.history(h.transcriptPath))
+                    }
+                } header: {
+                    HStack {
+                        Text("기록 · 최근순")
+                        Spacer()
+                        Picker("에이전트", selection: $filter) {
+                            Text("전체").tag(AgentFilter.all)
+                            Text("Claude").tag(AgentFilter.claude)
+                            Text("Codex").tag(AgentFilter.codex)
+                        }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
+                        .frame(width: 180)
                     }
                 }
             }
+            .contextMenu(forSelectionType: RowID.self) { ids in
+                let h = ids.first.flatMap { historyEntry($0, model) }
+                Button("resume 명령 복사") {
+                    if let h {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(resumeCopyText(h), forType: .string)
+                    }
+                }
+                .disabled(h == nil)
+            } primaryAction: { ids in
+                guard let id = ids.first else { return }
+                switch id {
+                case .live:
+                    if let row = model.liveRows.first(where: { $0.id == id }) { tower.focus(row.session.handle) }
+                case .history:
+                    if let h = historyEntry(id, model) { tower.open(h) }
+                }
+            }
+            .safeAreaInset(edge: .top, spacing: 0) { sidebarHeader(model) }
+            .navigationSplitViewColumnWidth(min: 300, ideal: 360, max: 520)
+        } detail: {
+            DetailView(board: board, model: model, selection: selection, home: home)
+        }
+    }
+
+    private func sidebarHeader(_ model: SidebarModel) -> some View {
+        HStack {
+            Text("실행 중").font(.headline)
+            Spacer()
+            if model.myTurn > 0 {
+                Text("내 차례 \(model.myTurn)")
+                    .font(.caption.bold())
+                    .padding(.horizontal, 8).padding(.vertical, 2)
+                    .background(Color.orange, in: .capsule)
+                    .foregroundStyle(.white)
+            }
+        }
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .background(.bar)
+    }
+
+    /// The history entry a row stands for: itself, or the entry reading a live session's transcript.
+    private func historyEntry(_ id: RowID, _ model: SidebarModel) -> HistorySession? {
+        switch id {
+        case .history(let path): model.history.first { $0.transcriptPath == path } ?? tower.history.first { $0.transcriptPath == path }
+        case .live: model.liveRows.first { $0.id == id }?.matched
         }
     }
 }
 
-private struct SessionColumn: View {
+private struct GroupHeader: View {
     let title: String
-    let sessions: [Session]
-    let at: String
-    let tower: Tower
+    let detail: String
 
     var body: some View {
-        Column {
-            Text(title).font(.title3.bold())
-        } content: {
-            ForEach(sessions, id: \.rowID) { s in
-                CardButton(card: s, at: at, tower: tower) {
-                    if let sub = s.subtitle {
-                        Text(sub).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                    }
-                    if !s.lastUser.isEmpty {
-                        Text(s.lastUser).font(.caption).lineLimit(2)
-                    }
-                }
-            }
+        VStack(alignment: .leading, spacing: 1) {
+            Text(title).font(.subheadline.bold())
+            Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+        }
+        .textCase(nil)
+    }
+}
+
+private struct BadgeView: View {
+    let badge: RowBadge
+
+    var body: some View {
+        switch badge {
+        case .permission:
+            Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.orange).help(badgeLabel(badge))
+        case .waitingForUser:
+            Text(badgeLabel(badge)).font(.caption).foregroundStyle(.orange)
+        case .working:
+            Text(badgeLabel(badge)).font(.caption).foregroundStyle(.blue)
+        case .done:
+            Label(badgeLabel(badge), systemImage: "checkmark.circle.fill").font(.caption).foregroundStyle(.green)
+        case .idle:
+            Text(badgeLabel(badge)).font(.caption).foregroundStyle(.secondary)
         }
     }
 }
 
-/// A clickable card: name, status, then the caller's extra lines and the last reply.
-private struct CardButton<C: Card, Extra: View>: View {
-    let card: C
-    let at: String
-    let tower: Tower
-    @ViewBuilder let extra: Extra
+private struct LiveRowView: View {
+    let row: LiveRow
 
     var body: some View {
-        let session = card.session
-        let line = statusLine(card, at: at)
-        Button { tower.focus(session.handle) } label: {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack {
-                    Text(card.cardName).font(.headline).lineLimit(1)
-                    if session.agent == .codex {
-                        Text("codex").font(.caption2).foregroundStyle(.secondary)
-                    }
-                }
-                Label(line.label, systemImage: symbol(line.kind))
-                    .font(.subheadline)
-                    .foregroundStyle(color(line.kind))
-                extra
-                if !session.lastAssistant.isEmpty {
-                    Text(session.lastAssistant).font(.callout).foregroundStyle(.secondary).lineLimit(3)
+        HStack(alignment: .firstTextBaseline) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(row.title).font(.body).lineLimit(1)
+                if !row.line.isEmpty {
+                    Text(row.line).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
             }
+            Spacer(minLength: 8)
+            BadgeView(badge: row.badge)
+        }
+        .help(row.session.cwd)
+    }
+}
+
+private struct HistoryRowView: View {
+    let h: HistorySession
+    let now: Date
+    let home: String
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(historyTitle(h)).font(.body).lineLimit(1)
+                Text(historySubtitle(h)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
+            Spacer(minLength: 8)
+            Text(relativeTime(h.updatedAt, now: now)).font(.caption).foregroundStyle(.secondary)
+        }
+        .help(historyTooltip(h, home: home))
+    }
+}
+
+private struct DetailView: View {
+    let board: Board
+    let model: SidebarModel
+    let selection: RowID?
+    let home: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Group {
+                switch selection {
+                case .live:
+                    if let row = model.liveRows.first(where: { $0.id == selection }) { live(row) } else { empty }
+                case .history(let path):
+                    if let h = model.history.first(where: { $0.transcriptPath == path }) { past(h) } else { empty }
+                case nil:
+                    empty
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            Divider()
+            Text("더블 클릭: 실행 중이면 pane으로 이동 · 종료된 세션이면 Ghostty에서 resume · 우클릭: resume 명령 복사")
+                .font(.caption).foregroundStyle(.secondary)
+                .padding(10)
+        }
+    }
+
+    private var empty: some View {
+        Text("세션을 선택하세요").foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func live(_ row: LiveRow) -> some View {
+        let s = row.session
+        let team = row.teamName.flatMap { n in board.teams.first { $0.name == n } }
+        return detailBody(
+            title: row.title,
+            badges: {
+                if let team, let role = row.worker?.role { Pill(text: "\(team.name) · \(role)") }
+                else if let team { Pill(text: team.name) }
+                BadgeView(badge: row.badge)
+            },
+            facts: [
+                ("에이전트", agentName(s.agent)),
+                ("워크스페이스", abbreviate(s.cwd, home: home)),
+                ("branch", row.matched?.branch ?? ""),
+                ("tmux", s.tmux.map { t in
+                    "\(t.session) · pane \(t.pane)" + (team.map { $0.attached ? " · attached" : " · detached" } ?? "")
+                } ?? ""),
+                ("메일", row.worker.map { mailSummary([$0], at: board.at) } ?? ""),
+            ],
+            conversation: [("나", s.lastUser), ("에이전트", s.lastAssistant)])
+    }
+
+    private func past(_ h: HistorySession) -> some View {
+        detailBody(
+            title: historyTitle(h),
+            badges: { Text(h.live ? "실행 중" : "종료됨").font(.caption).foregroundStyle(.secondary) },
+            facts: [
+                ("에이전트", agentName(h.agent)),
+                ("워크스페이스", abbreviate(h.workspace, home: home)),
+                ("branch", h.branch ?? ""),
+                ("최근 활동", fullTime(h.updatedAt)),
+            ],
+            conversation: [("최근 프롬프트", h.lastPrompt ?? "")])
+    }
+
+    private func detailBody(title: String, @ViewBuilder badges: () -> some View,
+                            facts: [(String, String)], conversation: [(String, String)]) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 8) {
+                    Text(title).font(.title2.bold()).lineLimit(2)
+                    badges()
+                }
+                Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 12, verticalSpacing: 6) {
+                    ForEach(facts.filter { !$0.1.isEmpty }, id: \.0) { k, v in
+                        GridRow {
+                            Text(k).foregroundStyle(.secondary)
+                            Text(v).textSelection(.enabled)
+                        }
+                    }
+                }
+                let talk = conversation.filter { !$0.1.isEmpty }
+                if !talk.isEmpty {
+                    Divider()
+                    Text("최근 대화").font(.headline)
+                    ForEach(talk, id: \.0) { who, text in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(who).font(.caption).foregroundStyle(.secondary)
+                            Text(text).textSelection(.enabled)
+                        }
+                    }
+                }
+            }
+            .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(10)
-            .background(.background.secondary, in: .rect(cornerRadius: 8))
-            .overlay {
-                if session.myTurn {
-                    RoundedRectangle(cornerRadius: 8).strokeBorder(Color.accentColor, lineWidth: 2)
-                }
-            }
         }
-        .buttonStyle(.plain)
-        .help(session.cwd)
-        .accessibilityHint("Focus this session's terminal")
     }
 }
 
-func symbol(_ kind: StatusKind) -> String {
-    switch kind {
-    case .mine: "person.fill.questionmark"
-    case .perm: "exclamationmark.shield.fill"
-    case .busy: "gearshape.2.fill"
-    case .idle: "pause.circle"
-    case .dead: "xmark.octagon"
-    case .unknown: "questionmark.circle"
-    }
-}
+private struct Pill: View {
+    let text: String
 
-func color(_ kind: StatusKind) -> Color {
-    switch kind {
-    case .mine: .accentColor
-    case .perm: .orange
-    case .busy: .blue
-    case .idle, .unknown: .secondary
-    case .dead: .red
+    var body: some View {
+        Text(text).font(.caption)
+            .padding(.horizontal, 8).padding(.vertical, 2)
+            .background(.quaternary, in: .capsule)
     }
 }

@@ -74,7 +74,7 @@ public func cleanTitle(_ title: String) -> String {
     title.replacing(#/^[^\p{L}\p{N}]+/#, with: "").trimmed
 }
 
-func basename(_ path: String) -> String {
+public func basename(_ path: String) -> String {
     var p = path
     while p.hasSuffix("/") { p.removeLast() }
     return p.split(separator: "/", omittingEmptySubsequences: false).last.map(String.init).nonEmpty ?? path

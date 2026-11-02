@@ -14,7 +14,7 @@ func isoString(_ date: Date) -> String {
 }
 
 /// `Date.parse` for the ISO strings this tool reads and writes, in milliseconds; nil where JS gives NaN.
-func parseISO(_ s: String?) -> Double? {
+public func parseISO(_ s: String?) -> Double? {
     guard let s else { return nil }
     let date = (try? Date.ISO8601FormatStyle(includingFractionalSeconds: true).parse(s))
         ?? (try? Date.ISO8601FormatStyle().parse(s))
