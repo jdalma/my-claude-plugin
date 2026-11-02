@@ -220,6 +220,64 @@ private func baseRef(_ d: WorkspaceDiff) -> String? {
     #expect(files[2].binary && files[2].lines.isEmpty)
 }
 
-@Test func gitRunsOnlyTheSixReadOnlySubcommands() {
-    #expect(Set(GitRead.allCases.map(\.rawValue)) == ["diff", "ls-files", "merge-base", "rev-parse", "symbolic-ref", "for-each-ref"])
+@Test func gitRunsOnlyReadOnlySubcommands() {
+    #expect(Set(GitRead.allCases.map(\.rawValue)) == ["diff", "diff-index", "ls-files", "merge-base", "rev-parse", "symbolic-ref", "for-each-ref"])
+}
+
+// MARK: - T9a regressions
+
+private func mtime(_ path: String) throws -> Date {
+    try FileManager.default.attributesOfItem(atPath: path)[.modificationDate] as! Date
+}
+
+@Test func collectingNeverRewritesTheIndex() throws {
+    let dir = try fixture()
+    Thread.sleep(forTimeInterval: 1.1)
+    try FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: "\(dir)/a.txt")
+    let index = "\(dir)/.git/index"
+    let (before, bytes) = (try mtime(index), try Data(contentsOf: URL(fileURLWithPath: index)))
+    let d = try result(dir)
+    #expect(try mtime(index) == before)
+    #expect(try Data(contentsOf: URL(fileURLWithPath: index)) == bytes)
+    #expect(d.uncommitted.files.isEmpty)
+}
+
+@Test func quotedPathsAreFilesOfTheirOwn() throws {
+    let dir = try fixture()
+    try sh(dir, ["switch", "-q", "-c", "work"])
+    for f in ["q\"uote.txt", "back\\slash.txt", "한글.txt"] { try write(dir, f, "one\n") }
+    try sh(dir, ["add", "-A"])
+    try sh(dir, ["commit", "-q", "-m", "three"])
+    let numstat = try sh(dir, ["diff", "--numstat", "main...HEAD"]).split(separator: "\n")
+    let added = numstat.reduce(0) { $0 + (Int($1.split(separator: "\t")[0]) ?? 0) }
+    let removed = numstat.reduce(0) { $0 + (Int($1.split(separator: "\t")[1]) ?? 0) }
+    let c = try #require(try result(dir).committed)
+    #expect(c.files.count == numstat.count)
+    #expect(c.added == added)
+    #expect(c.removed == removed)
+    #expect(Set(c.files.map(\.path)) == ["q\"uote.txt", "back\\slash.txt", "한글.txt"])
+}
+
+@Test func aPinnedBaseIsTheRefThatWasPicked() throws {
+    let gone = try fixture()
+    try sh(gone, ["branch", "dev"])
+    try sh(gone, ["update-ref", "refs/remotes/origin/dev", "dev"])
+    try sh(gone, ["branch", "-D", "dev"])
+    #expect(try result(gone, pinned: "dev").base == .pinnedMissing("dev"))
+
+    let newer = try fixture()
+    try sh(newer, ["switch", "-q", "-c", "feature"])
+    try commit(newer, "a.txt", "changed\n")
+    try sh(newer, ["update-ref", "refs/remotes/origin/main", "HEAD"])
+    try sh(newer, ["switch", "-q", "-c", "work"])
+    try commit(newer, "w.txt", "w\n")
+    #expect(baseRef(try result(newer)) == "origin/main")
+    #expect(baseRef(try result(newer, pinned: "main")) == "main")
+}
+
+@Test func quotedPathsUnescapeCEscapesAndOctalBytes() {
+    #expect(unquotePath(#""b/q\"uote.txt""#) == "b/q\"uote.txt")
+    #expect(unquotePath(#""b/back\\slash\ttab""#) == "b/back\\slash\ttab")
+    #expect(unquotePath(#""b/\355\225\234.txt""#) == "b/한.txt")
+    #expect(unquotePath("b/plain.txt") == "b/plain.txt")
 }

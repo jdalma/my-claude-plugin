@@ -7,6 +7,9 @@ import Foundation
 enum GitRead: String, CaseIterable {
     case diff, lsFiles = "ls-files", mergeBase = "merge-base", revParse = "rev-parse"
     case symbolicRef = "symbolic-ref", forEachRef = "for-each-ref"
+    /// The uncommitted diff. Porcelain `git diff HEAD` refreshes and rewrites the index
+    /// even under `--no-optional-locks`; this plumbing command never does.
+    case diffIndex = "diff-index"
 }
 
 /// `-C dir` with the argument list as argv elements, never a shell. `--no-optional-locks` keeps
@@ -83,10 +86,10 @@ public func workspaceDiff(at path: String, pinnedBase: String?, lineLimit: Int =
 
     var committed: DiffSection?
     if case .resolved(let ref, _) = base {
-        let files = cap(parseUnifiedDiff(diffText(["\(ref)...HEAD"], top)), budget: &budget, hidden: &hidden)
+        let files = cap(parseUnifiedDiff(diffText(.diff, ["\(ref)...HEAD"], top)), budget: &budget, hidden: &hidden)
         committed = DiffSection(files: files, untracked: [])
     }
-    let files = cap(parseUnifiedDiff(diffText(["HEAD"], top)), budget: &budget, hidden: &hidden)
+    let files = cap(parseUnifiedDiff(diffText(.diffIndex, ["-p", "HEAD"], top)), budget: &budget, hidden: &hidden)
     let untracked = (out(.lsFiles, ["--others", "--exclude-standard", "-z"], in: top) ?? "")
         .split(separator: "\0").map(String.init)
     return .diff(WorkspaceDiff(toplevel: top, base: base, committed: committed,
@@ -110,8 +113,8 @@ private extension String {
 
 // MARK: - Base resolution
 
-private func diffText(_ revs: [String], _ top: String) -> String {
-    out(.diff, ["--no-color", "--no-ext-diff", "--no-textconv", "-M", "--src-prefix=a/", "--dst-prefix=b/"] + revs + ["--"], in: top) ?? ""
+private func diffText(_ cmd: GitRead, _ revs: [String], _ top: String) -> String {
+    out(cmd, ["--no-color", "--no-ext-diff", "--no-textconv", "-M", "--src-prefix=a/", "--dst-prefix=b/"] + revs + ["--"], in: top) ?? ""
 }
 
 private func hasRef(_ full: String, _ top: String) -> Bool {
@@ -122,12 +125,11 @@ private func mergeBase(_ ref: String, _ top: String) -> String? {
     out(.mergeBase, ["HEAD", ref], in: top)?.trimmed.nonEmpty
 }
 
-/// Pinned base first and final; else origin/HEAD's branch, `main`, `master`.
+/// Pinned base first and final, exactly the ref that was picked; else origin/HEAD's branch, `main`, `master`.
 func resolveBase(top: String, pinned: String?) -> BaseChoice {
     if let pinned {
-        if let b = pickNamed(pinned, top) { return b }
-        if hasRef("refs/remotes/\(pinned)", top), let mb = mergeBase(pinned, top) { return .resolved(ref: pinned, mergeBase: mb) }
-        return .pinnedMissing(pinned)
+        guard hasRef("refs/heads/\(pinned)", top) || hasRef("refs/remotes/\(pinned)", top) else { return .pinnedMissing(pinned) }
+        return mergeBase(pinned, top).map { .resolved(ref: pinned, mergeBase: $0) } ?? .none
     }
     let head = out(.symbolicRef, ["--quiet", "refs/remotes/origin/HEAD"], in: top)?.trimmed.stripPrefix("refs/remotes/origin/")
     for name in [head, "main", "master"].compactMap({ $0 }) {
@@ -177,7 +179,7 @@ func parseUnifiedDiff(_ text: String) -> [FileDiff] {
     var old = 0, new = 0
 
     for line in text.components(separatedBy: "\n") {
-        if let rest = line.stripPrefix("diff --git a/") {
+        if let rest = line.stripPrefix("diff --git ") {
             if let f = cur { files.append(f) }
             cur = FileDiff(path: headerPath(rest), added: 0, removed: 0, binary: false, lines: [])
             inHunk = false
@@ -205,9 +207,10 @@ func parseUnifiedDiff(_ text: String) -> [FileDiff] {
             default: break  // "\ No newline at end of file"
             }
         } else if let p = line.stripPrefix("rename to ") {
-            cur?.path = p
-        } else if let p = line.stripPrefix("+++ b/") {
-            cur?.path = p.hasSuffix("\t") ? String(p.dropLast()) : p
+            cur?.path = unquotePath(p)
+        } else if let p = line.stripPrefix("+++ "), p != "/dev/null" {
+            let path = unquotePath(p.hasSuffix("\t") ? String(p.dropLast()) : p)
+            cur?.path = path.stripPrefix("b/") ?? path
         } else if line.hasPrefix("Binary files ") {
             cur?.binary = true
         }
@@ -216,8 +219,14 @@ func parseUnifiedDiff(_ text: String) -> [FileDiff] {
     return files
 }
 
-/// `P b/P` (same path both sides) or `old b/new`; renames and text files are corrected by later headers.
-private func headerPath(_ rest: String) -> String {
+/// The part after `diff --git `: `a/P b/P`, `a/old b/new`, or C-quoted `"a/…" "b/…"`.
+/// Renames and text files are corrected by later headers.
+private func headerPath(_ header: String) -> String {
+    if header.hasPrefix("\""), let second = header.dropFirst().firstRange(of: "\" ")?.upperBound {
+        let b = unquotePath(String(header[second...]))
+        return b.stripPrefix("b/") ?? b
+    }
+    let rest = header.stripPrefix("a/") ?? header
     let n = rest.count
     if (n - 3) % 2 == 0, n >= 3 {
         let p = rest.prefix((n - 3) / 2)
@@ -231,4 +240,29 @@ private func hunkStarts(_ header: String) -> (Int, Int) {
     let parts = header.split(separator: " ")
     func start(_ s: Substring) -> Int { Int(s.dropFirst().split(separator: ",").first ?? "") ?? 0 }
     return parts.count >= 3 ? (start(parts[1]), start(parts[2])) : (0, 0)
+}
+
+/// git C-quotes a path holding `"`, `\\` or a control character: `"a/q\\"uote"`, octal bytes like `\\355`.
+/// Anything not wrapped in quotes is returned unchanged.
+func unquotePath(_ s: String) -> String {
+    guard s.count >= 2, s.hasPrefix("\""), s.hasSuffix("\"") else { return s }
+    let escapes: [UInt8: UInt8] = [UInt8(ascii: "a"): 7, UInt8(ascii: "b"): 8, UInt8(ascii: "t"): 9, UInt8(ascii: "n"): 10,
+                                   UInt8(ascii: "v"): 11, UInt8(ascii: "f"): 12, UInt8(ascii: "r"): 13]
+    let body = Array(s.utf8.dropFirst().dropLast())
+    var bytes: [UInt8] = []
+    var i = 0
+    while i < body.count {
+        let c = body[i]
+        i += 1
+        guard c == UInt8(ascii: "\\"), i < body.count else { bytes.append(c); continue }
+        let e = body[i]
+        if (UInt8(ascii: "0")...UInt8(ascii: "3")).contains(e), i + 3 <= body.count {
+            bytes.append(body[i..<i + 3].reduce(0) { $0 &* 8 &+ ($1 &- UInt8(ascii: "0")) })
+            i += 3
+        } else {
+            bytes.append(escapes[e] ?? e)
+            i += 1
+        }
+    }
+    return String(decoding: bytes, as: UTF8.self)
 }
