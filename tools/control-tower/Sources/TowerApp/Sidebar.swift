@@ -48,7 +48,10 @@ struct SidebarModel: Equatable {
     var myTurn: Int
     var teams: [TeamGroup]
     var workspaces: [WorkspaceGroup]
+    /// One page or more of the filtered history, running sessions listed above left out.
     var history: [HistorySession]
+    /// Filtered history entries past `history`.
+    var historyRemaining: Int
 
     var liveRows: [LiveRow] { teams.flatMap(\.rows) + workspaces.flatMap(\.rows) }
 }
@@ -57,7 +60,10 @@ enum AgentFilter: Hashable {
     case all, claude, codex
 }
 
-func sidebarModel(board: Board, history: [HistorySession], query: String, filter: AgentFilter, home: String) -> SidebarModel {
+let historyPageSize = 30
+
+func sidebarModel(board: Board, history: [HistorySession], query: String, filter: AgentFilter, historyLimit: Int,
+                  home: String) -> SidebarModel {
     let byTranscript = Dictionary(history.map { ($0.transcriptPath, $0) }, uniquingKeysWith: { a, _ in a })
     let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     func hit(_ fields: [String?]) -> Bool {
@@ -67,6 +73,8 @@ func sidebarModel(board: Board, history: [HistorySession], query: String, filter
         hit([r.teamName, r.worker?.workerName, r.session.cwd, r.title, r.matched?.branch, r.matched?.title])
     }
 
+    // Before search: a row hidden by the query is still listed above, so its session stays out of history.
+    var listed = Set(board.loose.compactMap(\.transcript))
     var teams: [TeamGroup] = []
     for team in sortTeams(board.teams) {
         let rows = sortCards(team.workers).compactMap { w -> LiveRow? in
@@ -76,6 +84,7 @@ func sidebarModel(board: Board, history: [HistorySession], query: String, filter
                            title: w.cardName, line: oneLine(reason.isEmpty ? w.lastAssistant : reason),
                            badge: badge, matched: w.transcript.flatMap { byTranscript[$0] })
         }
+        listed.formUnion(rows.compactMap(\.session.transcript))
         let teamHit = hit([team.name])
         let shown = rows.filter { teamHit || matches($0) }
         if q.isEmpty || !shown.isEmpty {
@@ -99,10 +108,12 @@ func sidebarModel(board: Board, history: [HistorySession], query: String, filter
     }
 
     let past = history.filter { h in
-        (filter == .all || (filter == .claude) == (h.agent == .claude))
+        !listed.contains(h.transcriptPath)
+            && (filter == .all || (filter == .claude) == (h.agent == .claude))
             && hit([h.title, h.workspace, h.branch])
     }
-    return SidebarModel(myTurn: myTurnCount(board), teams: teams, workspaces: workspaces, history: past)
+    return SidebarModel(myTurn: myTurnCount(board), teams: teams, workspaces: workspaces,
+                        history: Array(past.prefix(historyLimit)), historyRemaining: max(0, past.count - historyLimit))
 }
 
 /// Maps Core's display state to a row badge; nil for a stopped worker (counted in the team summary, not listed).

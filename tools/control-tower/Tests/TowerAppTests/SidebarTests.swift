@@ -30,8 +30,9 @@ private func history(_ title: String, agent: AgentKind = .claude, workspace: Str
                    updatedAt: ago10, lastPrompt: nil, transcriptPath: path, live: live, resumeCommand: ["claude", "--resume", "id"])
 }
 
-private func model(_ board: Board, history: [HistorySession] = [], query: String = "", filter: AgentFilter = .all) -> SidebarModel {
-    sidebarModel(board: board, history: history, query: query, filter: filter, home: "/Users/me")
+private func model(_ board: Board, history: [HistorySession] = [], query: String = "", filter: AgentFilter = .all,
+                   historyLimit: Int = historyPageSize) -> SidebarModel {
+    sidebarModel(board: board, history: history, query: query, filter: filter, historyLimit: historyLimit, home: "/Users/me")
 }
 
 @Test func teamSummaryCountsStoppedAndOmitsZeroSegments() {
@@ -117,6 +118,46 @@ private func model(_ board: Board, history: [HistorySession] = [], query: String
     let m = model(board, history: [history("x", branch: "feat/live", path: "/t/1", live: true)], query: "feat/live")
     #expect(m.workspaces.count == 1)
     #expect(m.workspaces[0].rows[0].matched?.branch == "feat/live")
+}
+
+@Test func historyLeavesOutSessionsListedAbove() {
+    let board = Board(at: at, teams: [team("t", [
+        worker("a", session: session("pane:t:%1", transcript: "/t/1")),
+        worker("b", session: session("pane:t:%2", transcript: "/t/2"), alive: false),
+    ])], loose: [session("pid:3", transcript: "/t/3")])
+    let hist = [history("a", path: "/t/1", live: true), history("b", path: "/t/2", live: true),
+                history("c", workspace: "/Users/me/zebra", path: "/t/3", live: true), history("d", path: "/t/4")]
+    #expect(model(board, history: hist).history.map(\.transcriptPath) == ["/t/2", "/t/4"])
+    // a search that hides a running row still keeps its session out of history
+    let searched = model(board, history: hist, query: "zebra")
+    #expect(searched.workspaces.isEmpty)
+    #expect(searched.history.isEmpty)
+}
+
+@Test func historyShowsAPageAndCountsTheRest() {
+    let board = Board(at: at, teams: [], loose: [])
+    let many = (0..<75).map { history("h\($0)", path: "/t/\($0)") }
+
+    let first = model(board, history: many)
+    #expect(first.history.map(\.transcriptPath) == (0..<30).map { "/t/\($0)" })
+    #expect(first.historyRemaining == 45)
+
+    let more = model(board, history: many, historyLimit: historyPageSize * 2)
+    #expect(more.history.count == 60)
+    #expect(more.historyRemaining == 15)
+
+    let exact = model(board, history: Array(many.prefix(30)))
+    #expect(exact.history.count == 30)
+    #expect(exact.historyRemaining == 0)
+}
+
+@Test func historyPagesAfterFilterAndSearch() {
+    let board = Board(at: at, teams: [], loose: [])
+    let mixed = (0..<40).map { history("h\($0)", agent: $0 % 2 == 0 ? .claude : .codex, path: "/t/\($0)") }
+    let claude = model(board, history: mixed, filter: .claude)
+    #expect(claude.history.count == 20)
+    #expect(claude.historyRemaining == 0)
+    #expect(model(board, history: mixed, query: "h3").historyRemaining == 0)
 }
 
 @Test func agentFilterAndEmptyTitleFallback() {

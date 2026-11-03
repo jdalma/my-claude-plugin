@@ -7,6 +7,7 @@ struct BoardView: View {
     let tower: Tower
     @State private var query = ""
     @State private var filter = AgentFilter.all
+    @State private var historyLimit = historyPageSize
     @State private var selection: RowID?
     @FocusState private var searchFocused: Bool
     @AppStorage(FontScale.storageKey) private var storedScale = FontScale.standard.value
@@ -19,13 +20,16 @@ struct BoardView: View {
                 MyTeamErrorLine(error: error).scaledFont(.callout).padding([.horizontal, .top])
             }
             if let board = tower.board {
-                content(board, sidebarModel(board: board, history: tower.history, query: query, filter: filter, home: home))
+                content(board, sidebarModel(board: board, history: tower.history, query: query, filter: filter,
+                                             historyLimit: historyLimit, home: home))
             } else {
                 ProgressView("수집 중…").frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .scaledFont(.body)
         .frame(minWidth: 760, minHeight: 440)
+        .onChange(of: query) { historyLimit = historyPageSize }
+        .onChange(of: filter) { historyLimit = historyPageSize }
         .toolbar {
             ToolbarItem {
                 TextField("검색", text: $query, prompt: Text("세션, 팀, 워크스페이스, 제목 (⌘K)"))
@@ -81,6 +85,10 @@ struct BoardView: View {
                 Section {
                     ForEach(model.history, id: \.transcriptPath) { h in
                         HistoryRowView(h: h, now: Date(), home: home).tag(RowID.history(h.transcriptPath))
+                    }
+                    if model.historyRemaining > 0 {
+                        Button("더 보기 (남은 \(model.historyRemaining)개)") { historyLimit += historyPageSize }
+                            .buttonStyle(.link)
                     }
                 } header: {
                     HStack {
