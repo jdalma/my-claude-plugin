@@ -137,10 +137,21 @@ struct MenuModel: Equatable {
         var select: RowID?
     }
 
+    /// A session outside teams, its workspace group folded into the line.
+    struct IndividualLine: Equatable {
+        /// `claude` or `codex`.
+        var tag: String
+        /// The sidebar group's name: the workspace folder.
+        var title: String
+        /// `~`-abbreviated workspace.
+        var path: String
+        var row: LiveRow
+    }
+
     var myTurn: Int
     var teams: [TeamLine]
-    /// The sidebar's individual groups: one per workspace, in its order.
-    var individual: [WorkspaceGroup]
+    /// The sidebar's individual rows, flattened in its order.
+    var individual: [IndividualLine]
 
     var isEmpty: Bool { teams.isEmpty && individual.isEmpty }
 }
@@ -152,7 +163,9 @@ func menuModel(_ board: Board, home: String) -> MenuModel {
         teams: side.teams.map { t in
             MenuModel.TeamLine(name: t.name, summary: t.summary, select: (t.rows.first { $0.session.myTurn } ?? t.rows.first)?.id)
         },
-        individual: side.workspaces)
+        individual: side.workspaces.flatMap { ws in
+            ws.rows.map { MenuModel.IndividualLine(tag: agentName($0.session.agent).lowercased(), title: ws.name, path: ws.path, row: $0) }
+        })
 }
 
 func teamSummaryLine(_ team: Team) -> String {

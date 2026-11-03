@@ -52,23 +52,17 @@ struct MenuContent: View {
                 if menu.isEmpty {
                     Text("실행 중 세션 없음").foregroundStyle(.secondary).padding(.vertical, 4)
                 }
-                if !menu.teams.isEmpty {
-                    GroupLabel(text: "my-team")
-                    ForEach(menu.teams, id: \.name) { t in
-                        MenuTeamLine(team: t) {
-                            tower.boardSelectRequest = t.select
-                            openBoard()
-                        }
+                ForEach(menu.teams, id: \.name) { t in
+                    MenuTeamLine(team: t) {
+                        tower.boardSelectRequest = t.select
+                        openBoard()
                     }
                 }
-                if !menu.individual.isEmpty {
-                    GroupLabel(text: "individual")
-                    ForEach(menu.individual, id: \.path) { ws in
-                        Text(ws.name).font(.subheadline.bold()).help(ws.path).padding(.top, 2)
-                        ForEach(ws.rows, id: \.id) { row in
-                            MenuCard(title: row.title, status: badgeLabel(row.badge), message: row.line) { tower.focus(row.session.handle) }
-                        }
+                ForEach(menu.individual, id: \.row.id) { line in
+                    MenuCard(tag: line.tag, title: line.title, status: badgeLabel(line.row.badge), message: line.row.line) {
+                        tower.focus(line.row.session.handle)
                     }
+                    .help(line.path)
                 }
                 Divider().padding(.vertical, 4)
             }
@@ -91,11 +85,16 @@ struct MenuContent: View {
     }
 }
 
-private struct GroupLabel: View {
+/// The small kind label at the front of a dropdown line: `my-team`, `claude` or `codex`.
+private struct KindTag: View {
     let text: String
 
     var body: some View {
-        Text(text).font(.caption).foregroundStyle(.secondary).padding(.top, 4)
+        Text(text)
+            .font(.caption2.monospaced())
+            .padding(.horizontal, 5).padding(.vertical, 1)
+            .background(.quaternary, in: .capsule)
+            .foregroundStyle(.secondary)
     }
 }
 
@@ -107,7 +106,10 @@ private struct MenuTeamLine: View {
     var body: some View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(team.name).font(.headline).lineLimit(1)
+                HStack(spacing: 6) {
+                    KindTag(text: "my-team")
+                    Text(team.name).font(.headline).lineLimit(1)
+                }
                 Text(team.summary).font(.callout).foregroundStyle(.secondary).lineLimit(1)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -120,6 +122,7 @@ private struct MenuTeamLine: View {
 
 /// One individual session in the dropdown. Clicking it focuses that session.
 private struct MenuCard: View {
+    let tag: String
     let title: String
     let status: String
     let message: String
@@ -128,7 +131,8 @@ private struct MenuCard: View {
     var body: some View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: 2) {
-                HStack {
+                HStack(spacing: 6) {
+                    KindTag(text: tag)
                     Text(title).font(.headline).lineLimit(1)
                     Spacer()
                     Text(status).font(.caption).foregroundStyle(.secondary)

@@ -226,16 +226,20 @@ private func isoOf(_ d: Date) -> String { d.formatted(.iso8601) }
                    worker("c", session: session("pane:t:%3"), alive: false)]),
         team("u", [worker("d", session: session("pane:u:%1", status: .busy))]),
     ], loose: [session("pid:8", cwd: "/Users/me/a"), session("pid:9", cwd: "/Users/me/b", myTurn: true),
-               session("pid:7", cwd: "/Users/me/a", status: .busy)])
+               session("pid:7", agent: .codex, cwd: "/Users/me/a", status: .busy)])
     let side = model(board)
     let menu = menuModel(board, home: "/Users/me")
 
     #expect(menu.myTurn == side.myTurn)
     #expect(menu.teams.map(\.name) == side.teams.map(\.name))
     #expect(menu.teams.map(\.summary) == side.teams.map(\.summary))
-    #expect(menu.individual == side.workspaces)
-    #expect(menu.individual.map(\.name) == ["b", "a"])  // the group with a waiting session first, as in the sidebar
-    #expect(menu.individual[1].rows.count == 2)
+    // teams first, then the sidebar's individual rows in its order (the group with a waiting session first)
+    #expect(menu.individual.map(\.row) == side.workspaces.flatMap(\.rows))
+    #expect(menu.individual.map(\.title) == ["b", "a", "a"])
+    #expect(menu.individual.map(\.path) == ["~/b", "~/a", "~/a"])
+    #expect(menu.individual.map(\.tag) == ["claude", "claude", "codex"])
+    #expect(menu.individual.map(\.row.id) == [.live("pid:9#1"), .live("pid:8#1"), .live("pid:7#1")])
+    #expect(menu.individual.map(\.row.badge) == side.workspaces.flatMap(\.rows).map(\.badge))
 }
 
 @Test func aTeamLineSelectsItsWaitingWorkerElseItsFirst() {
