@@ -76,16 +76,14 @@ struct BoardView: View {
                     Section {
                         ForEach(team.rows, id: \.id) { LiveRowView(row: $0).tag($0.id) }
                     } header: {
-                        GroupHeader(group: team.name == model.teams.first?.name ? "my-team" : nil,
-                                    title: team.name, detail: team.summary)
+                        GroupHeader(tag: .team, title: team.name, detail: team.summary)
                     }
                 }
                 ForEach(model.workspaces, id: \.path) { ws in
                     Section {
                         ForEach(ws.rows, id: \.id) { LiveRowView(row: $0).tag($0.id) }
                     } header: {
-                        GroupHeader(group: ws.path == model.workspaces.first?.path ? "individual" : nil,
-                                    title: ws.name, detail: ws.path)
+                        GroupHeader(tag: nil, title: ws.name, detail: ws.path)
                     }
                 }
                 Section {
@@ -140,13 +138,6 @@ struct BoardView: View {
         HStack {
             Text("실행 중").scaledFont(.headline, weight: .semibold)
             Spacer()
-            if model.myTurn > 0 {
-                Text("내 차례 \(model.myTurn)")
-                    .scaledFont(.caption1, weight: .bold)
-                    .padding(.horizontal, 8).padding(.vertical, 2)
-                    .background(Color.orange, in: .capsule)
-                    .foregroundStyle(.white)
-            }
         }
         .padding(.horizontal, 12).padding(.vertical, 8)
         .background(.bar)
@@ -161,18 +152,20 @@ struct BoardView: View {
     }
 }
 
+/// Sizes, largest first (user's order): kind label ≥ team or folder name > path.
+/// A team header's label and name share `.subheadline`; paths and summaries are `.caption1`.
 private struct GroupHeader: View {
-    /// `my-team` or `individual` above the first group of its kind.
-    let group: String?
+    /// `my-team` in front of a team's name; nil for a workspace group.
+    let tag: LineKind?
     let title: String
     let detail: String
 
     var body: some View {
         VStack(alignment: .leading, spacing: 1) {
-            if let group {
-                Text(group).scaledFont(.caption1).foregroundStyle(.secondary).padding(.bottom, 2)
+            HStack(spacing: 6) {
+                if let tag { KindTag(kind: tag, style: .subheadline) }
+                Text(title).scaledFont(.subheadline, weight: .bold)
             }
-            Text(title).scaledFont(.subheadline, weight: .bold)
             Text(detail).scaledFont(.caption1).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
         }
         .textCase(nil)
@@ -204,7 +197,14 @@ private struct LiveRowView: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(row.title).scaledFont(.body).lineLimit(1)
+                HStack(spacing: 6) {
+                    if let label = row.label {
+                        KindTag(kind: label, style: .body)
+                    } else {
+                        Text(row.title).scaledFont(.body).lineLimit(1)
+                        Text(row.folder).scaledFont(.body).foregroundStyle(.secondary).lineLimit(1)
+                    }
+                }
                 if !row.line.isEmpty {
                     Text(row.line).scaledFont(.caption1).foregroundStyle(.secondary).lineLimit(1)
                 }
@@ -212,7 +212,7 @@ private struct LiveRowView: View {
             Spacer(minLength: 8)
             BadgeView(badge: row.badge)
         }
-        .help(row.session.cwd)
+        .help(row.path)
     }
 }
 

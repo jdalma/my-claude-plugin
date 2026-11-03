@@ -25,6 +25,11 @@ struct LiveRow: Equatable {
     var worker: Worker?
     var teamName: String?
     var title: String
+    /// The session's working folder name and its `~` path.
+    var folder: String
+    var path: String
+    /// The kind label shown in place of a title; nil for a worker row, which shows its name.
+    var label: LineKind?
     var line: String
     var badge: RowBadge
     /// The history entry that reads this session's transcript: source of its branch and resume command.
@@ -45,7 +50,6 @@ struct WorkspaceGroup: Equatable {
 }
 
 struct SidebarModel: Equatable {
-    var myTurn: Int
     var teams: [TeamGroup]
     var workspaces: [WorkspaceGroup]
     /// One page or more of the filtered history, running sessions listed above left out.
@@ -81,7 +85,8 @@ func sidebarModel(board: Board, history: [HistorySession], query: String, filter
             guard let badge = badge(displayState(w), at: board.at) else { return nil }
             let reason = w.stateFile?.reason ?? ""
             return LiveRow(id: .live(w.session.rowID), session: w.session, worker: w, teamName: team.name,
-                           title: w.cardName, line: oneLine(reason.isEmpty ? w.lastAssistant : reason),
+                           title: w.cardName, folder: basename(w.session.cwd), path: abbreviate(w.session.cwd, home: home),
+                           label: nil, line: oneLine(reason.isEmpty ? w.lastAssistant : reason),
                            badge: badge, matched: w.transcript.flatMap { byTranscript[$0] })
         }
         listed.formUnion(rows.compactMap(\.session.transcript))
@@ -95,7 +100,8 @@ func sidebarModel(board: Board, history: [HistorySession], query: String, filter
     var workspaces: [WorkspaceGroup] = []
     for s in sortCards(board.loose) {
         let row = LiveRow(id: .live(s.rowID), session: s, worker: nil, teamName: nil,
-                          title: agentName(s.agent),
+                          title: agentName(s.agent), folder: basename(s.cwd), path: abbreviate(s.cwd, home: home),
+                          label: .agent(s.agent),
                           line: oneLine(s.lastAssistant.isEmpty ? s.lastUser : s.lastAssistant),
                           badge: badge(displayState(s), at: board.at) ?? .idle(minutes: nil), matched: s.transcript.flatMap { byTranscript[$0] })
         guard matches(row) else { continue }
@@ -112,7 +118,7 @@ func sidebarModel(board: Board, history: [HistorySession], query: String, filter
             && (filter == .all || (filter == .claude) == (h.agent == .claude))
             && hit([h.title, h.workspace, h.branch])
     }
-    return SidebarModel(myTurn: myTurnCount(board), teams: teams, workspaces: workspaces,
+    return SidebarModel(teams: teams, workspaces: workspaces,
                         history: Array(past.prefix(historyLimit)), historyRemaining: max(0, past.count - historyLimit))
 }
 

@@ -282,3 +282,15 @@ private func isoOf(_ d: Date) -> String { d.formatted(.iso8601) }
     #expect(badgeLabel(.done(minutesAgo: 61)) == "1시간 1분 전 완료")
     #expect(badgeLabel(.idle(minutes: 60)) == "대기 1시간")
 }
+
+@Test func aWorkerRowShowsItsFolderAndALooseRowItsAgentLabel() {
+    let board = Board(at: at, teams: [team("t", [worker("a", session: session("pane:t:%1", cwd: "/Users/me/src/api"))])],
+                      loose: [session("pid:1", agent: .codex, cwd: "/Users/me/proj"), session("pid:2", cwd: "/Users/me/proj")])
+    let m = model(board)
+    let w = m.teams[0].rows[0]
+    #expect(w.title == "a")
+    #expect(w.folder == "api")
+    #expect(w.path == "~/src/api")
+    #expect(w.label == nil)
+    #expect(m.workspaces[0].rows.map(\.label) == [.agent(.codex), .agent(.claude)])
+}

@@ -73,39 +73,6 @@ struct MenuContent: View {
     }
 }
 
-/// The small kind label at the front of a dropdown line: `my-team`, `claude` or `codex`.
-private enum LineKind {
-    case team
-    case agent(AgentKind)
-
-    var text: String {
-        switch self {
-        case .team: "my-team"
-        case .agent(let a): agentName(a).lowercased()
-        }
-    }
-
-    var color: Color {
-        switch self {
-        case .team: .purple
-        case .agent(.claude): .orange
-        case .agent(.codex): .teal
-        }
-    }
-}
-
-private struct KindTag: View {
-    let kind: LineKind
-
-    var body: some View {
-        Text(kind.text)
-            .font(.caption2.monospaced().bold())
-            .padding(.horizontal, 5).padding(.vertical, 1)
-            .background(kind.color.opacity(0.2), in: .capsule)
-            .foregroundStyle(kind.color)
-    }
-}
-
 /// One dropdown line: kind label and name. A team opens the board on it; a session focuses its terminal.
 private struct MenuLine: View {
     let kind: LineKind
