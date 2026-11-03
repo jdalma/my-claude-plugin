@@ -27,8 +27,10 @@ final class ChangesState {
     var loaded: Loaded?
     var showCommitted = true
     var showUncommitted = true
-    /// Folded files. Kept by section and path, so a refresh or a base change leaves them folded.
-    var collapsed: Set<DiffFileKey> = []
+    /// Unfolded files; every other file shows its header only, a file new on a refresh included.
+    /// Kept by section and path across refreshes and base changes, emptied when the workspace changes.
+    private var expanded: Set<DiffFileKey> = []
+    private var workspace: String?
     /// The file a tree click asked to scroll to; the detail's scroll view consumes it.
     var scrollTarget: DiffFileKey?
 
@@ -43,13 +45,36 @@ final class ChangesState {
         case .committed: showCommitted = true
         case .uncommitted: showUncommitted = true
         }
-        collapsed.remove(key)
+        expanded.insert(key)
         scrollTarget = key
+    }
+
+    func isExpanded(_ key: DiffFileKey) -> Bool { expanded.contains(key) }
+
+    func toggle(_ key: DiffFileKey) {
+        if expanded.remove(key) == nil { expanded.insert(key) }
+    }
+
+    func setExpanded(_ keys: Set<DiffFileKey>, _ on: Bool) {
+        if on { expanded.formUnion(keys) } else { expanded.subtract(keys) }
+    }
+
+    /// Another workspace is another repo: its files start folded.
+    func select(workspace: String) {
+        if workspace != self.workspace { expanded = [] }
+        self.workspace = workspace
     }
 }
 
 /// `UserDefaults` key of the tree column's visibility.
 let diffTreeVisibleKey = "diffTreeVisible"
+/// `UserDefaults` key of the tree column's width.
+let diffTreeWidthKey = "diffTreeWidth"
+let treeWidthBounds: ClosedRange<Double> = 160...480
+
+func clampTreeWidth(_ w: Double) -> Double {
+    min(max(w, treeWidthBounds.lowerBound), treeWidthBounds.upperBound)
+}
 
 /// The detail pane's "변경" area: committed and uncommitted changes of the workspace's git repo.
 struct ChangesView: View {
@@ -73,6 +98,7 @@ struct ChangesView: View {
                 ProgressView().controlSize(.small)
             }
         }
+        .onChange(of: workspace, initial: true) { state.select(workspace: workspace) }
         .task(id: LoadKey(workspace: workspace, at: at, pins: state.pins)) {
             let (workspace, pins) = (workspace, state.pins)
             let next = await Task.detached { () -> Loaded in
@@ -155,7 +181,7 @@ struct ChangesView: View {
                          note: String?) -> some View {
         DisclosureGroup(isExpanded: expanded) {
             if let section {
-                SectionBody(section: section, part: part, collapsed: $state.collapsed)
+                SectionBody(section: section, part: part, state: state)
             } else if let note {
                 Text(note).foregroundStyle(.secondary)
             }
@@ -167,8 +193,8 @@ struct ChangesView: View {
                 if let section {
                     if !section.files.isEmpty {
                         let keys = Set(section.files.map { DiffFileKey(part: part, path: $0.path) })
-                        Button("모두 접기") { state.collapsed.formUnion(keys) }.buttonStyle(.link)
-                        Button("모두 펼치기") { state.collapsed.subtract(keys) }.buttonStyle(.link)
+                        Button("모두 접기") { state.setExpanded(keys, false) }.buttonStyle(.link)
+                        Button("모두 펼치기") { state.setExpanded(keys, true) }.buttonStyle(.link)
                     }
                     Text("파일 \(section.files.count)").foregroundStyle(.secondary)
                     Counts(added: section.added, removed: section.removed)
@@ -194,7 +220,7 @@ private struct Counts: View {
 private struct SectionBody: View {
     let section: DiffSection
     let part: DiffPart
-    @Binding var collapsed: Set<DiffFileKey>
+    let state: ChangesState
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -203,9 +229,7 @@ private struct SectionBody: View {
             }
             ForEach(section.files, id: \.path) { file in
                 let key = DiffFileKey(part: part, path: file.path)
-                FileView(file: file, folded: collapsed.contains(key)) {
-                    if collapsed.contains(key) { collapsed.remove(key) } else { collapsed.insert(key) }
-                }
+                FileView(file: file, folded: !state.isExpanded(key)) { state.toggle(key) }
                 .id(key)
             }
             ForEach(section.untracked, id: \.self) { path in
@@ -311,7 +335,6 @@ struct ChangeTreeColumn: View {
             .padding(10)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(width: 240)
         .background(.background.secondary)
     }
 

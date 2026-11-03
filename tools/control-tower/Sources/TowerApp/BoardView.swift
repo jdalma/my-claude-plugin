@@ -126,7 +126,7 @@ struct BoardView: View {
             .safeAreaInset(edge: .top, spacing: 0) { sidebarHeader(model) }
             .navigationSplitViewColumnWidth(min: 300, ideal: 360, max: 520)
         } detail: {
-            DetailView(board: board, model: model, selection: selection, home: home)
+            DetailView(board: board, model: model, history: tower.history, selection: selection, home: home)
         }
     }
 
@@ -231,10 +231,15 @@ private struct HistoryRowView: View {
 private struct DetailView: View {
     let board: Board
     let model: SidebarModel
+    /// Every history entry: a selected row paged out of `model.history` keeps its detail.
+    let history: [HistorySession]
     let selection: RowID?
     let home: String
     @State private var changes = ChangesState()
     @AppStorage(diffTreeVisibleKey) private var treeVisible = true
+    @AppStorage(diffTreeWidthKey) private var treeWidth = 240.0
+    /// The width while the divider is dragged; stored once the drag ends.
+    @State private var draggedWidth: Double?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -243,7 +248,7 @@ private struct DetailView: View {
                 case .live:
                     if let row = model.liveRows.first(where: { $0.id == selection }) { live(row) } else { empty }
                 case .history(let path):
-                    if let h = model.history.first(where: { $0.transcriptPath == path }) { past(h) } else { empty }
+                    if let h = (model.history + history).first(where: { $0.transcriptPath == path }) { past(h) } else { empty }
                 case nil:
                     empty
                 }
@@ -305,15 +310,38 @@ private struct DetailView: View {
                 scrollingBody(title: title, badges: badges, facts: facts, workspace: workspace, conversation: conversation)
                     .onChange(of: changes.scrollTarget) { _, target in
                         guard let target else { return }
-                        withAnimation { proxy.scrollTo(target, anchor: .top) }
                         changes.scrollTarget = nil
+                        // reveal may have just inserted the header (a folded section); scroll once it is laid out
+                        Task { @MainActor in
+                            await Task.yield()
+                            withAnimation { proxy.scrollTo(target, anchor: .top) }
+                        }
                     }
             }
             if treeVisible, let diff = changes.diff(for: workspace) {
-                Divider()
-                ChangeTreeColumn(diff: diff, state: changes)
+                treeDivider
+                ChangeTreeColumn(diff: diff, state: changes).frame(width: draggedWidth ?? clampTreeWidth(treeWidth))
             }
         }
+    }
+
+    /// The line left of the tree; dragging it resizes the tree within `treeWidthBounds`.
+    private var treeDivider: some View {
+        Divider()
+            .overlay {
+                Color.clear
+                    .frame(width: 8)
+                    .contentShape(Rectangle())
+                    .onHover { inside in if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() } }
+                    .gesture(
+                        DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                            .onChanged { v in draggedWidth = clampTreeWidth(clampTreeWidth(treeWidth) - v.translation.width) }
+                            .onEnded { _ in
+                                if let draggedWidth { treeWidth = draggedWidth }
+                                draggedWidth = nil
+                            }
+                    )
+            }
     }
 
     private func scrollingBody(title: String, badges: some View,
