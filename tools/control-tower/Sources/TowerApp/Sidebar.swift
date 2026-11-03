@@ -139,8 +139,6 @@ struct MenuModel: Equatable {
 
     /// A session outside teams, its workspace group folded into the line.
     struct IndividualLine: Equatable {
-        /// `claude` or `codex`.
-        var tag: String
         /// The sidebar group's name: the workspace folder.
         var title: String
         /// `~`-abbreviated workspace.
@@ -164,7 +162,7 @@ func menuModel(_ board: Board, home: String) -> MenuModel {
             MenuModel.TeamLine(name: t.name, summary: t.summary, select: (t.rows.first { $0.session.myTurn } ?? t.rows.first)?.id)
         },
         individual: side.workspaces.flatMap { ws in
-            ws.rows.map { MenuModel.IndividualLine(tag: agentName($0.session.agent).lowercased(), title: ws.name, path: ws.path, row: $0) }
+            ws.rows.map { MenuModel.IndividualLine(title: ws.name, path: ws.path, row: $0) }
         })
 }
 

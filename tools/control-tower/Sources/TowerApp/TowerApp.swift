@@ -59,7 +59,7 @@ struct MenuContent: View {
                     }
                 }
                 ForEach(menu.individual, id: \.row.id) { line in
-                    MenuCard(tag: line.tag, title: line.title, status: badgeLabel(line.row.badge), message: line.row.line) {
+                    MenuCard(kind: .agent(line.row.session.agent), title: line.title, status: badgeLabel(line.row.badge), message: line.row.line) {
                         tower.focus(line.row.session.handle)
                     }
                     .help(line.path)
@@ -86,15 +86,35 @@ struct MenuContent: View {
 }
 
 /// The small kind label at the front of a dropdown line: `my-team`, `claude` or `codex`.
+private enum LineKind {
+    case team
+    case agent(AgentKind)
+
+    var text: String {
+        switch self {
+        case .team: "my-team"
+        case .agent(let a): agentName(a).lowercased()
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .team: .purple
+        case .agent(.claude): .orange
+        case .agent(.codex): .teal
+        }
+    }
+}
+
 private struct KindTag: View {
-    let text: String
+    let kind: LineKind
 
     var body: some View {
-        Text(text)
-            .font(.caption2.monospaced())
+        Text(kind.text)
+            .font(.caption2.monospaced().bold())
             .padding(.horizontal, 5).padding(.vertical, 1)
-            .background(.quaternary, in: .capsule)
-            .foregroundStyle(.secondary)
+            .background(kind.color.opacity(0.2), in: .capsule)
+            .foregroundStyle(kind.color)
     }
 }
 
@@ -107,7 +127,7 @@ private struct MenuTeamLine: View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
-                    KindTag(text: "my-team")
+                    KindTag(kind: .team)
                     Text(team.name).font(.headline).lineLimit(1)
                 }
                 Text(team.summary).font(.callout).foregroundStyle(.secondary).lineLimit(1)
@@ -122,7 +142,7 @@ private struct MenuTeamLine: View {
 
 /// One individual session in the dropdown. Clicking it focuses that session.
 private struct MenuCard: View {
-    let tag: String
+    let kind: LineKind
     let title: String
     let status: String
     let message: String
@@ -132,7 +152,7 @@ private struct MenuCard: View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
-                    KindTag(text: tag)
+                    KindTag(kind: kind)
                     Text(title).font(.headline).lineLimit(1)
                     Spacer()
                     Text(status).font(.caption).foregroundStyle(.secondary)

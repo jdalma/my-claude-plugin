@@ -237,7 +237,7 @@ private func isoOf(_ d: Date) -> String { d.formatted(.iso8601) }
     #expect(menu.individual.map(\.row) == side.workspaces.flatMap(\.rows))
     #expect(menu.individual.map(\.title) == ["b", "a", "a"])
     #expect(menu.individual.map(\.path) == ["~/b", "~/a", "~/a"])
-    #expect(menu.individual.map(\.tag) == ["claude", "claude", "codex"])
+    #expect(menu.individual.map(\.row.session.agent) == [.claude, .claude, .codex])
     #expect(menu.individual.map(\.row.id) == [.live("pid:9#1"), .live("pid:8#1"), .live("pid:7#1")])
     #expect(menu.individual.map(\.row.badge) == side.workspaces.flatMap(\.rows).map(\.badge))
 }
