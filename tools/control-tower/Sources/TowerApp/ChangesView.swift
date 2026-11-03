@@ -8,7 +8,7 @@ private func storedPins() -> [String: String] {
     UserDefaults.standard.dictionary(forKey: pinnedKey) as? [String: String] ?? [:]
 }
 
-private struct Loaded {
+struct Loaded {
     var workspace: String
     var result: WorkspaceDiffResult
     var candidates: [String]
@@ -20,19 +20,48 @@ private struct LoadKey: Hashable {
     var pins: [String: String]
 }
 
+/// What the "변경" area and the file tree beside it share. The detail pane owns it, so it outlives refreshes.
+@MainActor @Observable
+final class ChangesState {
+    var pins = storedPins()
+    var loaded: Loaded?
+    var showCommitted = true
+    var showUncommitted = true
+    /// Folded files. Kept by section and path, so a refresh or a base change leaves them folded.
+    var collapsed: Set<DiffFileKey> = []
+    /// The file a tree click asked to scroll to; the detail's scroll view consumes it.
+    var scrollTarget: DiffFileKey?
+
+    func diff(for workspace: String) -> WorkspaceDiff? {
+        guard let loaded, loaded.workspace == workspace, case .diff(let d) = loaded.result else { return nil }
+        return d
+    }
+
+    /// Unfolds the file and its section, then asks for a scroll to its header.
+    func reveal(_ key: DiffFileKey) {
+        switch key.part {
+        case .committed: showCommitted = true
+        case .uncommitted: showUncommitted = true
+        }
+        collapsed.remove(key)
+        scrollTarget = key
+    }
+}
+
+/// `UserDefaults` key of the tree column's visibility.
+let diffTreeVisibleKey = "diffTreeVisible"
+
 /// The detail pane's "변경" area: committed and uncommitted changes of the workspace's git repo.
 struct ChangesView: View {
     let workspace: String
     let at: String
-    @State private var pins = storedPins()
-    @State private var loaded: Loaded?
-    @State private var showCommitted = true
-    @State private var showUncommitted = true
+    @Bindable var state: ChangesState
+    @AppStorage(diffTreeVisibleKey) private var treeVisible = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Divider()
-            if let loaded, loaded.workspace == workspace {
+            if let loaded = state.loaded, loaded.workspace == workspace {
                 switch loaded.result {
                 case .notARepo:
                     Text("git 저장소 아님").foregroundStyle(.secondary)
@@ -44,14 +73,14 @@ struct ChangesView: View {
                 ProgressView().controlSize(.small)
             }
         }
-        .task(id: LoadKey(workspace: workspace, at: at, pins: pins)) {
-            let (workspace, pins) = (workspace, pins)
+        .task(id: LoadKey(workspace: workspace, at: at, pins: state.pins)) {
+            let (workspace, pins) = (workspace, state.pins)
             let next = await Task.detached { () -> Loaded in
                 let top = repoToplevel(at: workspace)
                 let result = workspaceDiff(at: workspace, pinnedBase: top.flatMap { pins[$0] })
                 return Loaded(workspace: workspace, result: result, candidates: top.map { baseCandidates(toplevel: $0) } ?? [])
             }.value
-            if !Task.isCancelled { loaded = next }
+            if !Task.isCancelled { state.loaded = next }
         }
     }
 
@@ -59,8 +88,8 @@ struct ChangesView: View {
         let missing = baseNote(d.base)
         return VStack(alignment: .leading, spacing: 10) {
             header(d, candidates: candidates)
-            section("커밋됨", detail: baseRange(d.base), expanded: $showCommitted, section: d.committed, note: missing)
-            section("미커밋", detail: "HEAD → 작업 트리", expanded: $showUncommitted, section: d.uncommitted, note: nil)
+            section("커밋됨", .committed, detail: baseRange(d.base), expanded: $state.showCommitted, section: d.committed, note: missing)
+            section("미커밋", .uncommitted, detail: "HEAD → 작업 트리", expanded: $state.showUncommitted, section: d.uncommitted, note: nil)
             if d.hiddenLines > 0 {
                 Text("\(d.hiddenLines)줄 더 있음 — 터미널에서 git diff로 확인").scaledFont(.caption1).foregroundStyle(.secondary)
             }
@@ -68,7 +97,7 @@ struct ChangesView: View {
     }
 
     private func header(_ d: WorkspaceDiff, candidates: [String]) -> some View {
-        let pinned = pins[d.toplevel]
+        let pinned = state.pins[d.toplevel]
         return HStack(spacing: 8) {
             Text("변경").scaledFont(.headline, weight: .semibold)
             if case .resolved = d.base { Text("base").foregroundStyle(.secondary) }
@@ -91,6 +120,10 @@ struct ChangesView: View {
                 Text("갈라진 지점").foregroundStyle(.secondary)
                 Text(String(mb.prefix(7))).scaledFont(.body, design: .monospaced).textSelection(.enabled)
             }
+            Spacer()
+            Toggle(isOn: $treeVisible) { Label("파일 트리", systemImage: "sidebar.right") }
+                .toggleStyle(.button)
+                .help(treeVisible ? "파일 트리 숨기기" : "파일 트리 보이기")
         }
     }
 
@@ -98,7 +131,7 @@ struct ChangesView: View {
         var next = storedPins()
         next[toplevel] = base
         UserDefaults.standard.set(next, forKey: pinnedKey)
-        pins = next
+        state.pins = next
     }
 
     private func baseLabel(_ b: BaseChoice) -> String {
@@ -118,10 +151,11 @@ struct ChangesView: View {
     }
 
     @ViewBuilder
-    private func section(_ title: String, detail: String, expanded: Binding<Bool>, section: DiffSection?, note: String?) -> some View {
+    private func section(_ title: String, _ part: DiffPart, detail: String, expanded: Binding<Bool>, section: DiffSection?,
+                         note: String?) -> some View {
         DisclosureGroup(isExpanded: expanded) {
             if let section {
-                SectionBody(section: section)
+                SectionBody(section: section, part: part, collapsed: $state.collapsed)
             } else if let note {
                 Text(note).foregroundStyle(.secondary)
             }
@@ -131,6 +165,11 @@ struct ChangesView: View {
                 if !detail.isEmpty { Text(detail).scaledFont(.caption1, design: .monospaced).foregroundStyle(.secondary) }
                 Spacer()
                 if let section {
+                    if !section.files.isEmpty {
+                        let keys = Set(section.files.map { DiffFileKey(part: part, path: $0.path) })
+                        Button("모두 접기") { state.collapsed.formUnion(keys) }.buttonStyle(.link)
+                        Button("모두 펼치기") { state.collapsed.subtract(keys) }.buttonStyle(.link)
+                    }
                     Text("파일 \(section.files.count)").foregroundStyle(.secondary)
                     Counts(added: section.added, removed: section.removed)
                 }
@@ -154,13 +193,21 @@ private struct Counts: View {
 
 private struct SectionBody: View {
     let section: DiffSection
+    let part: DiffPart
+    @Binding var collapsed: Set<DiffFileKey>
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             if section.files.isEmpty && section.untracked.isEmpty {
                 Text("변경 없음").foregroundStyle(.secondary)
             }
-            ForEach(section.files, id: \.path) { FileView(file: $0) }
+            ForEach(section.files, id: \.path) { file in
+                let key = DiffFileKey(part: part, path: file.path)
+                FileView(file: file, folded: collapsed.contains(key)) {
+                    if collapsed.contains(key) { collapsed.remove(key) } else { collapsed.insert(key) }
+                }
+                .id(key)
+            }
             ForEach(section.untracked, id: \.self) { path in
                 HStack(spacing: 8) {
                     Image(systemName: "doc.badge.plus").foregroundStyle(.secondary)
@@ -168,6 +215,7 @@ private struct SectionBody: View {
                     Spacer()
                     Text("새 파일 · 추적 안 함").scaledFont(.caption1).foregroundStyle(.secondary)
                 }
+                .id(DiffFileKey(part: part, path: path))
             }
         }
         .padding(.top, 4)
@@ -176,10 +224,17 @@ private struct SectionBody: View {
 
 private struct FileView: View {
     let file: FileDiff
+    let folded: Bool
+    let toggle: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
+                Button(action: toggle) {
+                    Image(systemName: folded ? "chevron.right" : "chevron.down").frame(width: 12)
+                }
+                .buttonStyle(.borderless)
+                .help(folded ? "펼치기" : "접기")
                 Image(systemName: "doc.text").foregroundStyle(.secondary)
                 Text(file.path).scaledFont(.body, weight: .semibold, design: .monospaced)
                     .lineLimit(1).truncationMode(.middle).textSelection(.enabled)
@@ -188,8 +243,10 @@ private struct FileView: View {
             }
             .padding(.horizontal, 8).padding(.vertical, 4)
             .background(.quaternary)
-            LazyVStack(alignment: .leading, spacing: 0) {
-                ForEach(Array(file.lines.enumerated()), id: \.offset) { _, line in LineView(line: line) }
+            if !folded {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(file.lines.enumerated()), id: \.offset) { _, line in LineView(line: line) }
+                }
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: 6))
@@ -236,6 +293,71 @@ private struct LineView: View {
         case .removed: .red.opacity(0.18)
         case .hunk: .secondary.opacity(0.12)
         case .context: .clear
+        }
+    }
+}
+
+/// The changed files beside the detail, one tree per section; a click reveals the file in the diff.
+struct ChangeTreeColumn: View {
+    let diff: WorkspaceDiff
+    let state: ChangesState
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 2) {
+                if let committed = diff.committed { part("커밋됨", .committed, committed) }
+                part("미커밋", .uncommitted, diff.uncommitted)
+            }
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .frame(width: 240)
+        .background(.background.secondary)
+    }
+
+    @ViewBuilder
+    private func part(_ title: String, _ part: DiffPart, _ section: DiffSection) -> some View {
+        Text(title).scaledFont(.subheadline, weight: .semibold).padding(.top, 6)
+        let rows = flatten(changeTree(section))
+        if rows.isEmpty { Text("변경 없음").scaledFont(.caption1).foregroundStyle(.secondary) }
+        ForEach(rows, id: \.node.path) { depth, node in
+            row(node, depth: depth, part: part)
+        }
+    }
+
+    @ViewBuilder
+    private func row(_ node: ChangeTreeNode, depth: Int, part: DiffPart) -> some View {
+        switch node.kind {
+        case .directory:
+            Label(node.name, systemImage: "folder")
+                .scaledFont(.caption1).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                .padding(.leading, CGFloat(depth) * 12)
+        case .file(let change):
+            Button { state.reveal(DiffFileKey(part: part, path: node.path)) } label: {
+                HStack(spacing: 4) {
+                    Text(node.name).lineLimit(1).truncationMode(.middle)
+                    Spacer(minLength: 4)
+                    switch change {
+                    case .lines(let added, let removed):
+                        Text("+\(added)").foregroundStyle(.green)
+                        Text("−\(removed)").foregroundStyle(.red)
+                    case .binary: Text("bin").foregroundStyle(.secondary)
+                    case .untracked: Text("새").foregroundStyle(.secondary)
+                    }
+                }
+                .scaledFont(.caption1, design: .monospaced)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(node.path)
+            .padding(.leading, CGFloat(depth) * 12)
+        }
+    }
+
+    private func flatten(_ nodes: [ChangeTreeNode], depth: Int = 0) -> [(depth: Int, node: ChangeTreeNode)] {
+        nodes.flatMap { n -> [(depth: Int, node: ChangeTreeNode)] in
+            if case .directory(let children) = n.kind { return [(depth, n)] + flatten(children, depth: depth + 1) }
+            return [(depth, n)]
         }
     }
 }

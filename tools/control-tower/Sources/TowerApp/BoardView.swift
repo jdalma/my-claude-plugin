@@ -233,6 +233,8 @@ private struct DetailView: View {
     let model: SidebarModel
     let selection: RowID?
     let home: String
+    @State private var changes = ChangesState()
+    @AppStorage(diffTreeVisibleKey) private var treeVisible = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -297,11 +299,30 @@ private struct DetailView: View {
 
     private func detailBody(title: String, @ViewBuilder badges: () -> some View,
                             facts: [(String, String)], workspace: String, conversation: [(String, String)]) -> some View {
+        let badges = badges()
+        return HStack(spacing: 0) {
+            ScrollViewReader { proxy in
+                scrollingBody(title: title, badges: badges, facts: facts, workspace: workspace, conversation: conversation)
+                    .onChange(of: changes.scrollTarget) { _, target in
+                        guard let target else { return }
+                        withAnimation { proxy.scrollTo(target, anchor: .top) }
+                        changes.scrollTarget = nil
+                    }
+            }
+            if treeVisible, let diff = changes.diff(for: workspace) {
+                Divider()
+                ChangeTreeColumn(diff: diff, state: changes)
+            }
+        }
+    }
+
+    private func scrollingBody(title: String, badges: some View,
+                               facts: [(String, String)], workspace: String, conversation: [(String, String)]) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 8) {
                     Text(title).scaledFont(.title2, weight: .bold).lineLimit(2)
-                    badges()
+                    badges
                 }
                 Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 12, verticalSpacing: 6) {
                     ForEach(facts.filter { !$0.1.isEmpty }, id: \.0) { k, v in
@@ -311,7 +332,7 @@ private struct DetailView: View {
                         }
                     }
                 }
-                ChangesView(workspace: workspace, at: board.at)
+                ChangesView(workspace: workspace, at: board.at, state: changes)
                 let talk = conversation.filter { !$0.1.isEmpty }
                 if !talk.isEmpty {
                     Divider()
