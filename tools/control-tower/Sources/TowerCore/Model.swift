@@ -74,6 +74,9 @@ public struct Session: Codable, Hashable, Sendable {
     public var lastAssistant: String
     /// TERM_PROGRAM of the process; used to focus a session outside tmux.
     public var termProgram: String?
+    /// Open in a terminal: its tmux session has a client, or outside tmux its process has a tty.
+    /// Set for loose sessions only (a team's is `Team.attached`). Not in the JSON.
+    public var inTerminal = true
 
     public init(
         handle: String, agent: AgentKind, pid: Int, cwd: String, startedAt: String?,

@@ -230,16 +230,33 @@ private func isoOf(_ d: Date) -> String { d.formatted(.iso8601) }
     let side = model(board)
     let menu = menuModel(board, home: "/Users/me")
 
-    #expect(menu.myTurn == side.myTurn)
     #expect(menu.teams.map(\.name) == side.teams.map(\.name))
-    #expect(menu.teams.map(\.summary) == side.teams.map(\.summary))
     // teams first, then the sidebar's individual rows in its order (the group with a waiting session first)
     #expect(menu.individual.map(\.row) == side.workspaces.flatMap(\.rows))
     #expect(menu.individual.map(\.title) == ["b", "a", "a"])
     #expect(menu.individual.map(\.path) == ["~/b", "~/a", "~/a"])
     #expect(menu.individual.map(\.row.session.agent) == [.claude, .claude, .codex])
     #expect(menu.individual.map(\.row.id) == [.live("pid:9#1"), .live("pid:8#1"), .live("pid:7#1")])
-    #expect(menu.individual.map(\.row.badge) == side.workspaces.flatMap(\.rows).map(\.badge))
+}
+
+@Test func theDropdownListsOnlyWhatIsOpenInATerminal() {
+    var detachedTeam = team("u", [worker("d", session: session("pane:u:%1"))])
+    detachedTeam.attached = false
+    var closed = session("pid:2", cwd: "/Users/me/closed")
+    closed.inTerminal = false
+    let board = Board(at: at, teams: [team("t", [worker("a", session: session("pane:t:%1"))]), detachedTeam],
+                      loose: [session("pid:1", cwd: "/Users/me/open"), closed])
+    let menu = menuModel(board, home: "/Users/me")
+    #expect(menu.teams.map(\.name) == ["t"])
+    #expect(menu.individual.map(\.title) == ["open"])
+    // the sidebar keeps both
+    #expect(model(board).teams.map(\.name) == ["t", "u"])
+    #expect(model(board).workspaces.map(\.name) == ["open", "closed"])
+
+    var allClosed = board
+    allClosed.teams = [detachedTeam]
+    allClosed.loose = [closed]
+    #expect(menuModel(allClosed, home: "/Users/me").isEmpty)
 }
 
 @Test func aTeamLineSelectsItsWaitingWorkerElseItsFirst() {

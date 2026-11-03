@@ -5,12 +5,15 @@ struct PsRow: Decodable, Hashable {
     var ppid: Int
     var args = ""
     var lstart: String?
+    /// The process has a controlling terminal. Not in fixtures: they predate it.
+    var hasTTY = false
 
-    init(pid: Int, ppid: Int, args: String = "", lstart: String? = nil) {
+    init(pid: Int, ppid: Int, args: String = "", lstart: String? = nil, hasTTY: Bool = false) {
         self.pid = pid
         self.ppid = ppid
         self.args = args
         self.lstart = lstart
+        self.hasTTY = hasTTY
     }
 
     enum CodingKeys: String, CodingKey { case pid, ppid, args, lstart }
@@ -87,7 +90,8 @@ func psSnapshot() -> [PsRow] {
                 pid: pid,
                 ppid: Int(k.kp_eproc.e_ppid),
                 args: procArgs(pid)?.argv.joined(separator: " ") ?? "",
-                lstart: isoString(ms: Int64(k.kp_proc.p_un.__p_starttime.tv_sec) * 1000)
+                lstart: isoString(ms: Int64(k.kp_proc.p_un.__p_starttime.tv_sec) * 1000),
+                hasTTY: k.kp_eproc.e_tdev != -1  // NODEV
             )
         }
 }

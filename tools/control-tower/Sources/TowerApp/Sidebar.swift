@@ -128,11 +128,10 @@ private func badge(_ state: WorkerDisplayState, at: String) -> RowBadge? {
     }
 }
 
-/// The menu bar dropdown: the sidebar's running part with each team folded to its header line.
+/// The menu bar dropdown: what is open in a terminal, in the sidebar's order, a team folded to one line.
 struct MenuModel: Equatable {
     struct TeamLine: Equatable {
         var name: String
-        var summary: String
         /// The row the board selects for this line: a worker waiting on me, else the first; nil when none is listed.
         var select: RowID?
     }
@@ -146,7 +145,6 @@ struct MenuModel: Equatable {
         var row: LiveRow
     }
 
-    var myTurn: Int
     var teams: [TeamLine]
     /// The sidebar's individual rows, flattened in its order.
     var individual: [IndividualLine]
@@ -156,13 +154,13 @@ struct MenuModel: Equatable {
 
 func menuModel(_ board: Board, home: String) -> MenuModel {
     let side = sidebarModel(board: board, history: [], query: "", filter: .all, historyLimit: 0, home: home)
+    let attached = Set(board.teams.filter(\.attached).map(\.name))
     return MenuModel(
-        myTurn: side.myTurn,
-        teams: side.teams.map { t in
-            MenuModel.TeamLine(name: t.name, summary: t.summary, select: (t.rows.first { $0.session.myTurn } ?? t.rows.first)?.id)
+        teams: side.teams.filter { attached.contains($0.name) }.map { t in
+            MenuModel.TeamLine(name: t.name, select: (t.rows.first { $0.session.myTurn } ?? t.rows.first)?.id)
         },
         individual: side.workspaces.flatMap { ws in
-            ws.rows.map { MenuModel.IndividualLine(title: ws.name, path: ws.path, row: $0) }
+            ws.rows.filter(\.session.inTerminal).map { MenuModel.IndividualLine(title: ws.name, path: ws.path, row: $0) }
         })
 }
 

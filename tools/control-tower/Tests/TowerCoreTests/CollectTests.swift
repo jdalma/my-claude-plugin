@@ -171,3 +171,17 @@ private func deps(
     #expect(b.teams.isEmpty)
     #expect(b.loose.map(\.pid).sorted() == [101, 202, 501, 701, 901])
 }
+
+@Test func aLooseSessionIsInATerminalWhenItsTmuxIsAttachedOrItHasATty() {
+    func loose(_ pid: Int, tmux: String?) -> Session {
+        Session(handle: "h\(pid)", agent: .claude, pid: pid, cwd: "/w", startedAt: nil, status: .wait, myTurn: false,
+                since: nil, permissionPrompt: false, title: "", tmux: tmux.map { TmuxRef(session: $0, window: "0", pane: "%\(pid)") },
+                transcript: nil, lastUser: "", lastAssistant: "", termProgram: nil)
+    }
+    let b = Board(at: at, teams: [], loose: [loose(1, tmux: "on"), loose(2, tmux: "off"), loose(3, tmux: nil), loose(4, tmux: nil)])
+    let rows = [PsRow(pid: 1, ppid: 0, hasTTY: false), PsRow(pid: 2, ppid: 0, hasTTY: true),
+                PsRow(pid: 3, ppid: 0, hasTTY: true), PsRow(pid: 4, ppid: 0)]
+    let marked = markTerminals(b, rows: rows, clients: [TmuxClient(session: "on", pid: 9, tty: "/dev/ttys001")])
+    // tmux decides for a session inside it, the process's own tty for one outside
+    #expect(marked.loose.map(\.inTerminal) == [true, false, true, false])
+}

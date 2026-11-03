@@ -174,7 +174,18 @@ func snapshot(deps: CollectDeps, now: Date = Date()) -> Snapshot {
     let teams = rawTeams.map { toTeam($0, clients: clients) }
     let board = join(teams: teams, panes: panes, claude: deps.loadClaudeSessions(), codex: codex, rows: rows,
                      at: isoString(now))
-    return Snapshot(board: enrich(board, deps: deps), myTeamError: myTeamError)
+    return Snapshot(board: enrich(markTerminals(board, rows: rows, clients: clients), deps: deps), myTeamError: myTeamError)
+}
+
+/// Fills `inTerminal` of loose sessions from reads collect already made.
+func markTerminals(_ board: Board, rows: [PsRow], clients: [TmuxClient]) -> Board {
+    let withTTY = Set(rows.filter(\.hasTTY).map(\.pid))
+    let attached = Set(clients.map(\.session))
+    var b = board
+    for i in b.loose.indices {
+        b.loose[i].inTerminal = b.loose[i].tmux.map { attached.contains($0.session) } ?? withTTY.contains(b.loose[i].pid)
+    }
+    return b
 }
 
 /// One snapshot of every my-team worker and local Claude / Codex session.

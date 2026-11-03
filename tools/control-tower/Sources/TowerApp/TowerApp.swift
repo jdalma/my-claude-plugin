@@ -37,29 +37,17 @@ struct MenuContent: View {
             }
             if let board = tower.board {
                 let menu = menuModel(board, home: NSHomeDirectory())
-                HStack {
-                    Text("실행 중").font(.headline)
-                    Spacer()
-                    if menu.myTurn > 0 {
-                        Text("내 차례 \(menu.myTurn)")
-                            .font(.caption.bold())
-                            .padding(.horizontal, 8).padding(.vertical, 2)
-                            .background(Color.orange, in: .capsule)
-                            .foregroundStyle(.white)
-                    }
-                }
-                .padding(.bottom, 4)
                 if menu.isEmpty {
-                    Text("실행 중 세션 없음").foregroundStyle(.secondary).padding(.vertical, 4)
+                    Text("열린 터미널 없음").foregroundStyle(.secondary).padding(.vertical, 4)
                 }
                 ForEach(menu.teams, id: \.name) { t in
-                    MenuTeamLine(team: t) {
+                    MenuLine(kind: .team, title: t.name, hint: "보드를 열고 이 팀을 선택") {
                         tower.boardSelectRequest = t.select
                         openBoard()
                     }
                 }
                 ForEach(menu.individual, id: \.row.id) { line in
-                    MenuCard(kind: .agent(line.row.session.agent), title: line.title, status: badgeLabel(line.row.badge), message: line.row.line) {
+                    MenuLine(kind: .agent(line.row.session.agent), title: line.title, hint: "이 세션의 터미널로 이동") {
                         tower.focus(line.row.session.handle)
                     }
                     .help(line.path)
@@ -118,54 +106,24 @@ private struct KindTag: View {
     }
 }
 
-/// One team in the dropdown: its sidebar header, no worker rows. Clicking it opens the board on that team.
-private struct MenuTeamLine: View {
-    let team: MenuModel.TeamLine
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    KindTag(kind: .team)
-                    Text(team.name).font(.headline).lineLimit(1)
-                }
-                Text(team.summary).font(.callout).foregroundStyle(.secondary).lineLimit(1)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(.rect)
-            .padding(.vertical, 4)
-        }
-        .accessibilityHint("보드를 열고 이 팀을 선택")
-    }
-}
-
-/// One individual session in the dropdown. Clicking it focuses that session.
-private struct MenuCard: View {
+/// One dropdown line: kind label and name. A team opens the board on it; a session focuses its terminal.
+private struct MenuLine: View {
     let kind: LineKind
     let title: String
-    let status: String
-    let message: String
+    let hint: String
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    KindTag(kind: kind)
-                    Text(title).font(.headline).lineLimit(1)
-                    Spacer()
-                    Text(status).font(.caption).foregroundStyle(.secondary)
-                }
-                if !message.isEmpty {
-                    Text(message).font(.callout).foregroundStyle(.secondary).lineLimit(1)
-                }
+            HStack(spacing: 6) {
+                KindTag(kind: kind)
+                Text(title).font(.headline).foregroundStyle(.primary).lineLimit(1)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(.rect)
             .padding(.vertical, 4)
         }
-        .accessibilityHint("이 세션의 터미널로 이동")
+        .accessibilityHint(hint)
     }
 }
 
