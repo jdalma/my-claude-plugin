@@ -139,8 +139,8 @@ struct MenuModel: Equatable {
 
     var myTurn: Int
     var teams: [TeamLine]
-    /// The sidebar's individual rows, in its order.
-    var individual: [LiveRow]
+    /// The sidebar's individual groups: one per workspace, in its order.
+    var individual: [WorkspaceGroup]
 
     var isEmpty: Bool { teams.isEmpty && individual.isEmpty }
 }
@@ -152,7 +152,7 @@ func menuModel(_ board: Board, home: String) -> MenuModel {
         teams: side.teams.map { t in
             MenuModel.TeamLine(name: t.name, summary: t.summary, select: (t.rows.first { $0.session.myTurn } ?? t.rows.first)?.id)
         },
-        individual: side.workspaces.flatMap(\.rows))
+        individual: side.workspaces)
 }
 
 func teamSummaryLine(_ team: Team) -> String {

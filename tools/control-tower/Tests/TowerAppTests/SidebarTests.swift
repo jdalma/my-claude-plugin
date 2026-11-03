@@ -233,8 +233,9 @@ private func isoOf(_ d: Date) -> String { d.formatted(.iso8601) }
     #expect(menu.myTurn == side.myTurn)
     #expect(menu.teams.map(\.name) == side.teams.map(\.name))
     #expect(menu.teams.map(\.summary) == side.teams.map(\.summary))
-    #expect(menu.individual == side.workspaces.flatMap(\.rows))
-    #expect(menu.individual.map { badgeLabel($0.badge) } == side.workspaces.flatMap(\.rows).map { badgeLabel($0.badge) })
+    #expect(menu.individual == side.workspaces)
+    #expect(menu.individual.map(\.name) == ["b", "a"])  // the group with a waiting session first, as in the sidebar
+    #expect(menu.individual[1].rows.count == 2)
 }
 
 @Test func aTeamLineSelectsItsWaitingWorkerElseItsFirst() {

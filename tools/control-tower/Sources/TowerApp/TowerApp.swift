@@ -63,8 +63,11 @@ struct MenuContent: View {
                 }
                 if !menu.individual.isEmpty {
                     GroupLabel(text: "individual")
-                    ForEach(menu.individual, id: \.id) { row in
-                        MenuCard(title: row.title, status: badgeLabel(row.badge), message: row.line) { tower.focus(row.session.handle) }
+                    ForEach(menu.individual, id: \.path) { ws in
+                        Text(ws.name).font(.subheadline.bold()).help(ws.path).padding(.top, 2)
+                        ForEach(ws.rows, id: \.id) { row in
+                            MenuCard(title: row.title, status: badgeLabel(row.badge), message: row.line) { tower.focus(row.session.handle) }
+                        }
                     }
                 }
                 Divider().padding(.vertical, 4)
