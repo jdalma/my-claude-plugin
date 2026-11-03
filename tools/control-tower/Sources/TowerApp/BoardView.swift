@@ -28,6 +28,12 @@ struct BoardView: View {
         }
         .scaledFont(.body)
         .frame(minWidth: 760, minHeight: 440)
+        .onChange(of: tower.boardSelectRequest, initial: true) { _, request in
+            guard let request else { return }
+            query = ""  // a search could hide the requested row
+            selection = request
+            tower.boardSelectRequest = nil
+        }
         .onChange(of: query) { historyLimit = historyPageSize }
         .onChange(of: filter) { historyLimit = historyPageSize }
         .toolbar {

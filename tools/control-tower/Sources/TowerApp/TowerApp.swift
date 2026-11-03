@@ -36,21 +36,41 @@ struct MenuContent: View {
                 MyTeamErrorLine(error: error).font(.callout).padding(.bottom, 4)
             }
             if let board = tower.board {
-                let mine = sortCards(sessions(board).filter(\.myTurn))
-                if mine.isEmpty {
-                    Text("기다리는 세션 없음").foregroundStyle(.secondary).padding(.vertical, 4)
+                let menu = menuModel(board, home: NSHomeDirectory())
+                HStack {
+                    Text("실행 중").font(.headline)
+                    Spacer()
+                    if menu.myTurn > 0 {
+                        Text("내 차례 \(menu.myTurn)")
+                            .font(.caption.bold())
+                            .padding(.horizontal, 8).padding(.vertical, 2)
+                            .background(Color.orange, in: .capsule)
+                            .foregroundStyle(.white)
+                    }
                 }
-                ForEach(mine, id: \.rowID) { s in
-                    MenuCard(title: displayTitle(s, in: board), status: menuStatus(s, in: board),
-                             message: s.lastAssistant) { tower.focus(s.handle) }
+                .padding(.bottom, 4)
+                if menu.isEmpty {
+                    Text("실행 중 세션 없음").foregroundStyle(.secondary).padding(.vertical, 4)
+                }
+                if !menu.teams.isEmpty {
+                    GroupLabel(text: "my-team")
+                    ForEach(menu.teams, id: \.name) { t in
+                        MenuTeamLine(team: t) {
+                            tower.boardSelectRequest = t.select
+                            openBoard()
+                        }
+                    }
+                }
+                if !menu.individual.isEmpty {
+                    GroupLabel(text: "individual")
+                    ForEach(menu.individual, id: \.id) { row in
+                        MenuCard(title: row.title, status: badgeLabel(row.badge), message: row.line) { tower.focus(row.session.handle) }
+                    }
                 }
                 Divider().padding(.vertical, 4)
             }
-            Button("보드 열기") {
-                openWindow(id: "board")
-                NSApp.activate()
-            }
-            .keyboardShortcut("b")
+            Button("보드 열기", action: openBoard)
+                .keyboardShortcut("b")
             SettingsLink { Text("설정…") }
                 .keyboardShortcut(",")
             Divider().padding(.vertical, 4)
@@ -61,9 +81,41 @@ struct MenuContent: View {
         .padding(10)
         .frame(width: 320, alignment: .leading)
     }
+
+    private func openBoard() {
+        openWindow(id: "board")
+        NSApp.activate()
+    }
 }
 
-/// One my_turn row in the dropdown. Clicking it focuses that session.
+private struct GroupLabel: View {
+    let text: String
+
+    var body: some View {
+        Text(text).font(.caption).foregroundStyle(.secondary).padding(.top, 4)
+    }
+}
+
+/// One team in the dropdown: its sidebar header, no worker rows. Clicking it opens the board on that team.
+private struct MenuTeamLine: View {
+    let team: MenuModel.TeamLine
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(team.name).font(.headline).lineLimit(1)
+                Text(team.summary).font(.callout).foregroundStyle(.secondary).lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(.rect)
+            .padding(.vertical, 4)
+        }
+        .accessibilityHint("보드를 열고 이 팀을 선택")
+    }
+}
+
+/// One individual session in the dropdown. Clicking it focuses that session.
 private struct MenuCard: View {
     let title: String
     let status: String

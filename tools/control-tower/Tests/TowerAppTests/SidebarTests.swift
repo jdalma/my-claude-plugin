@@ -218,20 +218,38 @@ private func isoOf(_ d: Date) -> String { d.formatted(.iso8601) }
     #expect(g.summary == "워커 2 · 대기 1 · 완료 1")
 }
 
-@Test func theMenuBarSaysWhatTheBoardSays() {
+@Test func theDropdownIsTheSidebarsTeamLinesAndIndividualRows() {
     let done = StateFile(state: "done", reason: nil, updatedAt: ago10)
-    let doneW = worker("a", session: session("pane:t:%1", myTurn: true), state: done)
-    let permW = worker("b", session: session("pane:t:%2", myTurn: true, permission: true), state: done)
-    let deadW = worker("c", session: session("pane:t:%3"), alive: false)
-    let loose = session("pid:9", myTurn: true)
-    let board = Board(at: at, teams: [team("t", [doneW, permW, deadW])], loose: [loose])
-    #expect(menuStatus(doneW.session, in: board) == "10분 전 완료")
-    #expect(menuStatus(permW.session, in: board) == "권한 요청")
-    #expect(menuStatus(deadW.session, in: board) == "멈춤")
-    #expect(menuStatus(loose, in: board) == "사용자 대기 10분")
-    let rows = model(board).teams[0].rows
-    #expect(menuStatus(doneW.session, in: board) == badgeLabel(rows.first { $0.title == "a" }!.badge))
-    #expect(myTurnCount(board) == 3)
+    let board = Board(at: at, teams: [
+        team("t", [worker("a", session: session("pane:t:%1", status: .busy)),
+                   worker("b", session: session("pane:t:%2", myTurn: true, permission: true), state: done),
+                   worker("c", session: session("pane:t:%3"), alive: false)]),
+        team("u", [worker("d", session: session("pane:u:%1", status: .busy))]),
+    ], loose: [session("pid:8", cwd: "/Users/me/a"), session("pid:9", cwd: "/Users/me/b", myTurn: true),
+               session("pid:7", cwd: "/Users/me/a", status: .busy)])
+    let side = model(board)
+    let menu = menuModel(board, home: "/Users/me")
+
+    #expect(menu.myTurn == side.myTurn)
+    #expect(menu.teams.map(\.name) == side.teams.map(\.name))
+    #expect(menu.teams.map(\.summary) == side.teams.map(\.summary))
+    #expect(menu.individual == side.workspaces.flatMap(\.rows))
+    #expect(menu.individual.map { badgeLabel($0.badge) } == side.workspaces.flatMap(\.rows).map { badgeLabel($0.badge) })
+}
+
+@Test func aTeamLineSelectsItsWaitingWorkerElseItsFirst() {
+    let board = Board(at: at, teams: [
+        team("t", [worker("a", session: session("pane:t:%1", status: .busy)),
+                   worker("b", session: session("pane:t:%2", myTurn: true))]),
+        team("u", [worker("c", session: session("pane:u:%1", status: .busy)),
+                   worker("d", session: session("pane:u:%2", status: .busy, since: "2026-11-02T09:00:00.000Z"))]),
+        team("v", [worker("e", session: session("pane:v:%1"), alive: false)]),
+    ], loose: [])
+    let menu = menuModel(board, home: "/Users/me")
+    #expect(menu.teams[0].select == .live("pane:t:%2#1"))
+    #expect(menu.teams[1].select == model(board).teams[1].rows.first?.id)
+    #expect(menu.teams[2].select == nil)
+    #expect(menuModel(Board(at: at, teams: [], loose: []), home: "/Users/me").isEmpty)
 }
 
 @Test func durationsRollUpIntoHoursAndDays() {

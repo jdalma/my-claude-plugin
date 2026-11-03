@@ -128,10 +128,31 @@ private func badge(_ state: WorkerDisplayState, at: String) -> RowBadge? {
     }
 }
 
-/// The dropdown's status wording: the board's badge text for the same session, a worker judged as a worker.
-func menuStatus(_ s: Session, in board: Board) -> String {
-    let worker = board.teams.lazy.flatMap(\.workers).first { $0.session.rowID == s.rowID }
-    return badge(worker.map(displayState) ?? displayState(s), at: board.at).map(badgeLabel) ?? "멈춤"
+/// The menu bar dropdown: the sidebar's running part with each team folded to its header line.
+struct MenuModel: Equatable {
+    struct TeamLine: Equatable {
+        var name: String
+        var summary: String
+        /// The row the board selects for this line: a worker waiting on me, else the first; nil when none is listed.
+        var select: RowID?
+    }
+
+    var myTurn: Int
+    var teams: [TeamLine]
+    /// The sidebar's individual rows, in its order.
+    var individual: [LiveRow]
+
+    var isEmpty: Bool { teams.isEmpty && individual.isEmpty }
+}
+
+func menuModel(_ board: Board, home: String) -> MenuModel {
+    let side = sidebarModel(board: board, history: [], query: "", filter: .all, historyLimit: 0, home: home)
+    return MenuModel(
+        myTurn: side.myTurn,
+        teams: side.teams.map { t in
+            MenuModel.TeamLine(name: t.name, summary: t.summary, select: (t.rows.first { $0.session.myTurn } ?? t.rows.first)?.id)
+        },
+        individual: side.workspaces.flatMap(\.rows))
 }
 
 func teamSummaryLine(_ team: Team) -> String {

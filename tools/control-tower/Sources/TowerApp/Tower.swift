@@ -10,6 +10,8 @@ final class Tower {
     private(set) var myTeamError: String?
     /// Past sessions, newest first. Its own loop: the first scan takes 2-3 s and must not delay the board.
     private(set) var history: [HistorySession] = []
+    /// A row the dropdown asked the board to select; the board takes it, open already or opening now.
+    var boardSelectRequest: RowID?
     @ObservationIgnored private var notifier: Notifier?
 
     init() {
