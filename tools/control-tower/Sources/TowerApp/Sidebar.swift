@@ -13,7 +13,7 @@ enum RowID: Hashable {
 
 enum RowBadge: Equatable {
     case waitingForUser(minutes: Int?)
-    case permission
+    case permission(minutes: Int?)
     case working
     case done(minutesAgo: Int?)
     case idle(minutes: Int?)
@@ -32,8 +32,8 @@ enum RowBadge: Equatable {
     /// The row's trailing text: elapsed time in its largest unit (`4분`, `3시간`, `1일`); '' while working or unknown.
     var elapsed: String {
         switch self {
-        case .working, .permission: ""
-        case .waitingForUser(let m), .done(let m), .idle(let m): m.map(shortDuration) ?? ""
+        case .working: ""
+        case .waitingForUser(let m), .permission(let m), .done(let m), .idle(let m): m.map(shortDuration) ?? ""
         }
     }
 
@@ -187,7 +187,7 @@ func sidebarModel(board: Board, history: [HistorySession], query: String, filter
 private func badge(_ state: WorkerDisplayState, at: String) -> RowBadge? {
     switch state {
     case .stopped: nil
-    case .permission: .permission
+    case .permission(let since): .permission(minutes: minutes(from: since, to: at))
     case .done(let since): .done(minutesAgo: minutes(from: since, to: at))
     case .waitingForUser(let since): .waitingForUser(minutes: minutes(from: since, to: at))
     case .working: .working
@@ -256,7 +256,7 @@ func sessionSummaryLine(_ rows: [LiveRow]) -> String {
 func badgeLabel(_ b: RowBadge) -> String {
     switch b {
     case .waitingForUser(let m): m.map { "사용자 대기 \(duration(minutes: $0))" } ?? "사용자 대기"
-    case .permission: "권한 요청"
+    case .permission(let m): m.map { "권한 요청 \(duration(minutes: $0))" } ?? "권한 요청"
     case .working: "작업 중"
     case .done(let m): m.map { "\(duration(minutes: $0)) 전 완료" } ?? "완료"
     case .idle(let m): m.map { "대기 \(duration(minutes: $0))" } ?? "대기"

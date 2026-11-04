@@ -60,7 +60,7 @@ private func model(_ board: Board, history: [HistorySession] = [], query: String
     ])], loose: [])
     let rows = model(board).teams[0].rows
     #expect(rows.count == 1)
-    #expect(rows[0].badge == .permission)
+    #expect(rows[0].badge == .permission(minutes: 10))
 }
 
 @Test func workerBadgesCarryMinutes() {
@@ -250,7 +250,7 @@ private func isoOf(_ d: Date) -> String { d.formatted(.iso8601) }
         worker("b", session: session("pane:t:%2", myTurn: true), state: done),
     ])], loose: [])
     let g = model(board).teams[0]
-    #expect(g.rows.first { $0.title == "a" }?.badge == .permission)
+    #expect(g.rows.first { $0.title == "a" }?.badge == .permission(minutes: 10))
     #expect(g.rows.first { $0.title == "b" }?.badge == .done(minutesAgo: 10))
     #expect(g.summary == "워커 2 · 대기 1 · 완료 1")
 }
@@ -339,7 +339,7 @@ private func isoOf(_ d: Date) -> String { d.formatted(.iso8601) }
 @Test func eachBadgeHasItsOwnIcon() {
     #expect(RowBadge.working.icon == .spinner)
     #expect(RowBadge.waitingForUser(minutes: 1).icon == .waitingDot)
-    #expect(RowBadge.permission.icon == .alert)
+    #expect(RowBadge.permission(minutes: 1).icon == .alert)
     #expect(RowBadge.done(minutesAgo: 1).icon == .check)
     #expect(RowBadge.idle(minutes: 1).icon == .idleDot)
 }
@@ -439,4 +439,32 @@ private func isoOf(_ d: Date) -> String { d.formatted(.iso8601) }
     let row = model(board).queue[0]
     #expect(row.message == "one\ntwo\nthree\nfour")
     #expect(row.line == "one two three four")
+}
+
+@Test func aPermissionPromptShowsHowLongItHasWaited() {
+    let board = Board(at: at, teams: [team("t", [worker("a", session: session("pane:t:%1", permission: true))])],
+                      loose: [session("pid:1", since: "2026-11-02T07:00:00.000Z", permission: true),
+                              session("pid:2", since: nil, permission: true)])
+    let m = model(board)
+    let worker = m.teams[0].rows[0].badge
+    #expect(worker == .permission(minutes: 10))
+    #expect(worker.elapsed == "10분")
+    #expect(badgeLabel(worker) == "권한 요청 10분")
+    let loose = Dictionary(uniqueKeysWithValues: m.agents[0].rows.map { ($0.session.handle, $0.badge) })
+    #expect(loose["pid:1"] == .permission(minutes: 180))
+    #expect(loose["pid:1"]?.elapsed == "3시간")
+    #expect(loose["pid:2"] == .permission(minutes: nil))
+    #expect(loose["pid:2"]?.elapsed == "")
+    #expect(loose["pid:2"].map(badgeLabel) == "권한 요청")
+}
+
+@Test func theQueueOrdersPermissionPromptsByTheirStart() {
+    let board = Board(at: at, teams: [team("t", [
+        worker("late", session: session("pane:t:%1", myTurn: true, since: "2026-11-02T09:30:00.000Z", permission: true)),
+    ])], loose: [
+        session("pid:1", cwd: "/Users/me/early", myTurn: true, since: "2026-11-02T08:00:00.000Z", permission: true),
+        session("pid:2", cwd: "/Users/me/mid", myTurn: true, since: "2026-11-02T09:00:00.000Z"),
+        session("pid:3", cwd: "/Users/me/none", myTurn: true, since: nil, permission: true),
+    ])
+    #expect(model(board).queue.map(\.title) == ["early", "mid", "late", "none"])
 }
