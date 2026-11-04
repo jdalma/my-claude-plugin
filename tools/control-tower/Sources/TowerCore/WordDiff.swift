@@ -1,25 +1,41 @@
 /// In-line change highlighting: which parts of a removed line and the added line that replaced it differ.
 /// Ranges are Character offsets into `DiffLine.text`, so a Hangul syllable or an emoji is never cut.
 
-/// Pairs each run of removed lines with the run of added lines right after it, first with first,
-/// and marks the changed ranges of every pair similar enough to compare. Unpaired lines stay unmarked.
-func markWordChanges(_ lines: inout [DiffLine]) {
+/// A run of removed lines and the run of added lines right after it (either may be empty), as line indices.
+/// Their n-th lines pair: word changes compare them, and the split view puts them side by side.
+struct ChangeRun: Equatable {
+    var removed: Range<Int>
+    var added: Range<Int>
+}
+
+func changeRuns(_ lines: [DiffLine]) -> [ChangeRun] {
+    var runs: [ChangeRun] = []
     var i = 0
     while i < lines.count {
-        guard lines[i].kind == .removed else { i += 1; continue }
+        guard lines[i].kind == .removed || lines[i].kind == .added else { i += 1; continue }
         var j = i
         while j < lines.count, lines[j].kind == .removed { j += 1 }
         var k = j
         while k < lines.count, lines[k].kind == .added { k += 1 }
-        for n in 0..<min(j - i, k - j) {
-            if let (old, new) = changedRanges(lines[i + n].text, lines[j + n].text) {
-                lines[i + n].changes = old
-                lines[j + n].changes = new
-            }
-        }
+        runs.append(ChangeRun(removed: i..<j, added: j..<k))
         i = k
     }
+    return runs
 }
+
+/// Marks the changed ranges of every pair similar enough to compare. Unpaired lines stay unmarked.
+func markWordChanges(_ lines: inout [DiffLine], _ runs: [ChangeRun]) {
+    for run in runs {
+        for (o, n) in zip(run.removed, run.added) {
+            if let (old, new) = changedRanges(lines[o].text, lines[n].text) {
+                lines[o].changes = old
+                lines[n].changes = new
+            }
+        }
+    }
+}
+
+func markWordChanges(_ lines: inout [DiffLine]) { markWordChanges(&lines, changeRuns(lines)) }
 
 /// Word-level differences of two lines, or nil when they share under half of their non-space characters
 /// (a rewrite, where highlighting everything says nothing) or the comparison would be too large.

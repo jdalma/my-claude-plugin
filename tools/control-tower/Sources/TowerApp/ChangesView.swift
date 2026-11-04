@@ -96,11 +96,23 @@ func clampTreeWidth(_ w: Double) -> Double {
 }
 
 /// The detail pane's "변경" area: committed and uncommitted changes of the workspace's git repo.
+/// GitHub's Unified / Split: removed and added lines one above the other, or old left and new right.
+/// One choice for every file, stored under `storageKey`.
+enum DiffLayout: String, CaseIterable {
+    case unified, split
+
+    static let storageKey = "diffLayout"
+
+    var label: String { self == .unified ? "통합" : "나란히" }
+    var symbol: String { self == .unified ? "rectangle.split.1x2" : "rectangle.split.2x1" }
+}
+
 struct ChangesView: View {
     let workspace: String
     let at: String
     @Bindable var state: ChangesState
     @AppStorage(diffTreeVisibleKey) private var treeVisible = true
+    @AppStorage(DiffLayout.storageKey) private var layout = DiffLayout.unified.rawValue
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -165,6 +177,13 @@ struct ChangesView: View {
                 Text(String(mb.prefix(7))).scaledFont(.body, design: .monospaced).textSelection(.enabled)
             }
             Spacer()
+            Picker("diff 보기", selection: $layout) {
+                ForEach(DiffLayout.allCases, id: \.self) { Label($0.label, systemImage: $0.symbol).tag($0.rawValue) }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .fixedSize()
+            .help("통합: 삭제와 추가를 위아래로 · 나란히: 이전은 왼쪽, 이후는 오른쪽")
             Toggle(isOn: $treeVisible) { Label("파일 트리", systemImage: "sidebar.right") }
                 .toggleStyle(.button)
                 .help(treeVisible ? "파일 트리 숨기기" : "파일 트리 보이기")
@@ -271,6 +290,7 @@ private struct FileView: View {
     let file: FileDiff
     let folded: Bool
     let toggle: () -> Void
+    @AppStorage(DiffLayout.storageKey) private var layout = DiffLayout.unified.rawValue
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -298,7 +318,13 @@ private struct FileView: View {
             .background(DiffColors.header)
             if !folded {
                 LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(Array(file.lines.enumerated()), id: \.offset) { _, line in LineView(line: line) }
+                    if DiffLayout(rawValue: layout) == .split {
+                        ForEach(Array(file.split.enumerated()), id: \.offset) { _, row in SplitRowView(row: row, lines: file.lines) }
+                    } else {
+                        ForEach(Array(file.lines.enumerated()), id: \.offset) { _, line in
+                            LineView(line: line).fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
                 }
                 if file.hiddenLines > 0 {
                     Text("\(file.hiddenLines)줄 더 있음 — 터미널에서 git diff로 확인")
@@ -314,13 +340,46 @@ private struct FileView: View {
     }
 }
 
+/// One side-by-side row: a hunk header across both sides, or the old line beside the new one, an empty
+/// cell standing in for a missing side. Both sides share the row's width and its taller height.
+struct SplitRowView: View {
+    let row: SplitRow
+    let lines: [DiffLine]
+
+    var body: some View {
+        switch row {
+        case .hunk(let i):
+            LineView(line: lines[i]).fixedSize(horizontal: false, vertical: true)
+        case .pair(let old, let new):
+            HStack(alignment: .top, spacing: 0) {
+                side(old, .old)
+                Rectangle().fill(DiffColors.border).frame(width: 1)
+                side(new, .new)
+            }
+            .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func side(_ i: Int?, _ s: LineView.Side) -> some View {
+        Group {
+            if let i { LineView(line: lines[i], side: s) } else { DiffColors.emptyCell }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+}
+
 private struct LineView: View {
+    enum Side { case old, new }
+
     let line: DiffLine
+    /// nil: the unified view, both numbers in one cell.
+    var side: Side?
 
     var body: some View {
         // GitHub's three cells, each painted once on the canvas: numbers, the +/− marker, the code.
+        // The caller fixes the height, so in a split row each cell fills the taller side.
         HStack(alignment: .top, spacing: 0) {
-            Text(line.kind == .hunk ? number(nil) + " " + number(nil) : number(line.old) + " " + number(line.new))
+            Text(numbers)
                 .foregroundStyle(line.kind == .context ? DiffColors.mutedText : DiffColors.text)
                 .padding(.horizontal, 8).padding(.vertical, 1)
                 .frame(maxHeight: .infinity, alignment: .top)
@@ -339,10 +398,17 @@ private struct LineView: View {
             .frame(maxHeight: .infinity, alignment: .top)
             .background(tint)
         }
-        .fixedSize(horizontal: false, vertical: true)
         .scaledFont(.callout, design: .monospaced)
         .textSelection(.enabled)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var numbers: String {
+        switch side {
+        case .old: number(line.old)
+        case .new: number(line.new)
+        case nil: line.kind == .hunk ? number(nil) + " " + number(nil) : number(line.old) + " " + number(line.new)
+        }
     }
 
     private func number(_ n: Int?) -> String {

@@ -12,6 +12,7 @@ struct BoardView: View {
     @FocusState private var searchFocused: Bool
     @AppStorage(FontScale.storageKey) private var storedScale = FontScale.standard.value
     @AppStorage(AppearanceChoice.storageKey) private var storedAppearance = AppearanceChoice.system.rawValue
+    @AppStorage(DiffLayout.storageKey) private var diffLayout = DiffLayout.unified.rawValue
 
     private let home = NSHomeDirectory()
 
@@ -53,6 +54,11 @@ struct BoardView: View {
                     Divider()
                     Picker("화면", selection: $storedAppearance) {
                         ForEach(AppearanceChoice.allCases, id: \.self) { Text($0.label).tag($0.rawValue) }
+                    }
+                    .pickerStyle(.inline)
+                    Divider()
+                    Picker("diff", selection: $diffLayout) {
+                        ForEach(DiffLayout.allCases, id: \.self) { Text($0.label).tag($0.rawValue) }
                     }
                     .pickerStyle(.inline)
                 }

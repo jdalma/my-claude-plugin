@@ -24,6 +24,8 @@ enum DiffColors {
     static let removedWord = pair(0xffcecbff, 0xf8514966)
     static let hunkLine = pair(0xddf4ffff, 0x388bfd1a)
     static let hunkNumber = pair(0xb6e3ffff, 0x0c2d6bff)
+    /// `--diffBlob-emptyLine-bgColor` and `-emptyNum-bgColor` (both `--bgColor-muted`): the missing side of a split row.
+    static let emptyCell = pair(0xf6f8faff, 0x151b23ff)
 
     /// The tree beside the diff keeps the macOS background, where the plain success/danger read under
     /// 4.5:1: `--fgColor-success`/`-danger` of light-high-contrast.css and dark-high-contrast.css.

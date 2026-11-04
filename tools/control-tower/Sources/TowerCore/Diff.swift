@@ -47,6 +47,8 @@ public struct FileDiff: Hashable, Sendable {
     public var lines: [DiffLine]
     /// Lines past the per-file limit, left out of `lines`.
     public var hiddenLines = 0
+    /// The side-by-side rows of `lines`, computed with the word changes from the same pairs.
+    public var split: [SplitRow] = []
 }
 
 public struct DiffSection: Hashable, Sendable {
@@ -157,8 +159,8 @@ private func pickNamed(_ b: String, _ top: String) -> BaseChoice? {
 
 // MARK: - Cap
 
-/// Keeps at most `limit` lines of each file; counts stay whole. Word changes are marked on the kept
-/// lines only, so lines nobody sees cost nothing.
+/// Keeps at most `limit` lines of each file; counts stay whole. Word changes and split rows are computed
+/// on the kept lines only, so lines nobody sees cost nothing.
 private func cap(_ files: [FileDiff], _ limit: Int) -> [FileDiff] {
     files.map { f in
         var cut = f
@@ -166,7 +168,9 @@ private func cap(_ files: [FileDiff], _ limit: Int) -> [FileDiff] {
             cut.hiddenLines = f.lines.count - limit
             cut.lines = Array(f.lines.prefix(limit))
         }
-        markWordChanges(&cut.lines)
+        let runs = changeRuns(cut.lines)
+        markWordChanges(&cut.lines, runs)
+        cut.split = splitRows(cut.lines, runs)
         return cut
     }
 }
