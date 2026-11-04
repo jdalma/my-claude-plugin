@@ -116,9 +116,6 @@ struct ChangesView: View {
             header(d, candidates: candidates)
             section("커밋됨", .committed, detail: baseRange(d.base), expanded: $state.showCommitted, section: d.committed, note: missing)
             section("미커밋", .uncommitted, detail: "HEAD → 작업 트리", expanded: $state.showUncommitted, section: d.uncommitted, note: nil)
-            if d.hiddenLines > 0 {
-                Text("\(d.hiddenLines)줄 더 있음 — 터미널에서 git diff로 확인").scaledFont(.caption1).foregroundStyle(.secondary)
-            }
         }
     }
 
@@ -270,6 +267,11 @@ private struct FileView: View {
             if !folded {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach(Array(file.lines.enumerated()), id: \.offset) { _, line in LineView(line: line) }
+                }
+                if file.hiddenLines > 0 {
+                    Text("\(file.hiddenLines)줄 더 있음 — 터미널에서 git diff로 확인")
+                        .scaledFont(.caption1).foregroundStyle(.secondary)
+                        .padding(.horizontal, 8).padding(.vertical, 4)
                 }
             }
         }

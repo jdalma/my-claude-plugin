@@ -71,7 +71,7 @@ private func baseRef(_ d: WorkspaceDiff) -> String? {
     #expect(d.uncommitted.files.map(\.path) == ["b.txt"])
     #expect(d.uncommitted.added == 1 && d.uncommitted.removed == 0)
     #expect(d.uncommitted.untracked == ["n.txt"])
-    #expect(d.hiddenLines == 0)
+    #expect(((d.committed?.files ?? []) + d.uncommitted.files).allSatisfy { $0.hiddenLines == 0 })
 }
 
 @Test func originHeadNamesTheBase() throws {
@@ -153,15 +153,16 @@ private func baseRef(_ d: WorkspaceDiff) -> String? {
     try write(dir, "a.txt", "1\n2\nTHREE\n4\n5\n")
 
     let full = try result(dir, limit: 100_000)
-    let total = (full.committed?.files ?? []).flatMap(\.lines).count + full.uncommitted.files.flatMap(\.lines).count
-    #expect(total > 3000 && full.hiddenLines == 0)
+    let bigLines = full.committed?.files.first?.lines.count ?? 0
+    #expect(bigLines > 3000 && full.committed?.files.first?.hiddenLines == 0)
 
     let d = try result(dir)
-    let kept = (d.committed?.files ?? []).flatMap(\.lines).count + d.uncommitted.files.flatMap(\.lines).count
-    #expect(kept == 2000)
-    #expect(d.hiddenLines == total - 2000)
-    #expect(d.committed?.files.first?.added == 3000)
+    let big = d.committed?.files.first
+    #expect(big?.lines.count == 2000)
+    #expect(big?.hiddenLines == bigLines - 2000)
+    #expect(big?.added == 3000)
     #expect(d.uncommitted.files.map(\.path) == ["a.txt"])
+    #expect(d.uncommitted.files.first?.hiddenLines == 0)
 }
 
 @Test func binaryFilesHaveNoLines() throws {
@@ -280,4 +281,17 @@ private func mtime(_ path: String) throws -> Date {
     #expect(unquotePath(#""b/back\\slash\ttab""#) == "b/back\\slash\ttab")
     #expect(unquotePath(#""b/\355\225\234.txt""#) == "b/한.txt")
     #expect(unquotePath("b/plain.txt") == "b/plain.txt")
+}
+
+@Test func aFileAfterALargeOneStillHasItsLines() throws {
+    let dir = try fixture()
+    try sh(dir, ["switch", "-q", "-c", "feature"])
+    try commit(dir, "big.txt", (1...3000).map { "line \($0)\n" }.joined())
+    try commit(dir, "small.txt", "s\n")
+    try write(dir, "a.txt", "1\n2\nTHREE\n4\n5\n")
+
+    let d = try result(dir)
+    let committed = Dictionary(uniqueKeysWithValues: (d.committed?.files ?? []).map { ($0.path, $0) })
+    #expect(committed["small.txt"]?.lines.map(\.text) == ["@@ -0,0 +1 @@", "s"])
+    #expect(d.uncommitted.files.first?.lines.contains { $0.kind == .added && $0.text == "THREE" } == true)
 }

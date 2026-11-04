@@ -41,6 +41,8 @@ public struct FileDiff: Hashable, Sendable {
     public var removed: Int
     public var binary: Bool
     public var lines: [DiffLine]
+    /// Lines past the per-file limit, left out of `lines`.
+    public var hiddenLines = 0
 }
 
 public struct DiffSection: Hashable, Sendable {
@@ -63,8 +65,6 @@ public struct WorkspaceDiff: Hashable, Sendable {
     /// nil unless the base resolved.
     public var committed: DiffSection?
     public var uncommitted: DiffSection
-    /// Diff lines cut by the line limit.
-    public var hiddenLines: Int
 }
 
 public enum WorkspaceDiffResult: Hashable, Sendable {
@@ -78,22 +78,20 @@ public func repoToplevel(at path: String) -> String? {
     out(.revParse, ["--show-toplevel"], in: path)?.trimmed.nonEmpty
 }
 
+/// `lineLimit` caps each file on its own: a large file never empties the files after it.
 public func workspaceDiff(at path: String, pinnedBase: String?, lineLimit: Int = 2000) -> WorkspaceDiffResult {
     guard let top = repoToplevel(at: path) else { return .notARepo }
     let base = resolveBase(top: top, pinned: pinnedBase)
-    var budget = lineLimit
-    var hidden = 0
 
     var committed: DiffSection?
     if case .resolved(let ref, _) = base {
-        let files = cap(parseUnifiedDiff(diffText(.diff, ["\(ref)...HEAD"], top)), budget: &budget, hidden: &hidden)
-        committed = DiffSection(files: files, untracked: [])
+        committed = DiffSection(files: cap(parseUnifiedDiff(diffText(.diff, ["\(ref)...HEAD"], top)), lineLimit), untracked: [])
     }
-    let files = cap(parseUnifiedDiff(diffText(.diffIndex, ["-p", "HEAD"], top)), budget: &budget, hidden: &hidden)
+    let files = cap(parseUnifiedDiff(diffText(.diffIndex, ["-p", "HEAD"], top)), lineLimit)
     let untracked = (out(.lsFiles, ["--others", "--exclude-standard", "-z"], in: top) ?? "")
         .split(separator: "\0").map(String.init)
     return .diff(WorkspaceDiff(toplevel: top, base: base, committed: committed,
-                               uncommitted: DiffSection(files: files, untracked: untracked), hiddenLines: hidden))
+                               uncommitted: DiffSection(files: files, untracked: untracked)))
 }
 
 /// Local heads and remote-tracking branches, for the base picker. Never `origin/HEAD`.
@@ -155,18 +153,15 @@ private func pickNamed(_ b: String, _ top: String) -> BaseChoice? {
 
 // MARK: - Cap
 
-/// Keeps at most `budget` more lines across files, in order; counts and files stay whole.
-private func cap(_ files: [FileDiff], budget: inout Int, hidden: inout Int) -> [FileDiff] {
-    var result: [FileDiff] = []
-    for var f in files {
-        if f.lines.count > budget {
-            hidden += f.lines.count - budget
-            f.lines = Array(f.lines.prefix(budget))
-        }
-        budget -= f.lines.count
-        result.append(f)
+/// Keeps at most `limit` lines of each file; counts stay whole.
+private func cap(_ files: [FileDiff], _ limit: Int) -> [FileDiff] {
+    files.map { f in
+        guard f.lines.count > limit else { return f }
+        var cut = f
+        cut.hiddenLines = f.lines.count - limit
+        cut.lines = Array(f.lines.prefix(limit))
+        return cut
     }
-    return result
 }
 
 // MARK: - Parser
