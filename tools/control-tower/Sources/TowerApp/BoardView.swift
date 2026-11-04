@@ -11,6 +11,7 @@ struct BoardView: View {
     @State private var selection: RowID?
     @FocusState private var searchFocused: Bool
     @AppStorage(FontScale.storageKey) private var storedScale = FontScale.standard.value
+    @AppStorage(AppearanceChoice.storageKey) private var storedAppearance = AppearanceChoice.system.rawValue
 
     private let home = NSHomeDirectory()
 
@@ -49,6 +50,11 @@ struct BoardView: View {
                     Button("글자 크게") { storedScale = scale.bigger().value }.keyboardShortcut("+")
                     Button("글자 작게") { storedScale = scale.smaller().value }.keyboardShortcut("-")
                     Button("기본 크기") { storedScale = FontScale.standard.value }.keyboardShortcut("0")
+                    Divider()
+                    Picker("화면", selection: $storedAppearance) {
+                        ForEach(AppearanceChoice.allCases, id: \.self) { Text($0.label).tag($0.rawValue) }
+                    }
+                    .pickerStyle(.inline)
                 }
             }
         }

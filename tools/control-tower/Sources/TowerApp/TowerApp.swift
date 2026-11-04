@@ -25,10 +25,12 @@ struct TowerApp: App {
     }
 }
 
-/// The menu bar icon and waiting count. Always on screen, so it is where a launch or reopen opens the board.
+/// The menu bar icon and waiting count. Always on screen, so it is where a launch or reopen opens the board
+/// and where the stored appearance is applied, board window open or not.
 private struct MenuBarLabel: View {
     let tower: Tower
     @Environment(\.openWindow) private var openWindow
+    @AppStorage(AppearanceChoice.storageKey) private var storedAppearance = AppearanceChoice.system.rawValue
 
     var body: some View {
         let n = tower.myTurn
@@ -39,6 +41,7 @@ private struct MenuBarLabel: View {
                 openWindow(id: "board")
                 NSApp.activate()
             }
+            .onChange(of: storedAppearance, initial: true) { _, stored in AppearanceChoice(stored: stored).apply() }
         if n > 0 { Text("\(n)") }
     }
 }
