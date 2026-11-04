@@ -1,6 +1,7 @@
 #!/bin/sh
-# Build TowerApp in release mode and wrap it in an ad-hoc signed .app bundle.
-# Usage: scripts/bundle-app.sh   → .build/ControlTower.app
+# Build TowerApp in release mode, wrap it in an ad-hoc signed .app bundle, and install it
+# to ~/Applications so Spotlight and Launchpad find it.
+# Usage: scripts/bundle-app.sh   → ~/Applications/ControlTower.app (staged in .build/ControlTower.app)
 set -eu
 cd "$(dirname "$0")/.."
 swift build -c release --product TowerApp
@@ -25,4 +26,8 @@ cat > "$app/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 codesign --force --sign - "$app"
-echo "$app"
+dest="$HOME/Applications/ControlTower.app"
+mkdir -p "$HOME/Applications"
+rm -rf "$dest"
+ditto "$app" "$dest"
+echo "$dest"

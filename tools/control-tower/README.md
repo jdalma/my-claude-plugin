@@ -10,9 +10,17 @@ A Swift package for macOS 14+. `TowerCore` collects and judges, `TowerApp` is th
 
 ```bash
 cd tools/control-tower
-scripts/bundle-app.sh          # swift build -c release + ad-hoc signed .build/ControlTower.app
-open .build/ControlTower.app
+scripts/bundle-app.sh          # swift build -c release, ad-hoc sign, install to ~/Applications/ControlTower.app
 ```
+
+Then open **Control Tower** from Spotlight, Launchpad or Finder. Rerun the script to update; it replaces the installed bundle.
+
+- Opening the app opens the board window. Opening it again while it runs brings the board forward; there is still one menu bar icon.
+- Started by Open at Login, it stays in the menu bar and does not open the board.
+  It tells the two apart by the launch event's `keyAELaunchedAsLogInItem` flag. Each launch writes one line with the raw event
+  to `~/Library/Logs/ControlTower/launch.log` (last 20 lines), so a login launch that opens the board shows why there.
+- Open at Login registered from the old `.build/ControlTower.app` path: turn it off and on again in Settings from the installed app.
+  Check what is registered with `sfltool dumpbtm | grep -B2 -A10 local.control-tower`.
 
 - Menu bar: an icon, plus N while N sessions are waiting for you. Collects every 5 s.
 - Dropdown: the waiting sessions; click one to jump to it. Open Board (⌘B), Settings (⌘,), Quit (⌘Q).

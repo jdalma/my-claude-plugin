@@ -3,15 +3,14 @@ import TowerCore
 
 @main
 struct TowerApp: App {
-    @State private var tower = Tower()
+    @NSApplicationDelegateAdaptor private var delegate: AppDelegate
+    private var tower: Tower { delegate.tower }
 
     var body: some Scene {
         MenuBarExtra {
             MenuContent(tower: tower)
         } label: {
-            let n = tower.myTurn
-            Image(systemName: "antenna.radiowaves.left.and.right")
-            if n > 0 { Text("\(n)") }
+            MenuBarLabel(tower: tower)
         }
         .menuBarExtraStyle(.window)
 
@@ -23,6 +22,24 @@ struct TowerApp: App {
         Settings {
             SettingsView()
         }
+    }
+}
+
+/// The menu bar icon and waiting count. Always on screen, so it is where a launch or reopen opens the board.
+private struct MenuBarLabel: View {
+    let tower: Tower
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        let n = tower.myTurn
+        Image(systemName: "antenna.radiowaves.left.and.right")
+            .onChange(of: tower.boardOpenRequested, initial: true) { _, requested in
+                guard requested else { return }
+                tower.boardOpenRequested = false
+                openWindow(id: "board")
+                NSApp.activate()
+            }
+        if n > 0 { Text("\(n)") }
     }
 }
 

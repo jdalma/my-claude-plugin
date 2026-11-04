@@ -12,6 +12,8 @@ final class Tower {
     private(set) var history: [HistorySession] = []
     /// A row the dropdown asked the board to select; the board takes it, open already or opening now.
     var boardSelectRequest: RowID?
+    /// Launch or reopen asked for the board window; the menu bar label opens it and clears this.
+    var boardOpenRequested = false
     @ObservationIgnored private var notifier: Notifier?
 
     init() {
