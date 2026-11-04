@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import TowerCore
 
 /// GitHub's diff colors, light and dark, from @primer/primitives 11.10.0
 /// (dist/css/functional/themes/light.css and dark.css, `--diffBlob-*`).
@@ -17,6 +18,32 @@ enum DiffColors {
     static let mutedText = pair(0x454c54ff, 0xb7bdc8ff)
     static let addedCount = pair(0x04591fff, 0x2bd853ff)
     static let removedCount = pair(0x960d1eff, 0xff9492ff)
+
+    /// GitHub's syntax colors, `--prettylights-syntax-*` of light-high-contrast.css and dark-high-contrast.css
+    /// (the plain themes read under 4.5:1 on our pane). Dark comment takes `--fgColor-muted` and dark heading
+    /// the constant color, whose own values read under 4.5:1 on an added line. Changed words drop these
+    /// for the body color: no syntax color reaches 4.5:1 on the dark word background.
+    static func syntax(_ kind: SyntaxKind) -> Color {
+        switch kind {
+        case .keyword: syntaxKeyword
+        case .entity: syntaxEntity
+        case .constant, .heading: syntaxConstant
+        case .entityTag: syntaxEntityTag
+        case .string: syntaxString
+        case .variable: syntaxVariable
+        case .comment: syntaxComment
+        case .list: syntaxList
+        }
+    }
+
+    private static let syntaxKeyword = pair(0xa0111fff, 0xff9492ff)
+    private static let syntaxEntity = pair(0x512598ff, 0xdbb7ffff)
+    private static let syntaxConstant = pair(0x023b95ff, 0x91cbffff)
+    private static let syntaxString = pair(0x032563ff, 0xaddcffff)
+    private static let syntaxVariable = pair(0x702c00ff, 0xffb757ff)
+    private static let syntaxComment = pair(0x59636eff, 0xb7bdc8ff)
+    private static let syntaxEntityTag = pair(0x023b95ff, 0x72f088ff)
+    private static let syntaxList = pair(0x2e1800ff, 0xfbd669ff)
 
     /// Resolved against the appearance the view is drawn in, which T26's choice sets.
     private static func pair(_ light: UInt32, _ dark: UInt32) -> Color {

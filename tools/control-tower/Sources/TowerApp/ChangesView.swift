@@ -24,7 +24,11 @@ private struct LoadKey: Hashable {
 @MainActor @Observable
 final class ChangesState {
     var pins = storedPins()
+    /// What the view shows: `fetched`, then the same diff with syntax colors.
     var loaded: Loaded?
+    /// The last load as collected, before highlighting; a refresh compares against it.
+    @ObservationIgnored var fetched: Loaded?
+    @ObservationIgnored var highlighted = false
     var showCommitted = true
     var showUncommitted = true
     /// Unfolded files; every other file shows its header only, a file new on a refresh included.
@@ -106,8 +110,18 @@ struct ChangesView: View {
                 let result = workspaceDiff(at: workspace, pinnedBase: top.flatMap { pins[$0] })
                 return Loaded(workspace: workspace, result: result, candidates: top.map { baseCandidates(toplevel: $0) } ?? [])
             }.value
+            guard !Task.isCancelled else { return }
             // Reloaded every board refresh (5 s); assigning an unchanged diff would redraw every unfolded line.
-            if !Task.isCancelled, next != state.loaded { state.loaded = next }
+            if next != state.fetched {
+                state.fetched = next
+                state.loaded = next  // one color first, colors when the highlighter is done
+                state.highlighted = false
+            }
+            guard !state.highlighted, case .diff(let d) = next.result else { return }
+            let lit = await highlighted(d)
+            guard !Task.isCancelled, state.fetched == next else { return }
+            state.loaded = Loaded(workspace: next.workspace, result: .diff(lit), candidates: next.candidates)
+            state.highlighted = true
         }
     }
 
@@ -321,22 +335,7 @@ private struct LineView: View {
         }
     }
 
-    /// The marker and text, with the parts that differ from the paired line on the word color.
-    private var content: AttributedString {
-        var out = AttributedString(marker)
-        let chars = Array(line.text)
-        var at = 0
-        for r in line.changes + [chars.count..<chars.count] {
-            out += AttributedString(displayLine(String(chars[at..<r.lowerBound])))
-            if !r.isEmpty {
-                var changed = AttributedString(displayLine(String(chars[r])))
-                changed.backgroundColor = line.kind == .added ? DiffColors.addedWord : DiffColors.removedWord
-                out += changed
-            }
-            at = r.upperBound
-        }
-        return out
-    }
+    private var content: AttributedString { lineContent(line, marker: marker) }
 
     private var tint: Color {
         switch line.kind {
@@ -420,3 +419,24 @@ struct ChangeTreeColumn: View {
 }
 
 private func countColor(_ label: String) -> Color { label.hasPrefix("+") ? DiffColors.addedCount : DiffColors.removedCount }
+
+/// The marker and text of a diff line. Syntax spans color the text; the parts that differ from the paired
+/// line sit on the word color in the body color. Offsets are into `line.text`, so tabs expand per piece.
+func lineContent(_ line: DiffLine, marker: String) -> AttributedString {
+    let chars = Array(line.text)
+    var cuts = Set([0, chars.count])
+    for r in line.changes { cuts.formUnion([r.lowerBound, r.upperBound]) }
+    for s in line.syntax { cuts.formUnion([s.range.lowerBound, s.range.upperBound]) }
+    let bounds = cuts.filter { $0 <= chars.count }.sorted()
+    var out = AttributedString(marker)
+    for (a, b) in zip(bounds, bounds.dropFirst()) where a < b {
+        var piece = AttributedString(displayLine(String(chars[a..<b])))
+        if line.changes.contains(where: { $0.contains(a) }) {
+            piece.backgroundColor = line.kind == .added ? DiffColors.addedWord : DiffColors.removedWord
+        } else if let s = line.syntax.first(where: { $0.range.contains(a) }) {
+            piece.foregroundColor = DiffColors.syntax(s.kind)
+        }
+        out += piece
+    }
+    return out
+}

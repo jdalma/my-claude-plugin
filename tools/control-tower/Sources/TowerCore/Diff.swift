@@ -35,6 +35,8 @@ public struct DiffLine: Hashable, Sendable {
     public var text: String
     /// Character offsets of `text` that differ from the paired line, computed once at parse time (WordDiff.swift).
     public var changes: [Range<Int>] = []
+    /// Syntax colors, filled after parsing by `highlighted(_:)` (Syntax.swift).
+    public var syntax: [SyntaxSpan] = []
 }
 
 public struct FileDiff: Hashable, Sendable {
@@ -87,9 +89,9 @@ public func workspaceDiff(at path: String, pinnedBase: String?, lineLimit: Int =
 
     var committed: DiffSection?
     if case .resolved(let ref, _) = base {
-        committed = DiffSection(files: cap(parseUnifiedDiff(diffText(.diff, ["\(ref)...HEAD"], top)), lineLimit), untracked: [])
+        committed = DiffSection(files: parseMemo.files(.committed, diffText(.diff, ["\(ref)...HEAD"], top), lineLimit), untracked: [])
     }
-    let files = cap(parseUnifiedDiff(diffText(.diffIndex, ["-p", "HEAD"], top)), lineLimit)
+    let files = parseMemo.files(.uncommitted, diffText(.diffIndex, ["-p", "HEAD"], top), lineLimit)
     let untracked = (out(.lsFiles, ["--others", "--exclude-standard", "-z"], in: top) ?? "")
         .split(separator: "\0").map(String.init)
     return .diff(WorkspaceDiff(toplevel: top, base: base, committed: committed,
@@ -168,6 +170,27 @@ private func cap(_ files: [FileDiff], _ limit: Int) -> [FileDiff] {
         return cut
     }
 }
+
+/// The last parsed, capped and word-marked files of each section's raw text, so a 5 s refresh of an
+/// unchanged diff computes nothing.
+final class ParseMemo: @unchecked Sendable {
+    enum Slot { case committed, uncommitted }
+    private let lock = NSLock()
+    private var slots: [Slot: (text: String, limit: Int, files: [FileDiff])] = [:]
+    private(set) var parses = 0
+
+    func files(_ slot: Slot, _ text: String, _ limit: Int) -> [FileDiff] {
+        lock.withLock {
+            if let s = slots[slot], s.text == text, s.limit == limit { return s.files }
+            parses += 1
+            let files = cap(parseUnifiedDiff(text), limit)
+            slots[slot] = (text, limit, files)
+            return files
+        }
+    }
+}
+
+let parseMemo = ParseMemo()
 
 // MARK: - Parser
 

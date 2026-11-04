@@ -9,7 +9,7 @@ let package = Package(
         .executable(name: "tower-cli", targets: ["tower-cli"]),
     ],
     targets: [
-        .target(name: "TowerCore"),
+        .target(name: "TowerCore", resources: [.copy("Resources")]),
         .executableTarget(name: "tower-cli", dependencies: ["TowerCore"]),
         .executableTarget(name: "TowerApp", dependencies: ["TowerCore"]),
         .testTarget(name: "TowerCoreTests", dependencies: ["TowerCore"], exclude: ["Fixtures"]),

@@ -9,6 +9,9 @@ app=.build/ControlTower.app
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS"
 cp "$(swift build -c release --show-bin-path)/TowerApp" "$app/Contents/MacOS/TowerApp"
+# highlight.js, its BSD-3 license and NOTICE; Syntax.swift reads the script from Contents/Resources.
+mkdir -p "$app/Contents/Resources"
+cp Sources/TowerCore/Resources/* "$app/Contents/Resources/"
 cat > "$app/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
