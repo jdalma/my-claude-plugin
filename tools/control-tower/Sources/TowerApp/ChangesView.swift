@@ -8,7 +8,7 @@ private func storedPins() -> [String: String] {
     UserDefaults.standard.dictionary(forKey: pinnedKey) as? [String: String] ?? [:]
 }
 
-struct Loaded {
+struct Loaded: Equatable {
     var workspace: String
     var result: WorkspaceDiffResult
     var candidates: [String]
@@ -106,7 +106,8 @@ struct ChangesView: View {
                 let result = workspaceDiff(at: workspace, pinnedBase: top.flatMap { pins[$0] })
                 return Loaded(workspace: workspace, result: result, candidates: top.map { baseCandidates(toplevel: $0) } ?? [])
             }.value
-            if !Task.isCancelled { state.loaded = next }
+            // Reloaded every board refresh (5 s); assigning an unchanged diff would redraw every unfolded line.
+            if !Task.isCancelled, next != state.loaded { state.loaded = next }
         }
     }
 

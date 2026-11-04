@@ -109,6 +109,9 @@ func runCommand(_ argv: [String], timeout: TimeInterval, env: [String: String] =
     p.standardInput = FileHandle.nullDevice
     p.standardOutput = out
     p.standardError = errFile
+    // waitUntilExit spins the run loop and adds about 70 ms per child; the handler fires on exit.
+    let exited = DispatchSemaphore(value: 0)
+    p.terminationHandler = { _ in exited.signal() }
     do {
         try p.run()
     } catch {
@@ -120,7 +123,7 @@ func runCommand(_ argv: [String], timeout: TimeInterval, env: [String: String] =
     let killer = DispatchWorkItem { kill(pid, SIGTERM) }
     DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: killer)
     let data = out.fileHandleForReading.readDataToEndOfFile()
-    p.waitUntilExit()
+    exited.wait()
     killer.cancel()
     let err = (try? Data(contentsOf: errURL)) ?? Data()
     return CommandResult(status: p.terminationStatus,
