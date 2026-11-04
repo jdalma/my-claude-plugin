@@ -58,3 +58,37 @@ private func fixtureBoard() throws -> Board { try JSONDecoder().decode(Board.sel
 @Test func tmuxBinIsAbsoluteWhenTmuxIsOnPath() {
     #expect(towerTmuxBin == "tmux" || towerTmuxBin.hasPrefix("/"))
 }
+
+private func term(_ id: String, _ name: String, _ cwd: String = "/w") -> GhosttyTerminal { GhosttyTerminal(id: id, name: name, cwd: cwd) }
+
+@Test func tmuxSessionPicksTheTabAttachedToIt() {
+    let ts = [term("1", "tmux attach -t my-team-a"), term("2", "tmux attach -t my-team-ab"), term("3", "✳ my-team-a")]
+    #expect(pickTerminal(ts, tmuxSession: "my-team-ab", title: nil, cwd: "/w") == "2")
+    #expect(pickTerminal(ts, tmuxSession: "my-team-a", title: nil, cwd: "/w") == "1")
+    #expect(pickTerminal(ts, tmuxSession: "my-team", title: nil, cwd: "/w") == nil)
+    #expect(pickTerminal(ts + [term("4", "tmux attach -t my-team-a")], tmuxSession: "my-team-a", title: nil, cwd: "/w") == nil)
+}
+
+@Test func standaloneSessionPicksByTitleThenCwd() {
+    let ts = [term("1", "✳ 문서 정리", "/a"), term("2", "⠐ 문서 정리", "/b"), term("3", "✳ 다른 일", "/a"), term("4", "/a", "/a")]
+    #expect(pickTerminal(ts, tmuxSession: nil, title: "다른 일", cwd: "/z") == "3")
+    #expect(pickTerminal(ts, tmuxSession: nil, title: "문서 정리", cwd: "/b") == "2")
+    #expect(pickTerminal(ts, tmuxSession: nil, title: "문서 정리", cwd: "/z") == nil)
+    #expect(pickTerminal(ts, tmuxSession: nil, title: "없는 제목", cwd: "/a") == nil)
+    #expect(pickTerminal(ts, tmuxSession: nil, title: nil, cwd: "/a") == nil)
+    #expect(pickTerminal(ts, tmuxSession: nil, title: "", cwd: "/a") == nil)
+    #expect(pickTerminal([term("5", "문서 정리")], tmuxSession: nil, title: "문서 정리", cwd: "/z") == "5")
+    #expect(pickTerminal([term("6", "A 문서 정리")], tmuxSession: nil, title: "문서 정리", cwd: "/z") == nil)
+}
+
+@Test func ghosttyListingParsesTabSeparatedLines() {
+    let text = "ID-1\ttmux attach -t s\t/Users/me\nID-2\t✳ 제목\tmissing value\nbroken line\n"
+    #expect(parseGhosttyTerminals(text) == [term("ID-1", "tmux attach -t s", "/Users/me"), term("ID-2", "✳ 제목", "missing value")])
+}
+
+@Test func ghosttyFocusPassesTheIdAsAnArgument() {
+    let argv = ghosttyFocusArgv("x\" & do shell script \"y")
+    #expect(argv.first == "osascript")
+    #expect(argv.last == "x\" & do shell script \"y")
+    #expect(!argv.dropLast().contains { $0.contains("x\"") })
+}

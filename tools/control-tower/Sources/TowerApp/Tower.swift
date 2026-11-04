@@ -58,7 +58,20 @@ final class Tower {
                 let clients = await Task.detached { listClients() }.value
                 let plan = planFocus(handle: handle, board: board, clients: clients)
                 guard plan.kind != .none else { throw FocusError.unreachable(handle) }
-                try await FocusRunner.run(plan.commands)
+                // ponytail: only Ghostty is narrowed to a tab; other terminals and the detached path raise the app as before.
+                guard plan.commands.last == ["open", "-a", "Ghostty"],
+                      let s = sessions(board).first(where: { $0.handle == handle }) else {
+                    return try await FocusRunner.run(plan.commands)
+                }
+                try await FocusRunner.run(plan.commands.dropLast())
+                let title = s.transcript.flatMap { t in history.first { $0.transcriptPath == t }?.title }
+                let tmuxSession = plan.kind == .attached ? s.tmux?.session : nil
+                // Denied Automation, an old Ghostty or no single match: skip the tab and just raise the app.
+                if let id = await Task.detached(operation: { listGhosttyTerminals() }).value
+                    .flatMap({ pickTerminal($0, tmuxSession: tmuxSession, title: title, cwd: s.cwd) }) {
+                    try? await FocusRunner.run([ghosttyFocusArgv(id)])
+                }
+                try await FocusRunner.run([["open", "-a", "Ghostty"]])
             } catch {
                 showAlert("세션으로 이동하지 못함", error)
             }

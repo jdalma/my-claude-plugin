@@ -78,3 +78,70 @@ public func planResume(_ s: HistorySession, ghosttyApp: String = "Ghostty",
     return ["open", "-na", "\(ghosttyApp).app", "--args", "--working-directory=\(s.workspace)", "-e",
             "/usr/bin/env", "PATH=\(path)", bins[s.agent] ?? program] + s.resumeCommand.dropFirst()
 }
+
+/// One Ghostty terminal (a tab or a split) as its AppleScript dictionary reports it.
+public struct GhosttyTerminal: Equatable, Sendable {
+    public var id: String
+    public var name: String
+    public var cwd: String
+
+    public init(id: String, name: String, cwd: String) {
+        self.id = id
+        self.name = name
+        self.cwd = cwd
+    }
+}
+
+/// Reads every terminal's id, name and working directory, one tab-separated line each.
+/// Only reads properties; the one thing sent to a terminal is planFocus's `focus`.
+private let listTerminalsScript = """
+tell application "Ghostty" to set {ids, names, dirs} to {id, name, working directory} of every terminal
+set out to {}
+repeat with i from 1 to count of ids
+    set end of out to (item i of ids as text) & tab & (item i of names as text) & tab & (item i of dirs as text)
+end repeat
+set AppleScript's text item delimiters to linefeed
+out as text
+"""
+
+public func parseGhosttyTerminals(_ text: String) -> [GhosttyTerminal] {
+    text.split(whereSeparator: \.isNewline).compactMap { line in
+        let f = line.split(separator: "\t", omittingEmptySubsequences: false).map(String.init)
+        return f.count == 3 ? GhosttyTerminal(id: f[0], name: f[1], cwd: f[2]) : nil
+    }
+}
+
+/// nil when Ghostty is not scriptable or Automation was denied; the caller then only raises the app.
+/// The 30 s timeout covers the first-run Automation prompt.
+public func listGhosttyTerminals() -> [GhosttyTerminal]? {
+    guard let r = try? runCommand(["osascript", "-e", listTerminalsScript], timeout: 30), r.status == 0 else { return nil }
+    return parseGhosttyTerminals(r.stdout)
+}
+
+/// The terminal a focus should land on, or nil when none or several match (raising the app beats a wrong tab).
+/// A tmux client's tab is named after its command, `tmux attach -t <session>`, so match a tab naming tmux and the session as whole words.
+/// Claude Code titles its tab `<status glyph> <session title>`; several such tabs narrow by working directory.
+public func pickTerminal(_ terminals: [GhosttyTerminal], tmuxSession: String?, title: String?, cwd: String) -> String? {
+    func only(_ ts: [GhosttyTerminal]) -> String? { ts.count == 1 ? ts[0].id : nil }
+    if let tmuxSession {
+        return only(terminals.filter {
+            let words = $0.name.split(whereSeparator: \.isWhitespace)
+            return words.contains("tmux") && words.contains { $0 == tmuxSession }
+        })
+    }
+    guard let title, !title.isEmpty else { return nil }
+    let titled = terminals.filter { tabTitle($0.name) == title }
+    return titled.count > 1 ? only(titled.filter { $0.cwd == cwd }) : only(titled)
+}
+
+/// Drops a leading one-character status glyph (`✳`, a braille spinner) that is not a letter or digit.
+private func tabTitle(_ name: String) -> String {
+    let parts = name.split(separator: " ", maxSplits: 1)
+    guard parts.count == 2, parts[0].count == 1, let c = parts[0].first, !c.isLetter, !c.isNumber else { return name }
+    return String(parts[1])
+}
+
+/// Selects the terminal's tab and brings its window to the front. The id travels as an argument, never as script text.
+public func ghosttyFocusArgv(_ id: String) -> [String] {
+    ["osascript", "-e", "on run argv", "-e", "tell application \"Ghostty\" to focus terminal id (item 1 of argv)", "-e", "end run", id]
+}

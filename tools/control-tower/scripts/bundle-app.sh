@@ -22,6 +22,7 @@ cat > "$app/Contents/Info.plist" <<PLIST
     <key>CFBundleVersion</key><string>1</string>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>LSUIElement</key><true/>
+    <key>NSAppleEventsUsageDescription</key><string>세션으로 이동할 때 그 세션의 Ghostty 탭을 찾아 앞으로 가져옵니다.</string>
 </dict>
 </plist>
 PLIST
