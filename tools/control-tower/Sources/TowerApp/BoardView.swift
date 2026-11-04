@@ -55,6 +55,7 @@ struct BoardView: View {
         .background {
             Group {
                 Button("검색") { searchFocused = true }.keyboardShortcut("k")
+                Button("내 차례 목록") { selection = nil }.keyboardShortcut(.escape, modifiers: [])
                 Button("글자 크게") { storedScale = scale.bigger().value }.keyboardShortcut("+")
                 Button("글자 크게") { storedScale = scale.bigger().value }.keyboardShortcut("=")
                 Button("글자 작게") { storedScale = scale.smaller().value }.keyboardShortcut("-")
@@ -130,7 +131,13 @@ struct BoardView: View {
             .safeAreaInset(edge: .top, spacing: 0) { sidebarHeader(model) }
             .navigationSplitViewColumnWidth(min: 300, ideal: 360, max: 520)
         } detail: {
-            DetailView(board: board, model: model, history: tower.history, selection: selection, home: home)
+            DetailView(board: board, model: model, history: tower.history, selection: selection, home: home,
+                       select: { id in
+                           query = ""  // a search could hide the row
+                           selection = id
+                       },
+                       deselect: { selection = nil },
+                       focus: { tower.focus($0.session.handle) })
         }
     }
 
@@ -241,6 +248,10 @@ private struct DetailView: View {
     let history: [HistorySession]
     let selection: RowID?
     let home: String
+    let select: (RowID) -> Void
+    let deselect: () -> Void
+    /// The sidebar's double click on a live row: `Tower.focus`.
+    let focus: (LiveRow) -> Void
     @State private var changes = ChangesState()
     @AppStorage(diffTreeVisibleKey) private var treeVisible = true
     @AppStorage(diffTreeWidthKey) private var treeWidth = 240.0
@@ -249,6 +260,12 @@ private struct DetailView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+            if selection != nil {
+                Button("← 내 차례 목록 (Esc)", action: deselect)
+                    .buttonStyle(.link)
+                    .scaledFont(.caption1)
+                    .padding([.horizontal, .top], 10)
+            }
             Group {
                 switch selection {
                 case .live:
@@ -256,7 +273,7 @@ private struct DetailView: View {
                 case .history(let path):
                     if let h = (model.history + history).first(where: { $0.transcriptPath == path }) { past(h) } else { empty }
                 case nil:
-                    empty
+                    QueueView(model: model, select: select, focus: focus)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -392,5 +409,67 @@ private struct Pill: View {
         Text(text).scaledFont(.caption1)
             .padding(.horizontal, 8).padding(.vertical, 2)
             .background(.quaternary, in: .capsule)
+    }
+}
+
+/// The main area with nothing selected: who is waiting on me, longest first.
+private struct QueueView: View {
+    let model: SidebarModel
+    let select: (RowID) -> Void
+    let focus: (LiveRow) -> Void
+
+    var body: some View {
+        if model.queue.isEmpty {
+            VStack(spacing: 4) {
+                Text("내 차례인 세션이 없습니다").foregroundStyle(.secondary)
+                if model.working > 0 {
+                    Text("작업 중 \(model.working)개").scaledFont(.caption1).foregroundStyle(.secondary)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("내 차례 · \(model.queue.count)").scaledFont(.headline, weight: .semibold)
+                    ForEach(model.queue, id: \.id) { row in
+                        QueueCard(row: row, focus: { focus(row) }).onTapGesture { select(row.id) }
+                    }
+                }
+                .padding(16)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+}
+
+private struct QueueCard: View {
+    let row: LiveRow
+    let focus: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            StatusIconView(badge: row.badge, style: .body)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Text(row.title).scaledFont(.body, weight: .semibold).lineLimit(1)
+                    KindTag(kind: row.group.kind, style: .caption2)
+                    if let name = row.group.name { Text(name).scaledFont(.caption1).lineLimit(1) }
+                    if let folder = row.shownFolder {
+                        Text(folder).scaledFont(.caption1).foregroundStyle(.secondary).lineLimit(1)
+                    }
+                    Spacer(minLength: 8)
+                    Text(row.badge.elapsed).scaledFont(.caption1).foregroundStyle(.secondary).help(badgeLabel(row.badge))
+                }
+                if !row.message.isEmpty {
+                    Text(row.message).scaledFont(.callout).foregroundStyle(.secondary).lineLimit(3).truncationMode(.tail)
+                }
+                Button("pane으로 이동", action: focus).scaledFont(.caption1)
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.quaternary.opacity(0.5), in: .rect(cornerRadius: 8))
+        .contentShape(.rect)
+        .help(badgeLabel(row.badge) + "\n" + row.path)
     }
 }

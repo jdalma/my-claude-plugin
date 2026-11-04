@@ -409,3 +409,34 @@ private func isoOf(_ d: Date) -> String { d.formatted(.iso8601) }
         == ["fix ranking": "search", "search": nil])
     #expect(m.agents[0].rows.allSatisfy { $0.path == "~/search" })
 }
+
+@Test func theQueueHoldsMyTurnRowsLongestWaitFirst() {
+    let board = Board(at: at, teams: [team("t", [
+        worker("recent", session: session("pane:t:%1", myTurn: true, since: "2026-11-02T09:58:00.000Z")),
+        worker("busy", session: session("pane:t:%2", status: .busy)),
+        worker("old", session: session("pane:t:%3", myTurn: true, since: "2026-11-02T08:00:00.000Z")),
+    ])], loose: [
+        session("pid:1", agent: .codex, cwd: "/Users/me/web", myTurn: true, since: nil),
+        session("pid:2", cwd: "/Users/me/api", myTurn: true, since: "2026-11-02T09:00:00.000Z"),
+        session("pid:3", cwd: "/Users/me/idle"),
+    ])
+    let q = model(board, query: "nothing matches this").queue
+    #expect(q.map(\.title) == ["old", "api", "recent", "web"])
+    #expect(q.map(\.group.kind) == [.team, .agent(.claude), .team, .agent(.codex)])
+    #expect(q.map(\.group.name) == ["t", nil, "t", nil])
+}
+
+@Test func anEmptyQueueCountsWhatIsWorking() {
+    let board = Board(at: at, teams: [team("t", [worker("a", session: session("pane:t:%1", status: .busy))])],
+                      loose: [session("pid:1", status: .busy), session("pid:2")])
+    let m = model(board)
+    #expect(m.queue.isEmpty)
+    #expect(m.working == 2)
+}
+
+@Test func aRowKeepsItsMessageLinesAndShowsThemJoined() {
+    let board = Board(at: at, teams: [], loose: [session("pid:1", myTurn: true, lastAssistant: "one\ntwo\nthree\nfour")])
+    let row = model(board).queue[0]
+    #expect(row.message == "one\ntwo\nthree\nfour")
+    #expect(row.line == "one two three four")
+}

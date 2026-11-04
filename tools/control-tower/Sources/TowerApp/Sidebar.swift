@@ -59,13 +59,17 @@ struct LiveRow: Equatable {
     /// The session's working folder name and its `~` path.
     var folder: String
     var path: String
-    var line: String
+    /// The state reason or last message, newlines kept.
+    var message: String
     var badge: RowBadge
     /// The history entry that reads this session's transcript: source of its branch and resume command.
     var matched: HistorySession?
 
     /// The folder shown after the title; nil when it would repeat the title.
     var shownFolder: String? { folder == title ? nil : folder }
+    var line: String { oneLine(message) }
+    /// The label in front of the row's group: `my-team` with the team's name, or the agent alone.
+    var group: (kind: LineKind, name: String?) { teamName.map { (.team, $0) } ?? (.agent(session.agent), nil) }
 }
 
 struct TeamGroup: Equatable {
@@ -94,6 +98,10 @@ struct SidebarModel: Equatable {
     var history: [HistorySession]
     /// Filtered history entries past `history`.
     var historyRemaining: Int
+    /// Every live row waiting on me, search ignored, longest wait first; a row without a start time last.
+    var queue: [LiveRow]
+    /// Live rows at work, search ignored: the empty queue's note.
+    var working: Int
 
     var liveRows: [LiveRow] { teams.flatMap(\.rows) + agents.flatMap(\.rows) }
 }
@@ -117,6 +125,7 @@ func sidebarModel(board: Board, history: [HistorySession], query: String, filter
 
     // Before search: a row hidden by the query is still listed above, so its session stays out of history.
     var listed = Set(board.loose.compactMap(\.transcript))
+    var all: [LiveRow] = []
     var teams: [TeamGroup] = []
     for team in sortTeams(board.teams) {
         let rows = sortCards(team.workers).compactMap { w -> LiveRow? in
@@ -124,10 +133,11 @@ func sidebarModel(board: Board, history: [HistorySession], query: String, filter
             let reason = w.stateFile?.reason ?? ""
             return LiveRow(id: .live(w.session.rowID), session: w.session, worker: w, teamName: team.name,
                            title: w.cardName, folder: basename(w.session.cwd), path: abbreviate(w.session.cwd, home: home),
-                           line: oneLine(reason.isEmpty ? w.lastAssistant : reason),
+                           message: reason.isEmpty ? w.lastAssistant : reason,
                            badge: badge, matched: w.transcript.flatMap { byTranscript[$0] })
         }
         listed.formUnion(rows.compactMap(\.session.transcript))
+        all += rows
         let teamHit = hit([team.name])
         let shown = rows.filter { teamHit || matches($0) }
         if q.isEmpty || !shown.isEmpty {
@@ -143,9 +153,10 @@ func sidebarModel(board: Board, history: [HistorySession], query: String, filter
             return LiveRow(id: .live(s.rowID), session: s, worker: nil, teamName: nil,
                            title: matched.map(historyTitle) ?? basename(s.cwd), folder: basename(s.cwd),
                            path: abbreviate(s.cwd, home: home),
-                           line: oneLine(s.lastAssistant.isEmpty ? s.lastUser : s.lastAssistant),
+                           message: s.lastAssistant.isEmpty ? s.lastUser : s.lastAssistant,
                            badge: badge(displayState(s), at: board.at) ?? .idle(minutes: nil), matched: matched)
         }
+        all += rows
         let agentHit = hit([LineKind.agent(agent).text])
         let shown = rows.filter { agentHit || matches($0) }
         if !shown.isEmpty {
@@ -159,8 +170,17 @@ func sidebarModel(board: Board, history: [HistorySession], query: String, filter
             && (filter == .all || (filter == .claude) == (h.agent == .claude))
             && hit([h.title, h.workspace, h.branch])
     }
+    let queue = all.filter(\.session.myTurn).enumerated().sorted { a, b in
+        switch (parseISO(a.element.session.since), parseISO(b.element.session.since)) {
+        case let (x?, y?) where x != y: x < y
+        case (_?, nil): true
+        case (nil, _?): false
+        default: a.offset < b.offset
+        }
+    }.map(\.element)
     return SidebarModel(teams: teams, agents: agents,
-                        history: Array(past.prefix(historyLimit)), historyRemaining: max(0, past.count - historyLimit))
+                        history: Array(past.prefix(historyLimit)), historyRemaining: max(0, past.count - historyLimit),
+                        queue: queue, working: all.filter { $0.badge == .working }.count)
 }
 
 /// Maps Core's display state to a row badge; nil for a stopped worker (counted in the team summary, not listed).
