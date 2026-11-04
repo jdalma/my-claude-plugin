@@ -208,8 +208,7 @@ private struct Counts: View {
 
     var body: some View {
         HStack(spacing: 4) {
-            Text("+\(added)").foregroundStyle(.green)
-            Text("−\(removed)").foregroundStyle(.red)
+            ForEach(changeCounts(added: added, removed: removed), id: \.self) { Text($0).foregroundStyle(countColor($0)) }
         }
         .scaledFont(.body, design: .monospaced)
     }
@@ -258,8 +257,12 @@ private struct FileView: View {
                 .buttonStyle(.borderless)
                 .help(folded ? "펼치기" : "접기")
                 Image(systemName: "doc.text").foregroundStyle(.secondary)
-                Text(file.path).scaledFont(.body, weight: .semibold, design: .monospaced)
-                    .lineLimit(1).truncationMode(.middle).textSelection(.enabled)
+                let (dir, name) = splitPath(file.path)
+                // the name is what tells files apart: dimmer directory, and a long path loses its head first
+                (Text(dir).foregroundStyle(.secondary) + Text(name).fontWeight(.semibold).foregroundStyle(.primary))
+                    .scaledFont(.body, design: .monospaced)
+                    .lineLimit(1).truncationMode(.head).textSelection(.enabled)
+                    .help(file.path)
                 Spacer()
                 if file.binary { Text("바이너리 파일").foregroundStyle(.secondary) } else { Counts(added: file.added, removed: file.removed) }
             }
@@ -289,12 +292,12 @@ private struct LineView: View {
             if line.kind == .hunk {
                 Text(line.text).foregroundStyle(.secondary).padding(.leading, 8)
             } else {
-                Text(number(line.old) + " " + number(line.new)).foregroundStyle(.tertiary).padding(.horizontal, 8)
-                Text(marker + line.text).foregroundStyle(.primary)
+                Text(number(line.old) + " " + number(line.new)).foregroundStyle(.secondary).padding(.horizontal, 8)
+                Text(marker + displayLine(line.text)).foregroundStyle(.primary)
             }
             Spacer(minLength: 0)
         }
-        .scaledFont(.caption1, design: .monospaced)
+        .scaledFont(.callout, design: .monospaced)
         .textSelection(.enabled)
         .padding(.vertical, 1)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -365,8 +368,7 @@ struct ChangeTreeColumn: View {
                     Spacer(minLength: 4)
                     switch change {
                     case .lines(let added, let removed):
-                        Text("+\(added)").foregroundStyle(.green)
-                        Text("−\(removed)").foregroundStyle(.red)
+                        ForEach(changeCounts(added: added, removed: removed), id: \.self) { Text($0).foregroundStyle(countColor($0)) }
                     case .binary: Text("bin").foregroundStyle(.secondary)
                     case .untracked: Text("N").foregroundStyle(.secondary)
                     }
@@ -387,3 +389,5 @@ struct ChangeTreeColumn: View {
         }
     }
 }
+
+private func countColor(_ label: String) -> Color { label.hasPrefix("+") ? .green : .red }

@@ -61,3 +61,20 @@ private func outline(_ nodes: [ChangeTreeNode], _ depth: Int = 0) -> [String] {
     #expect(c[0].kind == .file(.lines(added: 1, removed: 0)))
     #expect(u[0].kind == .file(.lines(added: 0, removed: 4)))
 }
+
+@Test func aFileHeaderSplitsItsNameFromItsDirectory() {
+    #expect(splitPath("tools/control-tower/Sources/TowerApp/Sidebar.swift") == ("tools/control-tower/Sources/TowerApp/", "Sidebar.swift"))
+    #expect(splitPath("README.md") == ("", "README.md"))
+}
+
+@Test func zeroCountsAreLeftOut() {
+    #expect(changeCounts(added: 3, removed: 0) == ["+3"])
+    #expect(changeCounts(added: 0, removed: 2) == ["−2"])
+    #expect(changeCounts(added: 1, removed: 1) == ["+1", "−1"])
+    #expect(changeCounts(added: 0, removed: 0) == [])
+}
+
+@Test func tabsShowAsFourSpaces() {
+    #expect(displayLine("\tif x {\t// y") == "    if x {    // y")
+    #expect(displayLine("plain") == "plain")
+}

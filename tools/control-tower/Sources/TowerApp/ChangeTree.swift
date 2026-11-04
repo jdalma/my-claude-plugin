@@ -59,3 +59,19 @@ struct DiffFileKey: Hashable {
     var part: DiffPart
     var path: String
 }
+
+/// A file header's directory (with its trailing `/`, '' at the root) and file name, the tree's leaf name.
+func splitPath(_ path: String) -> (dir: String, name: String) {
+    guard let slash = path.lastIndex(of: "/") else { return ("", path) }
+    return (String(path[...slash]), String(path[path.index(after: slash)...]))
+}
+
+/// `+N` and `−N`, each left out at 0.
+func changeCounts(added: Int, removed: Int) -> [String] {
+    (added > 0 ? ["+\(added)"] : []) + (removed > 0 ? ["−\(removed)"] : [])
+}
+
+/// A diff line as shown: tabs as four spaces. The collected text keeps its tabs.
+func displayLine(_ text: String) -> String {
+    text.replacingOccurrences(of: "\t", with: "    ")
+}

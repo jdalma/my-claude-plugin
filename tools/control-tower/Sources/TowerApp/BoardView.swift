@@ -366,6 +366,7 @@ private struct DetailView: View {
                         GridRow {
                             Text(k).foregroundStyle(.secondary)
                             Text(v).textSelection(.enabled)
+                                .scaledFont(.body, design: monoFacts.contains(k) ? .monospaced : .default)
                         }
                     }
                 }
@@ -459,3 +460,6 @@ private struct QueueCard: View {
         .help(badgeLabel(row.badge) + "\n" + row.path)
     }
 }
+
+/// Detail facts that are paths or identifiers.
+private let monoFacts: Set = ["워크스페이스", "branch", "tmux"]
