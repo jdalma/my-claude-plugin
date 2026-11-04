@@ -159,7 +159,9 @@ struct BoardView: View {
     }
 }
 
-/// One line: a team's label and name share `.subheadline`; the waiting count is `.caption1`.
+/// One line, the sidebar's largest text: label `.headline`, team name `.title3`, waiting count `.callout`.
+/// Sizes, largest first: group header > live row title (`.body`) > history title, folder (`.callout`) > secondary lines
+/// (`.caption1`); paths are tooltips. Names set `.primary` explicitly: a section header otherwise dims them.
 /// The group summary is the tooltip.
 private struct GroupHeader: View {
     let tag: LineKind
@@ -170,10 +172,10 @@ private struct GroupHeader: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            KindTag(kind: tag, style: .subheadline)
-            if let title { Text(title).scaledFont(.subheadline, weight: .bold) }
+            KindTag(kind: tag, style: .headline)
+            if let title { Text(title).scaledFont(.title3, weight: .semibold).foregroundStyle(.primary).lineLimit(1) }
             Spacer(minLength: 8)
-            if let count { Text(count).scaledFont(.caption1).foregroundStyle(.secondary) }
+            if let count { Text(count).scaledFont(.callout).foregroundStyle(.secondary) }
         }
         .textCase(nil)
         .help(tooltip)
@@ -207,12 +209,12 @@ private struct LiveRowView: View {
             StatusIconView(badge: row.badge, style: .body)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
-                    Text(row.title).scaledFont(.body).lineLimit(1)
+                    Text(row.title).scaledFont(.body).foregroundStyle(.primary).lineLimit(1).layoutPriority(1)
                     if let folder = row.shownFolder {
-                        Text(folder).scaledFont(.body).foregroundStyle(.secondary).lineLimit(1)
+                        Text(folder).scaledFont(.callout).foregroundStyle(.secondary).lineLimit(1)
                     }
                     Spacer(minLength: 8)
-                    Text(row.badge.elapsed).scaledFont(.caption1).foregroundStyle(.secondary)
+                    Text(row.badge.elapsed).scaledFont(.caption1).foregroundStyle(.secondary).fixedSize()
                 }
                 if !row.line.isEmpty {
                     Text(row.line).scaledFont(.caption1).foregroundStyle(.secondary).lineLimit(1)
@@ -231,7 +233,7 @@ private struct HistoryRowView: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(historyTitle(h)).scaledFont(.body).lineLimit(1)
+                Text(historyTitle(h)).scaledFont(.callout).foregroundStyle(.primary).lineLimit(1)
                 Text(historySubtitle(h)).scaledFont(.caption1).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer(minLength: 8)
