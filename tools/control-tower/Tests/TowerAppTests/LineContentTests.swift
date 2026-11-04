@@ -30,3 +30,12 @@ private func runs(_ a: AttributedString) -> [(text: String, fg: Color?, bg: Colo
     #expect(String(lineContent(l2, marker: "−").characters) == "−" + long)
     #expect(String(lineContent(DiffLine(kind: .context, old: 1, new: 1, text: ""), marker: " ").characters) == " ")
 }
+
+/// Tens of thousands of spans (a minified line) take linear time, not quadratic.
+@Test func manySpansStayLinear() {
+    var line = DiffLine(kind: .added, old: nil, new: 1, text: String(repeating: "ab", count: 40_000))
+    line.syntax = stride(from: 0, to: 80_000, by: 2).map { SyntaxSpan(range: $0..<$0 + 1, kind: .keyword) }
+    line.changes = [10..<20, 50_000..<50_010]
+    let t = ContinuousClock().measure { #expect(String(lineContent(line, marker: "+").characters).count == 80_001) }
+    #expect(t < .seconds(3))  // the quadratic version took minutes at this size
+}

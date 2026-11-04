@@ -26,9 +26,9 @@ final class ChangesState {
     var pins = storedPins()
     /// What the view shows: `fetched`, then the same diff with syntax colors.
     var loaded: Loaded?
-    /// The last load as collected, before highlighting; a refresh compares against it.
-    @ObservationIgnored var fetched: Loaded?
-    @ObservationIgnored var highlighted = false
+    /// The last load as collected, before highlighting. A refresh compares against it, and the
+    /// highlight task is keyed on it, so the 5 s refresh never cancels a highlight of the same diff.
+    private(set) var fetched: Loaded?
     var showCommitted = true
     var showUncommitted = true
     /// Unfolded files; every other file shows its header only, a file new on a refresh included.
@@ -37,6 +37,21 @@ final class ChangesState {
     private var workspace: String?
     /// The file a tree click asked to scroll to; the detail's scroll view consumes it.
     var scrollTarget: DiffFileKey?
+
+    /// A refresh's result: shown at once in one color when it differs from the last one.
+    func accept(_ next: Loaded) {
+        guard next != fetched else { return }
+        fetched = next
+        loaded = next
+    }
+
+    /// Colors `f` and shows it, unless cancelled or superseded meanwhile.
+    func highlight(_ f: Loaded?) async {
+        guard let f, case .diff(let d) = f.result else { return }
+        let lit = await highlighted(d)
+        guard !Task.isCancelled, fetched == f else { return }
+        loaded = Loaded(workspace: f.workspace, result: .diff(lit), candidates: f.candidates)
+    }
 
     func diff(for workspace: String) -> WorkspaceDiff? {
         guard let loaded, loaded.workspace == workspace, case .diff(let d) = loaded.result else { return nil }
@@ -110,19 +125,10 @@ struct ChangesView: View {
                 let result = workspaceDiff(at: workspace, pinnedBase: top.flatMap { pins[$0] })
                 return Loaded(workspace: workspace, result: result, candidates: top.map { baseCandidates(toplevel: $0) } ?? [])
             }.value
-            guard !Task.isCancelled else { return }
             // Reloaded every board refresh (5 s); assigning an unchanged diff would redraw every unfolded line.
-            if next != state.fetched {
-                state.fetched = next
-                state.loaded = next  // one color first, colors when the highlighter is done
-                state.highlighted = false
-            }
-            guard !state.highlighted, case .diff(let d) = next.result else { return }
-            let lit = await highlighted(d)
-            guard !Task.isCancelled, state.fetched == next else { return }
-            state.loaded = Loaded(workspace: next.workspace, result: .diff(lit), candidates: next.candidates)
-            state.highlighted = true
+            if !Task.isCancelled { state.accept(next) }
         }
+        .task(id: state.fetched) { await state.highlight(state.fetched) }
     }
 
     private func content(_ d: WorkspaceDiff, candidates: [String]) -> some View {
@@ -429,12 +435,16 @@ func lineContent(_ line: DiffLine, marker: String) -> AttributedString {
     for s in line.syntax { cuts.formUnion([s.range.lowerBound, s.range.upperBound]) }
     let bounds = cuts.filter { $0 <= chars.count }.sorted()
     var out = AttributedString(marker)
+    // changes and syntax are each sorted and disjoint: one pointer each, so a line costs linear time.
+    var c = 0, y = 0
     for (a, b) in zip(bounds, bounds.dropFirst()) where a < b {
+        while c < line.changes.count, line.changes[c].upperBound <= a { c += 1 }
+        while y < line.syntax.count, line.syntax[y].range.upperBound <= a { y += 1 }
         var piece = AttributedString(displayLine(String(chars[a..<b])))
-        if line.changes.contains(where: { $0.contains(a) }) {
+        if c < line.changes.count, line.changes[c].contains(a) {
             piece.backgroundColor = line.kind == .added ? DiffColors.addedWord : DiffColors.removedWord
-        } else if let s = line.syntax.first(where: { $0.range.contains(a) }) {
-            piece.foregroundColor = DiffColors.syntax(s.kind)
+        } else if y < line.syntax.count, line.syntax[y].range.contains(a) {
+            piece.foregroundColor = DiffColors.syntax(line.syntax[y].kind)
         }
         out += piece
     }

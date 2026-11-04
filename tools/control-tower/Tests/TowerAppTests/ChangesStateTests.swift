@@ -49,3 +49,44 @@ private let b = DiffFileKey(part: .committed, path: "src/b.swift")
     #expect(clampTreeWidth(300) == 300)
     #expect(clampTreeWidth(900) == 480)
 }
+
+@testable import TowerCore
+
+private func loaded(_ text: String) -> Loaded {
+    let lines = [DiffLine(kind: .hunk, old: nil, new: nil, text: "@@ -1 +1 @@"), DiffLine(kind: .added, old: nil, new: 1, text: text)]
+    let d = WorkspaceDiff(toplevel: "/w", base: .none, committed: nil,
+                          uncommitted: DiffSection(files: [FileDiff(path: "a.swift", added: 1, removed: 0, binary: false, lines: lines)], untracked: []))
+    return Loaded(workspace: "/w", result: .diff(d), candidates: [])
+}
+
+@MainActor private func colored(_ s: ChangesState) -> Bool {
+    s.diff(for: "/w")?.uncommitted.files[0].lines[1].syntax.isEmpty == false
+}
+
+@MainActor @Test func aRefreshOfTheSameDiffDoesNotDropItsHighlight() async {
+    let s = ChangesState()
+    s.accept(loaded("let a = 1"))
+    #expect(!colored(s))  // one color first
+    let t = Task { await s.highlight(s.fetched) }
+    s.accept(loaded("let a = 1"))  // the 5 s refresh: same diff, nothing reassigned
+    await t.value
+    #expect(colored(s))
+}
+
+@MainActor @Test func aCancelledHighlightIsRedoneAndASupersededOneIsDropped() async {
+    let s = ChangesState()
+    s.accept(loaded("let a = 1"))
+    let t = Task { await s.highlight(s.fetched) }
+    t.cancel()
+    await t.value
+    #expect(!colored(s))
+    await s.highlight(s.fetched)  // the task runs again, as .task(id:) does when the view comes back
+    #expect(colored(s))
+
+    let a = s.fetched
+    let old = Task { await s.highlight(a) }
+    s.accept(loaded("let b = 2"))
+    await old.value
+    #expect(s.diff(for: "/w")?.uncommitted.files[0].lines[1].text == "let b = 2")
+    #expect(!colored(s))
+}

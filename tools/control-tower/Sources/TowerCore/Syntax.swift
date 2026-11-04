@@ -62,20 +62,39 @@ public actor SyntaxHighlighter {
     }
 }
 
-/// The app copies the script into Contents/Resources; tests read it from the SwiftPM resource bundle.
+/// The app copies the script into Contents/Resources; tests find the SwiftPM resource bundle beside the
+/// test bundle. Not `Bundle.module`: it calls fatalError when the bundle is missing, and a missing script
+/// must mean one color, not a crash.
 private func bundledScript() -> String? {
-    let url = Bundle.main.url(forResource: "highlight.min", withExtension: "js")
-        ?? Bundle.module.url(forResource: "highlight.min", withExtension: "js", subdirectory: "Resources")
+    // The bundle holding this code: the app itself, or under `swift test` the test bundle beside the resources.
+    let swiftPM = [Bundle(for: BundleToken.self), Bundle.main].lazy
+        .compactMap { Bundle(url: $0.bundleURL.deletingLastPathComponent().appending(path: "ControlTower_TowerCore.bundle")) }
+        .compactMap { $0.url(forResource: "highlight.min", withExtension: "js", subdirectory: "Resources") }
+        .first
+    let url = Bundle.main.url(forResource: "highlight.min", withExtension: "js") ?? swiftPM
     return url.flatMap { try? String(contentsOf: $0, encoding: .utf8) }
 }
 
+private final class BundleToken {}
+
+/// Lines past this many characters stay one color: a minified line holds tens of thousands of spans,
+/// costly to compute and to lay out.
+let syntaxLineLimit = 2000
+
 /// Fills `syntax` for every file whose language is known. Files the script cannot handle stay one color.
-public func highlighted(_ d: WorkspaceDiff, with h: SyntaxHighlighter = .shared) async -> WorkspaceDiff {
+/// Stops between files once cancelled; the caller drops a cancelled result.
+/// `nil` means `.shared`, first touched here so its script load runs off the caller's actor.
+public func highlighted(_ d: WorkspaceDiff, with h: SyntaxHighlighter? = nil) async -> WorkspaceDiff {
+    let h = h ?? .shared
     func section(_ s: DiffSection) async -> DiffSection {
         var s = s
-        for i in s.files.indices {
+        for i in s.files.indices where !Task.isCancelled {
             guard let lang = syntaxLanguage(forPath: s.files[i].path) else { continue }
-            let at = s.files[i].lines.indices.filter { s.files[i].lines[$0].kind != .hunk }
+            let at = s.files[i].lines.indices.filter { j in
+                let l = s.files[i].lines[j]
+                // utf8 count is O(1) and never below the Character count
+                return l.kind != .hunk && (l.text.utf8.count <= syntaxLineLimit || l.text.count <= syntaxLineLimit)
+            }
             guard let spans = await h.spans(at.map { s.files[i].lines[$0].text }, language: lang) else { continue }
             for (j, sp) in zip(at, spans) { s.files[i].lines[j].syntax = sp }
         }

@@ -177,6 +177,7 @@ final class ParseMemo: @unchecked Sendable {
     enum Slot { case committed, uncommitted }
     private let lock = NSLock()
     private var slots: [Slot: (text: String, limit: Int, files: [FileDiff])] = [:]
+    /// Read outside the lock, by tests only, after the calls they count have returned.
     private(set) var parses = 0
 
     func files(_ slot: Slot, _ text: String, _ limit: Int) -> [FileDiff] {

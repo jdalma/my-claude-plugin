@@ -73,3 +73,12 @@ private func diff(_ path: String, _ text: String) -> WorkspaceDiff {
     _ = memo.files(.uncommitted, text, 1)
     #expect(memo.parses == 3)
 }
+
+@Test func linesPastTheLimitStayOneColor() async {
+    let long = "let x = " + String(repeating: "1", count: 1993)  // 2001 characters
+    let edge = "let x = " + String(repeating: "1", count: 1992)  // 2000
+    #expect(await highlighted(diff("a.swift", long)).uncommitted.files[0].lines[1].syntax.isEmpty)
+    #expect(await !highlighted(diff("a.swift", edge)).uncommitted.files[0].lines[1].syntax.isEmpty)
+    let wide = "let s = \"" + String(repeating: "한", count: 1500) + "\""  // 1510 characters, 4510 bytes
+    #expect(await !highlighted(diff("a.swift", wide)).uncommitted.files[0].lines[1].syntax.isEmpty)
+}
