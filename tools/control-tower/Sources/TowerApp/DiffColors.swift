@@ -3,9 +3,19 @@ import SwiftUI
 import TowerCore
 
 /// GitHub's diff colors, light and dark, from @primer/primitives 11.10.0
-/// (dist/css/functional/themes/light.css and dark.css, `--diffBlob-*`).
-/// Dark values are translucent, as in Primer; they lay over the diff pane's own background.
+/// (dist/css/functional/themes/light.css and dark.css). The file cards are painted on GitHub's own
+/// canvas, so the translucent dark `--diffBlob-*` values blend as they do on github.com.
 enum DiffColors {
+    /// `--bgColor-default`, `--bgColor-muted`, `--borderColor-default`.
+    static let canvas = pair(0xffffffff, 0x0d1117ff)
+    static let header = pair(0xf6f8faff, 0x151b23ff)
+    static let border = pair(0xd1d9e0ff, 0x3d444dff)
+    /// `--fgColor-default`, `--fgColor-muted`, `--fgColor-success`, `--fgColor-danger`.
+    static let text = pair(0x1f2328ff, 0xf0f6fcff)
+    static let mutedText = pair(0x59636eff, 0x9198a1ff)
+    static let addedCount = pair(0x1a7f37ff, 0x3fb950ff)
+    static let removedCount = pair(0xd1242fff, 0xf85149ff)
+
     static let addedLine = pair(0xdafbe1ff, 0x2ea04326)
     static let addedNumber = pair(0xaceebbff, 0x3fb9504d)
     static let addedWord = pair(0xaceebbff, 0x2ea04366)
@@ -13,37 +23,37 @@ enum DiffColors {
     static let removedNumber = pair(0xffcecbff, 0xf851494d)
     static let removedWord = pair(0xffcecbff, 0xf8514966)
     static let hunkLine = pair(0xddf4ffff, 0x388bfd1a)
-    /// Text on our lighter-than-GitHub pane: `--fgColor-muted`/`-success`/`-danger` from the
-    /// light-high-contrast and dark-high-contrast themes, since the plain ones read under 4.5:1 here.
-    static let mutedText = pair(0x454c54ff, 0xb7bdc8ff)
-    static let addedCount = pair(0x04591fff, 0x2bd853ff)
-    static let removedCount = pair(0x960d1eff, 0xff9492ff)
+    static let hunkNumber = pair(0xb6e3ffff, 0x0c2d6bff)
 
-    /// GitHub's syntax colors, `--prettylights-syntax-*` of light-high-contrast.css and dark-high-contrast.css
-    /// (the plain themes read under 4.5:1 on our pane). Dark comment takes `--fgColor-muted` and dark heading
-    /// the constant color, whose own values read under 4.5:1 on an added line. Changed words drop these
-    /// for the body color: no syntax color reaches 4.5:1 on the dark word background.
-    static func syntax(_ kind: SyntaxKind) -> Color {
-        switch kind {
-        case .keyword: syntaxKeyword
-        case .entity: syntaxEntity
-        case .constant, .heading: syntaxConstant
-        case .entityTag: syntaxEntityTag
-        case .string: syntaxString
-        case .variable: syntaxVariable
-        case .comment: syntaxComment
-        case .list: syntaxList
+    /// The tree beside the diff keeps the macOS background, where the plain success/danger read under
+    /// 4.5:1: `--fgColor-success`/`-danger` of light-high-contrast.css and dark-high-contrast.css.
+    static let treeAddedCount = pair(0x04591fff, 0x2bd853ff)
+    static let treeRemovedCount = pair(0x960d1eff, 0xff9492ff)
+
+    /// `--prettylights-syntax-*`. Heading takes the constant color, as highlight.js's github.css does;
+    /// the dark heading value reads 3.4:1 on an added line.
+    /// On a changed word a color stays only where it reaches 4.5:1 on both word backgrounds of that
+    /// appearance; elsewhere the word shows in the body color.
+    static func syntax(_ kind: SyntaxKind, onWord: Bool = false) -> Color {
+        let (light, dark): (UInt32, UInt32) = switch kind {
+        case .keyword: (0xcf222eff, 0xff7b72ff)
+        case .entity: (0x6639baff, 0xd2a8ffff)
+        case .constant, .heading: (0x0550aeff, 0x79c0ffff)
+        case .string: (0x0a3069ff, 0xa5d6ffff)
+        case .variable: (0x953800ff, 0xffa657ff)
+        case .comment: (0x59636eff, 0x9198a1ff)
+        case .entityTag: (0x0550aeff, 0x7ee787ff)
+        case .list: (0x3b2300ff, 0xf2cc60ff)
         }
+        guard onWord else { return pair(light, dark) }
+        return pair(wordSafe.light.contains(kind) ? light : 0x1f2328ff, wordSafe.dark.contains(kind) ? dark : 0xf0f6fcff)
     }
 
-    private static let syntaxKeyword = pair(0xa0111fff, 0xff9492ff)
-    private static let syntaxEntity = pair(0x512598ff, 0xdbb7ffff)
-    private static let syntaxConstant = pair(0x023b95ff, 0x91cbffff)
-    private static let syntaxString = pair(0x032563ff, 0xaddcffff)
-    private static let syntaxVariable = pair(0x702c00ff, 0xffb757ff)
-    private static let syntaxComment = pair(0x59636eff, 0xb7bdc8ff)
-    private static let syntaxEntityTag = pair(0x023b95ff, 0x72f088ff)
-    private static let syntaxList = pair(0x2e1800ff, 0xfbd669ff)
+    /// Kinds at 4.5:1 or more on the added and removed word backgrounds (T29 report table).
+    private static let wordSafe: (light: Set<SyntaxKind>, dark: Set<SyntaxKind>) = (
+        [.entity, .constant, .heading, .string, .variable, .entityTag, .list],
+        [.string, .entityTag, .list]
+    )
 
     /// Resolved against the appearance the view is drawn in, which T26's choice sets.
     private static func pair(_ light: UInt32, _ dark: UInt32) -> Color {

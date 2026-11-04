@@ -225,10 +225,14 @@ struct ChangesView: View {
 private struct Counts: View {
     let added: Int
     let removed: Int
+    /// On a file card's GitHub header rather than the macOS background.
+    var onCard = false
 
     var body: some View {
         HStack(spacing: 4) {
-            ForEach(changeCounts(added: added, removed: removed), id: \.self) { Text($0).foregroundStyle(countColor($0)) }
+            ForEach(changeCounts(added: added, removed: removed), id: \.self) {
+                Text($0).foregroundStyle(onCard ? ($0.hasPrefix("+") ? DiffColors.addedCount : DiffColors.removedCount) : countColor($0))
+            }
         }
         .scaledFont(.body, design: .monospaced)
     }
@@ -276,31 +280,37 @@ private struct FileView: View {
                 }
                 .buttonStyle(.borderless)
                 .help(folded ? "펼치기" : "접기")
-                Image(systemName: "doc.text").foregroundStyle(.secondary)
+                Image(systemName: "doc.text").foregroundStyle(DiffColors.mutedText)
                 let (dir, name) = splitPath(file.path)
                 // the name is what tells files apart: dimmer directory, and a long path loses its head first
-                (Text(dir).foregroundStyle(.secondary) + Text(name).fontWeight(.semibold).foregroundStyle(.primary))
+                (Text(dir).foregroundStyle(DiffColors.mutedText) + Text(name).fontWeight(.semibold).foregroundStyle(DiffColors.text))
                     .scaledFont(.body, design: .monospaced)
                     .lineLimit(1).truncationMode(.head).textSelection(.enabled)
                     .help(file.path)
                 Spacer()
-                if file.binary { Text("바이너리 파일").foregroundStyle(.secondary) } else { Counts(added: file.added, removed: file.removed) }
+                if file.binary {
+                    Text("바이너리 파일").foregroundStyle(DiffColors.mutedText)
+                } else {
+                    Counts(added: file.added, removed: file.removed, onCard: true)
+                }
             }
             .padding(.horizontal, 8).padding(.vertical, 4)
-            .background(.quaternary)
+            .background(DiffColors.header)
             if !folded {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach(Array(file.lines.enumerated()), id: \.offset) { _, line in LineView(line: line) }
                 }
                 if file.hiddenLines > 0 {
                     Text("\(file.hiddenLines)줄 더 있음 — 터미널에서 git diff로 확인")
-                        .scaledFont(.caption1).foregroundStyle(.secondary)
+                        .scaledFont(.caption1).foregroundStyle(DiffColors.mutedText)
                         .padding(.horizontal, 8).padding(.vertical, 4)
                 }
             }
         }
+        // GitHub's file box: its canvas under the lines, so translucent diff colors blend as on github.com
+        .background(DiffColors.canvas)
         .clipShape(RoundedRectangle(cornerRadius: 6))
-        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.separator))
+        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(DiffColors.border))
     }
 }
 
@@ -308,24 +318,31 @@ private struct LineView: View {
     let line: DiffLine
 
     var body: some View {
+        // GitHub's three cells, each painted once on the canvas: numbers, the +/− marker, the code.
         HStack(alignment: .top, spacing: 0) {
-            if line.kind == .hunk {
-                Text(line.text).foregroundStyle(DiffColors.mutedText).padding(.leading, 8).padding(.vertical, 1)
-            } else {
-                Text(number(line.old) + " " + number(line.new))
-                    .foregroundStyle(line.kind == .context ? DiffColors.mutedText : .primary)
-                    .padding(.horizontal, 8).padding(.vertical, 1)
-                    .frame(maxHeight: .infinity, alignment: .top)
-                    .background(numberTint)
-                Text(content).foregroundStyle(.primary).padding(.vertical, 1)
+            Text(line.kind == .hunk ? number(nil) + " " + number(nil) : number(line.old) + " " + number(line.new))
+                .foregroundStyle(line.kind == .context ? DiffColors.mutedText : DiffColors.text)
+                .padding(.horizontal, 8).padding(.vertical, 1)
+                .frame(maxHeight: .infinity, alignment: .top)
+                .background(numberTint)
+            HStack(alignment: .top, spacing: 0) {
+                if line.kind == .hunk {
+                    Text(line.text).foregroundStyle(DiffColors.mutedText).padding(.leading, 8)
+                } else {
+                    Text(marker).padding(.horizontal, 4)
+                    Text(content)
+                }
+                Spacer(minLength: 0)
             }
-            Spacer(minLength: 0)
+            .foregroundStyle(DiffColors.text)
+            .padding(.vertical, 1)
+            .frame(maxHeight: .infinity, alignment: .top)
+            .background(tint)
         }
         .fixedSize(horizontal: false, vertical: true)
         .scaledFont(.callout, design: .monospaced)
         .textSelection(.enabled)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(tint)
     }
 
     private func number(_ n: Int?) -> String {
@@ -341,7 +358,7 @@ private struct LineView: View {
         }
     }
 
-    private var content: AttributedString { lineContent(line, marker: marker) }
+    private var content: AttributedString { lineContent(line) }
 
     private var tint: Color {
         switch line.kind {
@@ -356,7 +373,8 @@ private struct LineView: View {
         switch line.kind {
         case .added: DiffColors.addedNumber
         case .removed: DiffColors.removedNumber
-        default: .clear
+        case .hunk: DiffColors.hunkNumber
+        case .context: .clear
         }
     }
 }
@@ -424,27 +442,28 @@ struct ChangeTreeColumn: View {
     }
 }
 
-private func countColor(_ label: String) -> Color { label.hasPrefix("+") ? DiffColors.addedCount : DiffColors.removedCount }
+private func countColor(_ label: String) -> Color { label.hasPrefix("+") ? DiffColors.treeAddedCount : DiffColors.treeRemovedCount }
 
-/// The marker and text of a diff line. Syntax spans color the text; the parts that differ from the paired
-/// line sit on the word color in the body color. Offsets are into `line.text`, so tabs expand per piece.
-func lineContent(_ line: DiffLine, marker: String) -> AttributedString {
+/// The text of a diff line. Syntax spans color it; the parts that differ from the paired line sit on the
+/// word color, keeping a syntax color only where it reads there. Offsets are into `line.text`, so tabs
+/// expand per piece.
+func lineContent(_ line: DiffLine) -> AttributedString {
     let chars = Array(line.text)
     var cuts = Set([0, chars.count])
     for r in line.changes { cuts.formUnion([r.lowerBound, r.upperBound]) }
     for s in line.syntax { cuts.formUnion([s.range.lowerBound, s.range.upperBound]) }
     let bounds = cuts.filter { $0 <= chars.count }.sorted()
-    var out = AttributedString(marker)
+    var out = AttributedString()
     // changes and syntax are each sorted and disjoint: one pointer each, so a line costs linear time.
     var c = 0, y = 0
     for (a, b) in zip(bounds, bounds.dropFirst()) where a < b {
         while c < line.changes.count, line.changes[c].upperBound <= a { c += 1 }
         while y < line.syntax.count, line.syntax[y].range.upperBound <= a { y += 1 }
         var piece = AttributedString(displayLine(String(chars[a..<b])))
-        if c < line.changes.count, line.changes[c].contains(a) {
-            piece.backgroundColor = line.kind == .added ? DiffColors.addedWord : DiffColors.removedWord
-        } else if y < line.syntax.count, line.syntax[y].range.contains(a) {
-            piece.foregroundColor = DiffColors.syntax(line.syntax[y].kind)
+        let onWord = c < line.changes.count && line.changes[c].contains(a)
+        if onWord { piece.backgroundColor = line.kind == .added ? DiffColors.addedWord : DiffColors.removedWord }
+        if y < line.syntax.count, line.syntax[y].range.contains(a) {
+            piece.foregroundColor = DiffColors.syntax(line.syntax[y].kind, onWord: onWord)
         }
         out += piece
     }

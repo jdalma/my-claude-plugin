@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import Testing
 @testable import TowerCore
@@ -7,28 +8,45 @@ private func runs(_ a: AttributedString) -> [(text: String, fg: Color?, bg: Colo
     a.runs.map { (String(a[$0.range].characters), $0.foregroundColor, $0.backgroundColor) }
 }
 
-@Test func syntaxColorsTheTextAndChangedWordsKeepTheBodyColor() {
+/// sRGB hex of a dynamic color drawn light and dark.
+private func hex(_ c: Color?) -> [String] {
+    guard let c else { return [] }
+    return [NSAppearance.Name.aqua, .darkAqua].map { name in
+        var out = ""
+        NSAppearance(named: name)!.performAsCurrentDrawingAppearance {
+            let s = NSColor(c).usingColorSpace(.sRGB)!
+            out = String(format: "%02x%02x%02x", Int((s.redComponent * 255).rounded()), Int((s.greenComponent * 255).rounded()), Int((s.blueComponent * 255).rounded()))
+        }
+        return out
+    }
+}
+
+@Test func syntaxColorsTheTextAndChangedWordsKeepOnlyColorsThatRead() {
     var line = DiffLine(kind: .added, old: nil, new: 1, text: "let x = \"b\"")
     line.syntax = [SyntaxSpan(range: 0..<3, kind: .keyword), SyntaxSpan(range: 8..<11, kind: .string)]
-    line.changes = [9..<10]
-    let r = runs(lineContent(line, marker: "+"))
-    #expect(r.map(\.text).joined() == "+let x = \"b\"")
-    #expect(r.first { $0.text == "let" }?.fg == DiffColors.syntax(.keyword))
-    #expect(r.first { $0.text == "\"" }?.fg == DiffColors.syntax(.string))
-    let changed = r.first { $0.text == "b" }
-    #expect(changed?.bg == DiffColors.addedWord)
-    #expect(changed?.fg == nil)
+    line.changes = [0..<3, 9..<10]
+    let r = runs(lineContent(line))
+    #expect(r.map(\.text).joined() == "let x = \"b\"")
+    // GitHub's own syntax colors off a changed word
+    #expect(hex(r.first { $0.text == "\"" }?.fg) == ["0a3069", "a5d6ff"])
+    // a changed keyword reads under 4.5:1 in that color, so it takes the body color; a string keeps its own
+    let kw = r.first { $0.text == "let" }, b = r.first { $0.text == "b" }
+    #expect(hex(kw?.bg) == hex(DiffColors.addedWord))
+    #expect(hex(kw?.fg) == ["1f2328", "f0f6fc"])
+    #expect(hex(b?.fg) == ["0a3069", "a5d6ff"])
+    // dark heading falls back to the constant color
+    #expect(hex(DiffColors.syntax(.heading)) == ["0550ae", "79c0ff"])
 }
 
 @Test func tabsStillExpandAndLongLinesStayWhole() {
     var line = DiffLine(kind: .context, old: 1, new: 1, text: "\tlet\ta")
     line.syntax = [SyntaxSpan(range: 1..<4, kind: .keyword)]
-    #expect(String(lineContent(line, marker: " ").characters) == "     let    a")
+    #expect(String(lineContent(line).characters) == "    let    a")
     let long = String(repeating: "x = 1; ", count: 2000)
     var l2 = DiffLine(kind: .removed, old: 1, new: nil, text: long)
     l2.syntax = [SyntaxSpan(range: 4..<5, kind: .constant)]
-    #expect(String(lineContent(l2, marker: "−").characters) == "−" + long)
-    #expect(String(lineContent(DiffLine(kind: .context, old: 1, new: 1, text: ""), marker: " ").characters) == " ")
+    #expect(String(lineContent(l2).characters) == long)
+    #expect(String(lineContent(DiffLine(kind: .context, old: 1, new: 1, text: "")).characters) == "")
 }
 
 /// Tens of thousands of spans (a minified line) take linear time, not quadratic.
@@ -36,6 +54,6 @@ private func runs(_ a: AttributedString) -> [(text: String, fg: Color?, bg: Colo
     var line = DiffLine(kind: .added, old: nil, new: 1, text: String(repeating: "ab", count: 40_000))
     line.syntax = stride(from: 0, to: 80_000, by: 2).map { SyntaxSpan(range: $0..<$0 + 1, kind: .keyword) }
     line.changes = [10..<20, 50_000..<50_010]
-    let t = ContinuousClock().measure { #expect(String(lineContent(line, marker: "+").characters).count == 80_001) }
+    let t = ContinuousClock().measure { #expect(String(lineContent(line).characters).count == 80_000) }
     #expect(t < .seconds(3))  // the quadratic version took minutes at this size
 }
