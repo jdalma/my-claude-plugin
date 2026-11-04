@@ -215,7 +215,7 @@ struct ChangesView: View {
                         Button("모두 펼치기") { state.setExpanded(keys, true) }.buttonStyle(.link)
                     }
                     Text("파일 \(section.files.count)").foregroundStyle(.secondary)
-                    Counts(added: section.added, removed: section.removed)
+                    Counts(added: section.added, removed: section.removed, onCanvas: true)
                 }
             }
         }
@@ -225,13 +225,13 @@ struct ChangesView: View {
 private struct Counts: View {
     let added: Int
     let removed: Int
-    /// On a file card's GitHub header rather than the macOS background.
-    var onCard = false
+    /// On the detail pane's GitHub canvas rather than the tree's macOS background.
+    var onCanvas = false
 
     var body: some View {
         HStack(spacing: 4) {
             ForEach(changeCounts(added: added, removed: removed), id: \.self) {
-                Text($0).foregroundStyle(onCard ? ($0.hasPrefix("+") ? DiffColors.addedCount : DiffColors.removedCount) : countColor($0))
+                Text($0).foregroundStyle(onCanvas ? ($0.hasPrefix("+") ? DiffColors.addedCount : DiffColors.removedCount) : countColor($0))
             }
         }
         .scaledFont(.body, design: .monospaced)
@@ -291,7 +291,7 @@ private struct FileView: View {
                 if file.binary {
                     Text("바이너리 파일").foregroundStyle(DiffColors.mutedText)
                 } else {
-                    Counts(added: file.added, removed: file.removed, onCard: true)
+                    Counts(added: file.added, removed: file.removed, onCanvas: true)
                 }
             }
             .padding(.horizontal, 8).padding(.vertical, 4)

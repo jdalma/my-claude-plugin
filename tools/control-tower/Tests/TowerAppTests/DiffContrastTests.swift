@@ -55,3 +55,38 @@ func everyDiffTextReadsAtFourPointFive(_ name: NSAppearance.Name) {
         #expect((onWord == own) == ownReads || own == text, "\(k) \(name.rawValue)")
     }
 }
+
+/// The detail pane sets `.foregroundStyle(text, mutedText)`, so its `.primary`/`.secondary` draw in
+/// GitHub's colors. Rendered, not assumed; compared with the same colors drawn through the same renderer.
+@MainActor @Test(arguments: [ColorScheme.light, .dark])
+func detailHierarchyDrawsInGitHubColors(_ scheme: ColorScheme) throws {
+    func pixel(_ view: some View) throws -> [Int] {
+        let r = ImageRenderer(content: view.frame(width: 4, height: 4).environment(\.colorScheme, scheme))
+        r.scale = 1
+        let image = try #require(r.nsImage?.cgImage(forProposedRect: nil, context: nil, hints: nil))
+        let c = try #require(NSBitmapImageRep(cgImage: image).colorAt(x: 2, y: 2))
+        return [c.redComponent, c.greenComponent, c.blueComponent].map { Int(($0 * 255).rounded()) }
+    }
+    func hierarchy(_ style: HierarchicalShapeStyle) -> some View {
+        Rectangle().fill(style).foregroundStyle(DiffColors.text, DiffColors.mutedText)
+    }
+    #expect(try pixel(hierarchy(.primary)) == pixel(Rectangle().fill(DiffColors.text)))
+    #expect(try pixel(hierarchy(.secondary)) == pixel(Rectangle().fill(DiffColors.mutedText)))
+    #expect(try pixel(hierarchy(.secondary)) != pixel(Rectangle().fill(.secondary)))
+}
+
+/// What else the detail pane draws on the canvas: links and the team pill.
+@Test(arguments: [NSAppearance.Name.aqua, .darkAqua])
+func detailExtrasReadOnTheCanvas(_ name: NSAppearance.Name) {
+    let canvas = resolve(DiffColors.canvas, name)
+    var link: RGBA = (0, 0, 0, 0)
+    NSAppearance(named: name)!.performAsCurrentDrawingAppearance {
+        let s = NSColor.linkColor.usingColorSpace(.sRGB)!
+        link = (s.redComponent, s.greenComponent, s.blueComponent, s.alphaComponent)
+    }
+    #expect(contrast(over(link, canvas), canvas) >= 4.5)
+    let pill = over(resolve(DiffColors.header, name), canvas)
+    #expect(contrast(resolve(DiffColors.text, name), pill) >= 4.5)
+    for count in [DiffColors.addedCount, DiffColors.removedCount] { #expect(contrast(resolve(count, name), canvas) >= 4.5) }
+    #expect(contrast(resolve(DiffColors.mutedText, name), canvas) >= 4.5)
+}

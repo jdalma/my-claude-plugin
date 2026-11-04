@@ -391,7 +391,10 @@ private struct DetailView: View {
             }
             .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
+            // GitHub's page colors: `.primary`/`.secondary` inside read as fgColor-default/-muted
+            .foregroundStyle(DiffColors.text, DiffColors.mutedText)
         }
+        .background(DiffColors.canvas)
     }
 }
 
@@ -401,7 +404,8 @@ private struct Pill: View {
     var body: some View {
         Text(text).scaledFont(.caption1)
             .padding(.horizontal, 8).padding(.vertical, 2)
-            .background(.quaternary, in: .capsule)
+            .background(DiffColors.header, in: .capsule)
+            .overlay(Capsule().strokeBorder(DiffColors.border))
     }
 }
 
