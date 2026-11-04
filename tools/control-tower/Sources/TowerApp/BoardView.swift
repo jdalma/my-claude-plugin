@@ -182,25 +182,6 @@ private struct GroupHeader: View {
     }
 }
 
-private struct BadgeView: View {
-    let badge: RowBadge
-
-    var body: some View {
-        switch badge {
-        case .permission:
-            Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.orange).help(badgeLabel(badge))
-        case .waitingForUser:
-            Text(badgeLabel(badge)).scaledFont(.caption1).foregroundStyle(.orange)
-        case .working:
-            Text(badgeLabel(badge)).scaledFont(.caption1).foregroundStyle(.blue)
-        case .done:
-            Label(badgeLabel(badge), systemImage: "checkmark.circle.fill").scaledFont(.caption1).foregroundStyle(.green)
-        case .idle:
-            Text(badgeLabel(badge)).scaledFont(.caption1).foregroundStyle(.secondary)
-        }
-    }
-}
-
 private struct LiveRowView: View {
     let row: LiveRow
 
@@ -298,7 +279,10 @@ private struct DetailView: View {
             badges: {
                 if let team, let role = row.worker?.role { Pill(text: "\(team.name) · \(role)") }
                 else if let team { Pill(text: team.name) }
-                BadgeView(badge: row.badge)
+                HStack(spacing: 4) {
+                    StatusIconView(badge: row.badge, style: .callout)
+                    Text(badgeLabel(row.badge)).scaledFont(.caption1).foregroundStyle(.secondary)
+                }
             },
             facts: [
                 ("에이전트", agentName(s.agent)),

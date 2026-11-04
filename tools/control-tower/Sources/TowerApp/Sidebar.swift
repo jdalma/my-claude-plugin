@@ -22,10 +22,10 @@ enum RowBadge: Equatable {
     var icon: StatusIcon {
         switch self {
         case .working: .spinner
-        case .waitingForUser: .waitingDot
+        case .waitingForUser: .waiting
         case .permission: .alert
         case .done: .check
-        case .idle: .idleDot
+        case .idle: .idle
         }
     }
 
@@ -47,7 +47,7 @@ enum RowBadge: Equatable {
 }
 
 enum StatusIcon: Equatable {
-    case spinner, waitingDot, alert, check, idleDot
+    case spinner, waiting, alert, check, idle
 }
 
 struct LiveRow: Equatable {

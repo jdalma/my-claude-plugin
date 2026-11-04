@@ -338,10 +338,10 @@ private func isoOf(_ d: Date) -> String { d.formatted(.iso8601) }
 
 @Test func eachBadgeHasItsOwnIcon() {
     #expect(RowBadge.working.icon == .spinner)
-    #expect(RowBadge.waitingForUser(minutes: 1).icon == .waitingDot)
+    #expect(RowBadge.waitingForUser(minutes: 1).icon == .waiting)
     #expect(RowBadge.permission(minutes: 1).icon == .alert)
     #expect(RowBadge.done(minutesAgo: 1).icon == .check)
-    #expect(RowBadge.idle(minutes: 1).icon == .idleDot)
+    #expect(RowBadge.idle(minutes: 1).icon == .idle)
 }
 
 @Test func elapsedShowsTheLargestUnitOnly() {

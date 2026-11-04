@@ -14,12 +14,22 @@ enum LineKind: Equatable {
         }
     }
 
+    /// Kept apart from the status colors (orange, red, green, blue) so a tag never reads as a state.
     var color: Color {
         switch self {
         case .team: .purple
-        case .agent(.claude): .orange
+        case .agent(.claude): .brown
         case .agent(.codex): .teal
         }
+    }
+
+    /// The tag's text: the kind color lifted toward white in dark mode, where the plain color on its own
+    /// 0.2 tint reads under 4.5:1.
+    var textColor: Color {
+        let base = NSColor(color)
+        return Color(nsColor: NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? base.blended(withFraction: 0.35, of: .white) ?? base : base
+        })
     }
 }
 
@@ -33,7 +43,7 @@ struct KindTag: View {
         sized(Text(kind.text))
             .padding(.horizontal, 5).padding(.vertical, 1)
             .background(kind.color.opacity(0.2), in: .capsule)
-            .foregroundStyle(kind.color)
+            .foregroundStyle(kind.textColor)
     }
 
     @ViewBuilder
@@ -46,7 +56,7 @@ struct KindTag: View {
     }
 }
 
-/// A live row's leading status icon, shared by the sidebar and the dropdown. The full wording is its tooltip
+/// A live row's leading status icon, shared by the sidebar, the dropdown, the queue and the detail. The full wording is its tooltip
 /// and accessibility label. `style` nil is the dropdown's fixed size; a style follows the board's font scale.
 struct StatusIconView: View {
     let badge: RowBadge
@@ -68,18 +78,14 @@ struct StatusIconView: View {
         switch badge.icon {
         case .spinner:
             ProgressView().controlSize(.small).scaleEffect(size / 16)
-        case .waitingDot:
-            dot(.orange, size: size)
+        case .waiting:
+            Image(systemName: "hand.raised.fill").font(.system(size: size)).foregroundStyle(.orange)
         case .alert:
             Image(systemName: "exclamationmark.circle.fill").font(.system(size: size)).foregroundStyle(.red)
         case .check:
             Image(systemName: "checkmark.circle.fill").font(.system(size: size)).foregroundStyle(.green)
-        case .idleDot:
-            dot(.secondary, size: size)
+        case .idle:
+            Image(systemName: "circle").font(.system(size: size * 0.8)).foregroundStyle(.secondary)
         }
-    }
-
-    private func dot(_ color: Color, size: CGFloat) -> some View {
-        Circle().fill(color).frame(width: size * 0.5, height: size * 0.5)
     }
 }
