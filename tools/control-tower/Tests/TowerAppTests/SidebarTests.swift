@@ -86,9 +86,9 @@ private func model(_ board: Board, history: [HistorySession] = [], query: String
     let ws = model(board).workspaces
     #expect(ws.map(\.path) == ["/opt/other", "~/proj"])
     #expect(ws[1].name == "proj")
-    #expect(ws[1].rows.map(\.title).sorted() == ["Claude", "Codex"])
-    #expect(ws[1].rows.first { $0.title == "Codex" }?.badge == .working)
-    #expect(ws[1].rows.first { $0.title == "Claude" }?.line == "hi")
+    #expect(ws[1].rows.map(\.title) == ["proj", "proj"])
+    #expect(ws[1].rows.first { $0.session.agent == .codex }?.badge == .working)
+    #expect(ws[1].rows.first { $0.session.agent == .claude }?.line == "hi")
     #expect(ws[0].rows[0].badge == .waitingForUser(minutes: 10))
 }
 
@@ -228,12 +228,12 @@ private func isoOf(_ d: Date) -> String { d.formatted(.iso8601) }
     ], loose: [session("pid:8", cwd: "/Users/me/a"), session("pid:9", cwd: "/Users/me/b", myTurn: true),
                session("pid:7", agent: .codex, cwd: "/Users/me/a", status: .busy)])
     let side = model(board)
-    let menu = menuModel(board, home: "/Users/me")
+    let menu = menuModel(board, history: [], home: "/Users/me")
 
     #expect(menu.teams.map(\.name) == side.teams.map(\.name))
     // teams first, then the sidebar's individual rows in its order (the group with a waiting session first)
     #expect(menu.individual.map(\.row) == side.workspaces.flatMap(\.rows))
-    #expect(menu.individual.map(\.title) == ["b", "a", "a"])
+    #expect(menu.individual.map(\.row.title) == ["b", "a", "a"])
     #expect(menu.individual.map(\.path) == ["~/b", "~/a", "~/a"])
     #expect(menu.individual.map(\.row.session.agent) == [.claude, .claude, .codex])
     #expect(menu.individual.map(\.row.id) == [.live("pid:9#1"), .live("pid:8#1"), .live("pid:7#1")])
@@ -246,9 +246,9 @@ private func isoOf(_ d: Date) -> String { d.formatted(.iso8601) }
     closed.inTerminal = false
     let board = Board(at: at, teams: [team("t", [worker("a", session: session("pane:t:%1"))]), detachedTeam],
                       loose: [session("pid:1", cwd: "/Users/me/open"), closed])
-    let menu = menuModel(board, home: "/Users/me")
+    let menu = menuModel(board, history: [], home: "/Users/me")
     #expect(menu.teams.map(\.name) == ["t"])
-    #expect(menu.individual.map(\.title) == ["open"])
+    #expect(menu.individual.map(\.row.title) == ["open"])
     // the sidebar keeps both
     #expect(model(board).teams.map(\.name) == ["t", "u"])
     #expect(model(board).workspaces.map(\.name) == ["open", "closed"])
@@ -256,7 +256,7 @@ private func isoOf(_ d: Date) -> String { d.formatted(.iso8601) }
     var allClosed = board
     allClosed.teams = [detachedTeam]
     allClosed.loose = [closed]
-    #expect(menuModel(allClosed, home: "/Users/me").isEmpty)
+    #expect(menuModel(allClosed, history: [], home: "/Users/me").isEmpty)
 }
 
 @Test func aTeamLineSelectsItsWaitingWorkerElseItsFirst() {
@@ -267,11 +267,11 @@ private func isoOf(_ d: Date) -> String { d.formatted(.iso8601) }
                    worker("d", session: session("pane:u:%2", status: .busy, since: "2026-11-02T09:00:00.000Z"))]),
         team("v", [worker("e", session: session("pane:v:%1"), alive: false)]),
     ], loose: [])
-    let menu = menuModel(board, home: "/Users/me")
+    let menu = menuModel(board, history: [], home: "/Users/me")
     #expect(menu.teams[0].select == .live("pane:t:%2#1"))
     #expect(menu.teams[1].select == model(board).teams[1].rows.first?.id)
     #expect(menu.teams[2].select == nil)
-    #expect(menuModel(Board(at: at, teams: [], loose: []), home: "/Users/me").isEmpty)
+    #expect(menuModel(Board(at: at, teams: [], loose: []), history: [], home: "/Users/me").isEmpty)
 }
 
 @Test func durationsRollUpIntoHoursAndDays() {
@@ -293,4 +293,67 @@ private func isoOf(_ d: Date) -> String { d.formatted(.iso8601) }
     #expect(w.path == "~/src/api")
     #expect(w.label == nil)
     #expect(m.workspaces[0].rows.map(\.label) == [.agent(.codex), .agent(.claude)])
+}
+
+@Test func eachBadgeHasItsOwnIcon() {
+    #expect(RowBadge.working.icon == .spinner)
+    #expect(RowBadge.waitingForUser(minutes: 1).icon == .waitingDot)
+    #expect(RowBadge.permission.icon == .alert)
+    #expect(RowBadge.done(minutesAgo: 1).icon == .check)
+    #expect(RowBadge.idle(minutes: 1).icon == .idleDot)
+}
+
+@Test func elapsedShowsTheLargestUnitOnly() {
+    let cases = [(0, "0분"), (59, "59분"), (60, "1시간"), (1439, "23시간"), (1440, "1일"), (2503, "1일")]
+    for (m, text) in cases {
+        #expect(RowBadge.waitingForUser(minutes: m).elapsed == text)
+        #expect(RowBadge.done(minutesAgo: m).elapsed == text)
+        #expect(RowBadge.idle(minutes: m).elapsed == text)
+    }
+    #expect(RowBadge.working.elapsed == "")
+    #expect(RowBadge.waitingForUser(minutes: nil).elapsed == "")
+    #expect(RowBadge.idle(minutes: nil).elapsed == "")
+}
+
+@Test func aSessionRowIsTitledByItsHistoryElseItsFolder() {
+    let board = Board(at: at, teams: [], loose: [
+        session("pid:1", cwd: "/Users/me/search", transcript: "/t/1"),
+        session("pid:2", cwd: "/Users/me/search", transcript: "/t/2"),
+        session("pid:3", cwd: "/Users/me/search"),
+    ])
+    let hist = [history("fix ranking", workspace: "/Users/me/search", path: "/t/1", live: true),
+                history("  ", workspace: "/Users/me/search", path: "/t/2", live: true)]
+    let rows = model(board, history: hist).workspaces[0].rows
+    #expect(Dictionary(uniqueKeysWithValues: rows.map { ($0.session.handle, $0.title) })
+        == ["pid:1": "fix ranking", "pid:2": "search", "pid:3": "search"])
+}
+
+@Test func twoSessionsInOneFolderGetDifferentDropdownTitles() {
+    let board = Board(at: at, teams: [], loose: [
+        session("pid:1", cwd: "/Users/me/search", transcript: "/t/1"),
+        session("pid:2", cwd: "/Users/me/search", transcript: "/t/2"),
+    ])
+    let hist = [history("fix ranking", workspace: "/Users/me/search", path: "/t/1", live: true),
+                history("add filters", workspace: "/Users/me/search", path: "/t/2", live: true)]
+    let menu = menuModel(board, history: hist, home: "/Users/me")
+    #expect(Set(menu.individual.map(\.row.title)) == ["fix ranking", "add filters"])
+}
+
+@Test func teamWaitingCountsWaitingPermissionAndIdleOnly() {
+    let done = StateFile(state: "done", reason: nil, updatedAt: ago10)
+    let board = Board(at: at, teams: [
+        team("t", [
+            worker("a", session: session("pane:t:%1", myTurn: true)),
+            worker("b", session: session("pane:t:%2", permission: true)),
+            worker("c", session: session("pane:t:%3")),
+            worker("d", session: session("pane:t:%4", status: .busy)),
+            worker("e", session: session("pane:t:%5"), state: done),
+            worker("f", session: session("pane:t:%6", myTurn: true), alive: false),
+        ]),
+        team("u", [worker("g", session: session("pane:u:%1", status: .busy))]),
+    ], loose: [])
+    let teams = model(board).teams
+    #expect(teams.map(\.waiting) == [3, 0])
+    #expect(teams.map { waitingText($0.waiting) } == ["3 대기", nil])
+    #expect(menuModel(board, history: [], home: "/Users/me").teams.map(\.waiting) == [3, 0])
 }

@@ -17,6 +17,29 @@ enum RowBadge: Equatable {
     case working
     case done(minutesAgo: Int?)
     case idle(minutes: Int?)
+
+    /// The row's leading icon. Shapes differ for working, permission and done, so color is not the only cue.
+    var icon: StatusIcon {
+        switch self {
+        case .working: .spinner
+        case .waitingForUser: .waitingDot
+        case .permission: .alert
+        case .done: .check
+        case .idle: .idleDot
+        }
+    }
+
+    /// The row's trailing text: elapsed time in its largest unit (`4분`, `3시간`, `1일`); '' while working or unknown.
+    var elapsed: String {
+        switch self {
+        case .working, .permission: ""
+        case .waitingForUser(let m), .done(let m), .idle(let m): m.map(shortDuration) ?? ""
+        }
+    }
+}
+
+enum StatusIcon: Equatable {
+    case spinner, waitingDot, alert, check, idleDot
 }
 
 struct LiveRow: Equatable {
@@ -28,7 +51,7 @@ struct LiveRow: Equatable {
     /// The session's working folder name and its `~` path.
     var folder: String
     var path: String
-    /// The kind label shown in place of a title; nil for a worker row, which shows its name.
+    /// The kind label after a session row's title; nil for a worker row, which shows its name and folder.
     var label: LineKind?
     var line: String
     var badge: RowBadge
@@ -38,7 +61,10 @@ struct LiveRow: Equatable {
 
 struct TeamGroup: Equatable {
     var name: String
+    /// The header's tooltip.
     var summary: String
+    /// Workers waiting on me (permission and idle included), shown on the header.
+    var waiting: Int
     var rows: [LiveRow]
 }
 
@@ -93,17 +119,18 @@ func sidebarModel(board: Board, history: [HistorySession], query: String, filter
         let teamHit = hit([team.name])
         let shown = rows.filter { teamHit || matches($0) }
         if q.isEmpty || !shown.isEmpty {
-            teams.append(TeamGroup(name: team.name, summary: teamSummaryLine(team), rows: shown))
+            teams.append(TeamGroup(name: team.name, summary: teamSummaryLine(team), waiting: waitingCount(team), rows: shown))
         }
     }
 
     var workspaces: [WorkspaceGroup] = []
     for s in sortCards(board.loose) {
+        let matched = s.transcript.flatMap { byTranscript[$0] }
         let row = LiveRow(id: .live(s.rowID), session: s, worker: nil, teamName: nil,
-                          title: agentName(s.agent), folder: basename(s.cwd), path: abbreviate(s.cwd, home: home),
+                          title: matched.map(historyTitle) ?? basename(s.cwd), folder: basename(s.cwd), path: abbreviate(s.cwd, home: home),
                           label: .agent(s.agent),
                           line: oneLine(s.lastAssistant.isEmpty ? s.lastUser : s.lastAssistant),
-                          badge: badge(displayState(s), at: board.at) ?? .idle(minutes: nil), matched: s.transcript.flatMap { byTranscript[$0] })
+                          badge: badge(displayState(s), at: board.at) ?? .idle(minutes: nil), matched: matched)
         guard matches(row) else { continue }
         let path = abbreviate(s.cwd, home: home)
         if let i = workspaces.firstIndex(where: { $0.path == path }) {
@@ -138,14 +165,13 @@ private func badge(_ state: WorkerDisplayState, at: String) -> RowBadge? {
 struct MenuModel: Equatable {
     struct TeamLine: Equatable {
         var name: String
+        var waiting: Int
         /// The row the board selects for this line: a worker waiting on me, else the first; nil when none is listed.
         var select: RowID?
     }
 
     /// A session outside teams, its workspace group folded into the line.
     struct IndividualLine: Equatable {
-        /// The sidebar group's name: the workspace folder.
-        var title: String
         /// `~`-abbreviated workspace.
         var path: String
         var row: LiveRow
@@ -158,21 +184,29 @@ struct MenuModel: Equatable {
     var isEmpty: Bool { teams.isEmpty && individual.isEmpty }
 }
 
-func menuModel(_ board: Board, home: String) -> MenuModel {
-    let side = sidebarModel(board: board, history: [], query: "", filter: .all, historyLimit: 0, home: home)
+func menuModel(_ board: Board, history: [HistorySession], home: String) -> MenuModel {
+    let side = sidebarModel(board: board, history: history, query: "", filter: .all, historyLimit: 0, home: home)
     let attached = Set(board.teams.filter(\.attached).map(\.name))
     return MenuModel(
         teams: side.teams.filter { attached.contains($0.name) }.map { t in
-            MenuModel.TeamLine(name: t.name, select: (t.rows.first { $0.session.myTurn } ?? t.rows.first)?.id)
+            MenuModel.TeamLine(name: t.name, waiting: t.waiting, select: (t.rows.first { $0.session.myTurn } ?? t.rows.first)?.id)
         },
         individual: side.workspaces.flatMap { ws in
-            ws.rows.filter(\.session.inTerminal).map { MenuModel.IndividualLine(title: ws.name, path: ws.path, row: $0) }
+            ws.rows.filter(\.session.inTerminal).map { MenuModel.IndividualLine(path: ws.path, row: $0) }
         })
 }
 
+func waitingCount(_ team: Team) -> Int {
+    let by = stateCounts(team).byKind
+    return by[.waitingForUser, default: 0] + by[.idle, default: 0]
+}
+
+/// `N 대기`; nil at 0.
+func waitingText(_ n: Int) -> String? { n > 0 ? "\(n) 대기" : nil }
+
 func teamSummaryLine(_ team: Team) -> String {
     let (total, by) = stateCounts(team)
-    let waiting = by[.waitingForUser, default: 0] + by[.idle, default: 0]
+    let waiting = waitingCount(team)
     var parts = ["워커 \(total)"]
     if let n = by[.working], n > 0 { parts.append("작업 중 \(n)") }
     if waiting > 0 { parts.append("대기 \(waiting)") }
@@ -199,6 +233,11 @@ func duration(minutes m: Int) -> String {
     if m < 60 { return "\(m)분" }
     if m < 1440 { return join(m / 60, "시간", m % 60, "분") }
     return join(m / 1440, "일", (m % 1440) / 60, "시간")
+}
+
+/// The largest unit only: `N분`, `N시간`, `N일`.
+func shortDuration(minutes m: Int) -> String {
+    m < 60 ? "\(m)분" : m < 1440 ? "\(m / 60)시간" : "\(m / 1440)일"
 }
 
 /// `방금` under a minute, then `N분 전`, `N시간 전`, `어제`, `N일 전`; '' when the time is unknown.

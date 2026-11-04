@@ -76,14 +76,14 @@ struct BoardView: View {
                     Section {
                         ForEach(team.rows, id: \.id) { LiveRowView(row: $0).tag($0.id) }
                     } header: {
-                        GroupHeader(tag: .team, title: team.name, detail: team.summary)
+                        GroupHeader(tag: .team, title: team.name, count: waitingText(team.waiting), tooltip: team.summary)
                     }
                 }
                 ForEach(model.workspaces, id: \.path) { ws in
                     Section {
                         ForEach(ws.rows, id: \.id) { LiveRowView(row: $0).tag($0.id) }
                     } header: {
-                        GroupHeader(tag: nil, title: ws.name, detail: ws.path)
+                        GroupHeader(tag: nil, title: ws.name, count: nil, tooltip: ws.path)
                     }
                 }
                 Section {
@@ -152,23 +152,24 @@ struct BoardView: View {
     }
 }
 
-/// Sizes, largest first (user's order): kind label ≥ team or folder name > path.
-/// A team header's label and name share `.subheadline`; paths and summaries are `.caption1`.
+/// One line: a team's label and name share `.subheadline`; the waiting count is `.caption1`.
+/// The team summary or the folder path is the tooltip.
 private struct GroupHeader: View {
     /// `my-team` in front of a team's name; nil for a workspace group.
     let tag: LineKind?
     let title: String
-    let detail: String
+    let count: String?
+    let tooltip: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 1) {
-            HStack(spacing: 6) {
-                if let tag { KindTag(kind: tag, style: .subheadline) }
-                Text(title).scaledFont(.subheadline, weight: .bold)
-            }
-            Text(detail).scaledFont(.caption1).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+        HStack(spacing: 6) {
+            if let tag { KindTag(kind: tag, style: .subheadline) }
+            Text(title).scaledFont(.subheadline, weight: .bold)
+            Spacer(minLength: 8)
+            if let count { Text(count).scaledFont(.caption1).foregroundStyle(.secondary) }
         }
         .textCase(nil)
+        .help(tooltip)
     }
 }
 
@@ -195,24 +196,25 @@ private struct LiveRowView: View {
     let row: LiveRow
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline) {
+        HStack(alignment: .top, spacing: 6) {
+            StatusIconView(badge: row.badge, style: .body)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
+                    Text(row.title).scaledFont(.body).lineLimit(1)
                     if let label = row.label {
-                        KindTag(kind: label, style: .body)
+                        KindTag(kind: label, style: .caption2)
                     } else {
-                        Text(row.title).scaledFont(.body).lineLimit(1)
                         Text(row.folder).scaledFont(.body).foregroundStyle(.secondary).lineLimit(1)
                     }
+                    Spacer(minLength: 8)
+                    Text(row.badge.elapsed).scaledFont(.caption1).foregroundStyle(.secondary)
                 }
                 if !row.line.isEmpty {
                     Text(row.line).scaledFont(.caption1).foregroundStyle(.secondary).lineLimit(1)
                 }
             }
-            Spacer(minLength: 8)
-            BadgeView(badge: row.badge)
         }
-        .help(row.path)
+        .help(badgeLabel(row.badge) + "\n" + row.path)
     }
 }
 
