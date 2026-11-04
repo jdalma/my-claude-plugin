@@ -120,7 +120,8 @@ public func listGhosttyTerminals() -> [GhosttyTerminal]? {
 
 /// The terminal a focus should land on, or nil when none or several match (raising the app beats a wrong tab).
 /// A tmux client's tab is named after its command, `tmux attach -t <session>`, so match a tab naming tmux and the session as whole words.
-/// Claude Code titles its tab `<status glyph> <session title>`; several such tabs narrow by working directory.
+/// Claude Code titles its tab `<status glyph> <session title>`; a tab in another known directory never matches,
+/// and several such tabs narrow by working directory.
 public func pickTerminal(_ terminals: [GhosttyTerminal], tmuxSession: String?, title: String?, cwd: String) -> String? {
     func only(_ ts: [GhosttyTerminal]) -> String? { ts.count == 1 ? ts[0].id : nil }
     if let tmuxSession {
@@ -130,7 +131,8 @@ public func pickTerminal(_ terminals: [GhosttyTerminal], tmuxSession: String?, t
         })
     }
     guard let title, !title.isEmpty else { return nil }
-    let titled = terminals.filter { tabTitle($0.name) == title }
+    // A tab whose known directory differs is another session with the same title, even when it is the only one.
+    let titled = terminals.filter { tabTitle($0.name) == title && ($0.cwd == cwd || $0.cwd.isEmpty || $0.cwd == "missing value") }
     return titled.count > 1 ? only(titled.filter { $0.cwd == cwd }) : only(titled)
 }
 

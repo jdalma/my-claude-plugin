@@ -71,14 +71,21 @@ private func term(_ id: String, _ name: String, _ cwd: String = "/w") -> Ghostty
 
 @Test func standaloneSessionPicksByTitleThenCwd() {
     let ts = [term("1", "✳ 문서 정리", "/a"), term("2", "⠐ 문서 정리", "/b"), term("3", "✳ 다른 일", "/a"), term("4", "/a", "/a")]
-    #expect(pickTerminal(ts, tmuxSession: nil, title: "다른 일", cwd: "/z") == "3")
+    #expect(pickTerminal(ts, tmuxSession: nil, title: "다른 일", cwd: "/a") == "3")
     #expect(pickTerminal(ts, tmuxSession: nil, title: "문서 정리", cwd: "/b") == "2")
     #expect(pickTerminal(ts, tmuxSession: nil, title: "문서 정리", cwd: "/z") == nil)
     #expect(pickTerminal(ts, tmuxSession: nil, title: "없는 제목", cwd: "/a") == nil)
     #expect(pickTerminal(ts, tmuxSession: nil, title: nil, cwd: "/a") == nil)
     #expect(pickTerminal(ts, tmuxSession: nil, title: "", cwd: "/a") == nil)
-    #expect(pickTerminal([term("5", "문서 정리")], tmuxSession: nil, title: "문서 정리", cwd: "/z") == "5")
-    #expect(pickTerminal([term("6", "A 문서 정리")], tmuxSession: nil, title: "문서 정리", cwd: "/z") == nil)
+    #expect(pickTerminal([term("5", "문서 정리", "/z")], tmuxSession: nil, title: "문서 정리", cwd: "/z") == "5")
+    #expect(pickTerminal([term("6", "A 문서 정리", "/z")], tmuxSession: nil, title: "문서 정리", cwd: "/z") == nil)
+}
+
+@Test func aSameTitledTabInAnotherDirectoryIsNotTheSession() {
+    #expect(pickTerminal([term("a", "✳ X", "/a")], tmuxSession: nil, title: "X", cwd: "/b") == nil)
+    #expect(pickTerminal([term("a", "✳ X", "missing value")], tmuxSession: nil, title: "X", cwd: "/b") == "a")
+    #expect(pickTerminal([term("a", "✳ X", "")], tmuxSession: nil, title: "X", cwd: "/b") == "a")
+    #expect(pickTerminal([term("a", "✳ X", "/a"), term("b", "✳ X", "missing value")], tmuxSession: nil, title: "X", cwd: "/b") == "b")
 }
 
 @Test func ghosttyListingParsesTabSeparatedLines() {
