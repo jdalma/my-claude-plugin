@@ -288,18 +288,22 @@ private struct LineView: View {
     let line: DiffLine
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 0) {
+        HStack(alignment: .top, spacing: 0) {
             if line.kind == .hunk {
-                Text(line.text).foregroundStyle(.secondary).padding(.leading, 8)
+                Text(line.text).foregroundStyle(DiffColors.mutedText).padding(.leading, 8).padding(.vertical, 1)
             } else {
-                Text(number(line.old) + " " + number(line.new)).foregroundStyle(.secondary).padding(.horizontal, 8)
-                Text(marker + displayLine(line.text)).foregroundStyle(.primary)
+                Text(number(line.old) + " " + number(line.new))
+                    .foregroundStyle(line.kind == .context ? DiffColors.mutedText : .primary)
+                    .padding(.horizontal, 8).padding(.vertical, 1)
+                    .frame(maxHeight: .infinity, alignment: .top)
+                    .background(numberTint)
+                Text(content).foregroundStyle(.primary).padding(.vertical, 1)
             }
             Spacer(minLength: 0)
         }
+        .fixedSize(horizontal: false, vertical: true)
         .scaledFont(.callout, design: .monospaced)
         .textSelection(.enabled)
-        .padding(.vertical, 1)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(tint)
     }
@@ -317,12 +321,37 @@ private struct LineView: View {
         }
     }
 
+    /// The marker and text, with the parts that differ from the paired line on the word color.
+    private var content: AttributedString {
+        var out = AttributedString(marker)
+        let chars = Array(line.text)
+        var at = 0
+        for r in line.changes + [chars.count..<chars.count] {
+            out += AttributedString(displayLine(String(chars[at..<r.lowerBound])))
+            if !r.isEmpty {
+                var changed = AttributedString(displayLine(String(chars[r])))
+                changed.backgroundColor = line.kind == .added ? DiffColors.addedWord : DiffColors.removedWord
+                out += changed
+            }
+            at = r.upperBound
+        }
+        return out
+    }
+
     private var tint: Color {
         switch line.kind {
-        case .added: .green.opacity(0.18)
-        case .removed: .red.opacity(0.18)
-        case .hunk: .secondary.opacity(0.12)
+        case .added: DiffColors.addedLine
+        case .removed: DiffColors.removedLine
+        case .hunk: DiffColors.hunkLine
         case .context: .clear
+        }
+    }
+
+    private var numberTint: Color {
+        switch line.kind {
+        case .added: DiffColors.addedNumber
+        case .removed: DiffColors.removedNumber
+        default: .clear
         }
     }
 }
@@ -390,4 +419,4 @@ struct ChangeTreeColumn: View {
     }
 }
 
-private func countColor(_ label: String) -> Color { label.hasPrefix("+") ? .green : .red }
+private func countColor(_ label: String) -> Color { label.hasPrefix("+") ? DiffColors.addedCount : DiffColors.removedCount }

@@ -33,6 +33,8 @@ public struct DiffLine: Hashable, Sendable {
     public var new: Int?
     /// The line without its `+`/`-`/space marker; the whole `@@ … @@` header for a hunk.
     public var text: String
+    /// Character offsets of `text` that differ from the paired line, computed once at parse time (WordDiff.swift).
+    public var changes: [Range<Int>] = []
 }
 
 public struct FileDiff: Hashable, Sendable {
@@ -211,7 +213,11 @@ func parseUnifiedDiff(_ text: String) -> [FileDiff] {
         }
     }
     if let f = cur { files.append(f) }
-    return files
+    return files.map { f in
+        var f = f
+        markWordChanges(&f.lines)
+        return f
+    }
 }
 
 /// The part after `diff --git `: `a/P b/P`, `a/old b/new`, or C-quoted `"a/…" "b/…"`.
