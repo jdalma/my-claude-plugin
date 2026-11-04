@@ -201,7 +201,9 @@ private struct LiveRowView: View {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(row.title).scaledFont(.body).lineLimit(1)
-                    Text(row.folder).scaledFont(.body).foregroundStyle(.secondary).lineLimit(1)
+                    if let folder = row.shownFolder {
+                        Text(folder).scaledFont(.body).foregroundStyle(.secondary).lineLimit(1)
+                    }
                     Spacer(minLength: 8)
                     Text(row.badge.elapsed).scaledFont(.caption1).foregroundStyle(.secondary)
                 }

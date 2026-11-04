@@ -398,3 +398,14 @@ private func isoOf(_ d: Date) -> String { d.formatted(.iso8601) }
     #expect(teams.map { waitingText($0.waiting) } == ["3 대기", nil])
     #expect(menuModel(board, history: [], home: "/Users/me").teams.map(\.waiting) == [3, 0])
 }
+
+@Test func aFolderRepeatingTheTitleIsNotShown() {
+    let board = Board(at: at, teams: [team("t", [worker("api", session: session("pane:t:%1", cwd: "/Users/me/api")),
+                                                 worker("b", session: session("pane:t:%2", cwd: "/Users/me/api"))])],
+                      loose: [session("pid:1", cwd: "/Users/me/search", transcript: "/t/1"), session("pid:2", cwd: "/Users/me/search")])
+    let m = model(board, history: [history("fix ranking", workspace: "/Users/me/search", path: "/t/1", live: true)])
+    #expect(Dictionary(uniqueKeysWithValues: m.teams[0].rows.map { ($0.title, $0.shownFolder) }) == ["api": nil, "b": "api"])
+    #expect(Dictionary(uniqueKeysWithValues: m.agents[0].rows.map { ($0.title, $0.shownFolder) })
+        == ["fix ranking": "search", "search": nil])
+    #expect(m.agents[0].rows.allSatisfy { $0.path == "~/search" })
+}

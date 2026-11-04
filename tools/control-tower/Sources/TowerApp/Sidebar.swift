@@ -63,6 +63,9 @@ struct LiveRow: Equatable {
     var badge: RowBadge
     /// The history entry that reads this session's transcript: source of its branch and resume command.
     var matched: HistorySession?
+
+    /// The folder shown after the title; nil when it would repeat the title.
+    var shownFolder: String? { folder == title ? nil : folder }
 }
 
 struct TeamGroup: Equatable {
