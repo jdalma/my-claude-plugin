@@ -155,13 +155,16 @@ private func pickNamed(_ b: String, _ top: String) -> BaseChoice? {
 
 // MARK: - Cap
 
-/// Keeps at most `limit` lines of each file; counts stay whole.
+/// Keeps at most `limit` lines of each file; counts stay whole. Word changes are marked on the kept
+/// lines only, so lines nobody sees cost nothing.
 private func cap(_ files: [FileDiff], _ limit: Int) -> [FileDiff] {
     files.map { f in
-        guard f.lines.count > limit else { return f }
         var cut = f
-        cut.hiddenLines = f.lines.count - limit
-        cut.lines = Array(f.lines.prefix(limit))
+        if f.lines.count > limit {
+            cut.hiddenLines = f.lines.count - limit
+            cut.lines = Array(f.lines.prefix(limit))
+        }
+        markWordChanges(&cut.lines)
         return cut
     }
 }
@@ -213,11 +216,7 @@ func parseUnifiedDiff(_ text: String) -> [FileDiff] {
         }
     }
     if let f = cur { files.append(f) }
-    return files.map { f in
-        var f = f
-        markWordChanges(&f.lines)
-        return f
-    }
+    return files
 }
 
 /// The part after `diff --git `: `a/P b/P`, `a/old b/new`, or C-quoted `"a/…" "b/…"`.
