@@ -365,7 +365,7 @@ struct ChangeTreeColumn: View {
                         Text("+\(added)").foregroundStyle(.green)
                         Text("−\(removed)").foregroundStyle(.red)
                     case .binary: Text("bin").foregroundStyle(.secondary)
-                    case .untracked: Text("새").foregroundStyle(.secondary)
+                    case .untracked: Text("N").foregroundStyle(.secondary)
                     }
                 }
                 .scaledFont(.caption1, design: .monospaced)

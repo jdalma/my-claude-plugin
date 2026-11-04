@@ -77,19 +77,56 @@ private func model(_ board: Board, history: [HistorySession] = [], query: String
     #expect(model(board).teams[0].rows.map(\.line) == ["writing tests", "hello world"])
 }
 
-@Test func looseSessionsGroupByWorkspaceWithTilde() {
+@Test func looseSessionsGroupByAgentClaudeFirst() {
     let board = Board(at: at, teams: [], loose: [
         session("pid:1", cwd: "/Users/me/proj", lastUser: "hi"),
         session("pid:2", agent: .codex, cwd: "/Users/me/proj", status: .busy, lastAssistant: "ok"),
         session("pid:3", cwd: "/opt/other", myTurn: true),
     ])
-    let ws = model(board).workspaces
-    #expect(ws.map(\.path) == ["/opt/other", "~/proj"])
-    #expect(ws[1].name == "proj")
-    #expect(ws[1].rows.map(\.title) == ["proj", "proj"])
-    #expect(ws[1].rows.first { $0.session.agent == .codex }?.badge == .working)
-    #expect(ws[1].rows.first { $0.session.agent == .claude }?.line == "hi")
-    #expect(ws[0].rows[0].badge == .waitingForUser(minutes: 10))
+    let groups = model(board).agents
+    #expect(groups.map(\.agent) == [.claude, .codex])
+    #expect(groups[0].rows.map(\.session.handle) == ["pid:3", "pid:1"])
+    #expect(groups[0].rows.map(\.folder) == ["other", "proj"])
+    #expect(groups[0].rows.map(\.path) == ["/opt/other", "~/proj"])
+    #expect(groups[0].rows[0].badge == .waitingForUser(minutes: 10))
+    #expect(groups[0].rows[1].line == "hi")
+    #expect(groups[1].rows.map(\.folder) == ["proj"])
+    #expect(groups[1].rows[0].badge == .working)
+}
+
+@Test func anAgentWithNoSessionHasNoGroup() {
+    let board = Board(at: at, teams: [], loose: [session("pid:1"), session("pid:2", cwd: "/Users/me/b")])
+    #expect(model(board).agents.map(\.agent) == [.claude])
+    #expect(model(Board(at: at, teams: [], loose: [])).agents.isEmpty)
+}
+
+@Test func searchingAnAgentNameListsItsWholeGroup() {
+    let board = Board(at: at, teams: [], loose: [
+        session("pid:1", cwd: "/Users/me/api"),
+        session("pid:2", agent: .codex, cwd: "/Users/me/web"),
+        session("pid:3", agent: .codex, cwd: "/Users/me/cli"),
+    ])
+    let codex = model(board, query: "Codex").agents
+    #expect(codex.map(\.agent) == [.codex])
+    #expect(codex[0].rows.count == 2)
+    let byFolder = model(board, query: "web").agents
+    #expect(byFolder.map(\.agent) == [.codex])
+    #expect(byFolder[0].rows.map(\.folder) == ["web"])
+}
+
+@Test func agentGroupWaitingFollowsTheTeamRule() {
+    let board = Board(at: at, teams: [], loose: [
+        session("pid:1", myTurn: true),
+        session("pid:2", permission: true),
+        session("pid:3"),
+        session("pid:4", status: .busy),
+        session("pid:5", agent: .codex, status: .busy),
+    ])
+    let groups = model(board).agents
+    #expect(groups.map(\.waiting) == [3, 0])
+    #expect(groups.map { waitingText($0.waiting) } == ["3 대기", nil])
+    #expect(groups[0].summary == "세션 4 · 작업 중 1 · 대기 3")
+    #expect(groups[1].summary == "세션 1 · 작업 중 1")
 }
 
 @Test func searchFiltersLiveRowsAndHistory() {
@@ -101,12 +138,12 @@ private func model(_ board: Board, history: [HistorySession] = [], query: String
 
     let byTeam = model(board, history: hist, query: "ALPHA")
     #expect(byTeam.teams.map(\.name) == ["alpha"])
-    #expect(byTeam.workspaces.isEmpty)
+    #expect(byTeam.agents.isEmpty)
     #expect(byTeam.history.map(\.transcriptPath) == ["/t/1"])
 
     let byCwd = model(board, history: hist, query: "zebra")
     #expect(byCwd.teams.isEmpty)
-    #expect(byCwd.workspaces.map(\.name) == ["zebra"])
+    #expect(byCwd.agents.flatMap(\.rows).map(\.folder) == ["zebra"])
     #expect(byCwd.history.map(\.transcriptPath) == ["/t/2"])
 
     #expect(model(board, history: hist, query: "feat/x").history.count == 1)
@@ -116,8 +153,8 @@ private func model(_ board: Board, history: [HistorySession] = [], query: String
 @Test func liveRowBranchComesFromMatchingHistory() {
     let board = Board(at: at, teams: [], loose: [session("pid:1", transcript: "/t/1")])
     let m = model(board, history: [history("x", branch: "feat/live", path: "/t/1", live: true)], query: "feat/live")
-    #expect(m.workspaces.count == 1)
-    #expect(m.workspaces[0].rows[0].matched?.branch == "feat/live")
+    #expect(m.agents.count == 1)
+    #expect(m.agents[0].rows[0].matched?.branch == "feat/live")
 }
 
 @Test func historyLeavesOutSessionsListedAbove() {
@@ -130,7 +167,7 @@ private func model(_ board: Board, history: [HistorySession] = [], query: String
     #expect(model(board, history: hist).history.map(\.transcriptPath) == ["/t/2", "/t/4"])
     // a search that hides a running row still keeps its session out of history
     let searched = model(board, history: hist, query: "zebra")
-    #expect(searched.workspaces.isEmpty)
+    #expect(searched.agents.isEmpty)
     #expect(searched.history.isEmpty)
 }
 
@@ -231,12 +268,13 @@ private func isoOf(_ d: Date) -> String { d.formatted(.iso8601) }
     let menu = menuModel(board, history: [], home: "/Users/me")
 
     #expect(menu.teams.map(\.name) == side.teams.map(\.name))
-    // teams first, then the sidebar's individual rows in its order (the group with a waiting session first)
-    #expect(menu.individual.map(\.row) == side.workspaces.flatMap(\.rows))
-    #expect(menu.individual.map(\.row.title) == ["b", "a", "a"])
-    #expect(menu.individual.map(\.path) == ["~/b", "~/a", "~/a"])
-    #expect(menu.individual.map(\.row.session.agent) == [.claude, .claude, .codex])
-    #expect(menu.individual.map(\.row.id) == [.live("pid:9#1"), .live("pid:8#1"), .live("pid:7#1")])
+    // teams first, then the sidebar's agent groups in its order
+    #expect(menu.agents.map(\.agent) == side.agents.map(\.agent))
+    #expect(menu.agents.map(\.rows) == side.agents.map(\.rows))
+    #expect(menu.agents.map(\.agent) == [.claude, .codex])
+    #expect(menu.agents[0].rows.map(\.id) == [.live("pid:9#1"), .live("pid:8#1")])
+    #expect(menu.agents[0].waiting == 2)
+    #expect(menu.agents[1].rows.map(\.id) == [.live("pid:7#1")])
 }
 
 @Test func theDropdownListsOnlyWhatIsOpenInATerminal() {
@@ -244,18 +282,22 @@ private func isoOf(_ d: Date) -> String { d.formatted(.iso8601) }
     detachedTeam.attached = false
     var closed = session("pid:2", cwd: "/Users/me/closed")
     closed.inTerminal = false
+    var closedCodex = session("pid:3", agent: .codex, cwd: "/Users/me/closed")
+    closedCodex.inTerminal = false
     let board = Board(at: at, teams: [team("t", [worker("a", session: session("pane:t:%1"))]), detachedTeam],
-                      loose: [session("pid:1", cwd: "/Users/me/open"), closed])
+                      loose: [session("pid:1", cwd: "/Users/me/open"), closed, closedCodex])
     let menu = menuModel(board, history: [], home: "/Users/me")
     #expect(menu.teams.map(\.name) == ["t"])
-    #expect(menu.individual.map(\.row.title) == ["open"])
-    // the sidebar keeps both
+    // the codex group held only a closed session, so it is gone with its header
+    #expect(menu.agents.map(\.agent) == [.claude])
+    #expect(menu.agents[0].rows.map(\.folder) == ["open"])
+    // the sidebar keeps all
     #expect(model(board).teams.map(\.name) == ["t", "u"])
-    #expect(model(board).workspaces.map(\.name) == ["open", "closed"])
+    #expect(model(board).agents.map { $0.rows.map(\.folder) } == [["open", "closed"], ["closed"]])
 
     var allClosed = board
     allClosed.teams = [detachedTeam]
-    allClosed.loose = [closed]
+    allClosed.loose = [closed, closedCodex]
     #expect(menuModel(allClosed, history: [], home: "/Users/me").isEmpty)
 }
 
@@ -283,7 +325,7 @@ private func isoOf(_ d: Date) -> String { d.formatted(.iso8601) }
     #expect(badgeLabel(.idle(minutes: 60)) == "대기 1시간")
 }
 
-@Test func aWorkerRowShowsItsFolderAndALooseRowItsAgentLabel() {
+@Test func workerAndSessionRowsBothShowTheirFolder() {
     let board = Board(at: at, teams: [team("t", [worker("a", session: session("pane:t:%1", cwd: "/Users/me/src/api"))])],
                       loose: [session("pid:1", agent: .codex, cwd: "/Users/me/proj"), session("pid:2", cwd: "/Users/me/proj")])
     let m = model(board)
@@ -291,8 +333,7 @@ private func isoOf(_ d: Date) -> String { d.formatted(.iso8601) }
     #expect(w.title == "a")
     #expect(w.folder == "api")
     #expect(w.path == "~/src/api")
-    #expect(w.label == nil)
-    #expect(m.workspaces[0].rows.map(\.label) == [.agent(.codex), .agent(.claude)])
+    #expect(m.agents.map { $0.rows.map(\.folder) } == [["proj"], ["proj"]])
 }
 
 @Test func eachBadgeHasItsOwnIcon() {
@@ -323,7 +364,7 @@ private func isoOf(_ d: Date) -> String { d.formatted(.iso8601) }
     ])
     let hist = [history("fix ranking", workspace: "/Users/me/search", path: "/t/1", live: true),
                 history("  ", workspace: "/Users/me/search", path: "/t/2", live: true)]
-    let rows = model(board, history: hist).workspaces[0].rows
+    let rows = model(board, history: hist).agents[0].rows
     #expect(Dictionary(uniqueKeysWithValues: rows.map { ($0.session.handle, $0.title) })
         == ["pid:1": "fix ranking", "pid:2": "search", "pid:3": "search"])
 }
@@ -336,7 +377,7 @@ private func isoOf(_ d: Date) -> String { d.formatted(.iso8601) }
     let hist = [history("fix ranking", workspace: "/Users/me/search", path: "/t/1", live: true),
                 history("add filters", workspace: "/Users/me/search", path: "/t/2", live: true)]
     let menu = menuModel(board, history: hist, home: "/Users/me")
-    #expect(Set(menu.individual.map(\.row.title)) == ["fix ranking", "add filters"])
+    #expect(Set(menu.agents[0].rows.map(\.title)) == ["fix ranking", "add filters"])
 }
 
 @Test func teamWaitingCountsWaitingPermissionAndIdleOnly() {

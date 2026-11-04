@@ -1,7 +1,7 @@
 import SwiftUI
 import TowerCore
 
-/// Sidebar of running sessions (teams, then workspaces) and history; detail of the selected row.
+/// Sidebar of running sessions (teams, then Claude Code and Codex sessions) and history; detail of the selected row.
 /// Grouping, wording and search live in Sidebar.swift.
 struct BoardView: View {
     let tower: Tower
@@ -79,11 +79,11 @@ struct BoardView: View {
                         GroupHeader(tag: .team, title: team.name, count: waitingText(team.waiting), tooltip: team.summary)
                     }
                 }
-                ForEach(model.workspaces, id: \.path) { ws in
+                ForEach(model.agents, id: \.agent) { g in
                     Section {
-                        ForEach(ws.rows, id: \.id) { LiveRowView(row: $0).tag($0.id) }
+                        ForEach(g.rows, id: \.id) { LiveRowView(row: $0).tag($0.id) }
                     } header: {
-                        GroupHeader(tag: nil, title: ws.name, count: nil, tooltip: ws.path)
+                        GroupHeader(tag: .agent(g.agent), title: nil, count: waitingText(g.waiting), tooltip: g.summary)
                     }
                 }
                 Section {
@@ -153,18 +153,18 @@ struct BoardView: View {
 }
 
 /// One line: a team's label and name share `.subheadline`; the waiting count is `.caption1`.
-/// The team summary or the folder path is the tooltip.
+/// The group summary is the tooltip.
 private struct GroupHeader: View {
-    /// `my-team` in front of a team's name; nil for a workspace group.
-    let tag: LineKind?
-    let title: String
+    let tag: LineKind
+    /// The team's name; nil for an agent group, which shows its label only.
+    let title: String?
     let count: String?
     let tooltip: String
 
     var body: some View {
         HStack(spacing: 6) {
-            if let tag { KindTag(kind: tag, style: .subheadline) }
-            Text(title).scaledFont(.subheadline, weight: .bold)
+            KindTag(kind: tag, style: .subheadline)
+            if let title { Text(title).scaledFont(.subheadline, weight: .bold) }
             Spacer(minLength: 8)
             if let count { Text(count).scaledFont(.caption1).foregroundStyle(.secondary) }
         }
@@ -201,11 +201,7 @@ private struct LiveRowView: View {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(row.title).scaledFont(.body).lineLimit(1)
-                    if let label = row.label {
-                        KindTag(kind: label, style: .caption2)
-                    } else {
-                        Text(row.folder).scaledFont(.body).foregroundStyle(.secondary).lineLimit(1)
-                    }
+                    Text(row.folder).scaledFont(.body).foregroundStyle(.secondary).lineLimit(1)
                     Spacer(minLength: 8)
                     Text(row.badge.elapsed).scaledFont(.caption1).foregroundStyle(.secondary)
                 }

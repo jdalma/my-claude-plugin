@@ -36,6 +36,14 @@ enum RowBadge: Equatable {
         case .waitingForUser(let m), .done(let m), .idle(let m): m.map(shortDuration) ?? ""
         }
     }
+
+    /// Counted in a group header's `N 대기`: waiting on me, a permission prompt, or idle.
+    var waits: Bool {
+        switch self {
+        case .waitingForUser, .permission, .idle: true
+        case .working, .done: false
+        }
+    }
 }
 
 enum StatusIcon: Equatable {
@@ -51,8 +59,6 @@ struct LiveRow: Equatable {
     /// The session's working folder name and its `~` path.
     var folder: String
     var path: String
-    /// The kind label after a session row's title; nil for a worker row, which shows its name and folder.
-    var label: LineKind?
     var line: String
     var badge: RowBadge
     /// The history entry that reads this session's transcript: source of its branch and resume command.
@@ -68,22 +74,25 @@ struct TeamGroup: Equatable {
     var rows: [LiveRow]
 }
 
-struct WorkspaceGroup: Equatable {
-    var name: String
-    /// `~`-abbreviated.
-    var path: String
+/// Sessions outside teams, one group per agent.
+struct AgentGroup: Equatable {
+    var agent: AgentKind
+    /// The header's tooltip.
+    var summary: String
+    var waiting: Int
     var rows: [LiveRow]
 }
 
 struct SidebarModel: Equatable {
     var teams: [TeamGroup]
-    var workspaces: [WorkspaceGroup]
+    /// Claude Code, then Codex; an agent with no session has no group.
+    var agents: [AgentGroup]
     /// One page or more of the filtered history, running sessions listed above left out.
     var history: [HistorySession]
     /// Filtered history entries past `history`.
     var historyRemaining: Int
 
-    var liveRows: [LiveRow] { teams.flatMap(\.rows) + workspaces.flatMap(\.rows) }
+    var liveRows: [LiveRow] { teams.flatMap(\.rows) + agents.flatMap(\.rows) }
 }
 
 enum AgentFilter: Hashable {
@@ -112,31 +121,33 @@ func sidebarModel(board: Board, history: [HistorySession], query: String, filter
             let reason = w.stateFile?.reason ?? ""
             return LiveRow(id: .live(w.session.rowID), session: w.session, worker: w, teamName: team.name,
                            title: w.cardName, folder: basename(w.session.cwd), path: abbreviate(w.session.cwd, home: home),
-                           label: nil, line: oneLine(reason.isEmpty ? w.lastAssistant : reason),
+                           line: oneLine(reason.isEmpty ? w.lastAssistant : reason),
                            badge: badge, matched: w.transcript.flatMap { byTranscript[$0] })
         }
         listed.formUnion(rows.compactMap(\.session.transcript))
         let teamHit = hit([team.name])
         let shown = rows.filter { teamHit || matches($0) }
         if q.isEmpty || !shown.isEmpty {
-            teams.append(TeamGroup(name: team.name, summary: teamSummaryLine(team), waiting: waitingCount(team), rows: shown))
+            teams.append(TeamGroup(name: team.name, summary: teamSummaryLine(team), waiting: rows.filter(\.badge.waits).count,
+                                   rows: shown))
         }
     }
 
-    var workspaces: [WorkspaceGroup] = []
-    for s in sortCards(board.loose) {
-        let matched = s.transcript.flatMap { byTranscript[$0] }
-        let row = LiveRow(id: .live(s.rowID), session: s, worker: nil, teamName: nil,
-                          title: matched.map(historyTitle) ?? basename(s.cwd), folder: basename(s.cwd), path: abbreviate(s.cwd, home: home),
-                          label: .agent(s.agent),
-                          line: oneLine(s.lastAssistant.isEmpty ? s.lastUser : s.lastAssistant),
-                          badge: badge(displayState(s), at: board.at) ?? .idle(minutes: nil), matched: matched)
-        guard matches(row) else { continue }
-        let path = abbreviate(s.cwd, home: home)
-        if let i = workspaces.firstIndex(where: { $0.path == path }) {
-            workspaces[i].rows.append(row)
-        } else {
-            workspaces.append(WorkspaceGroup(name: basename(s.cwd), path: path, rows: [row]))
+    var agents: [AgentGroup] = []
+    for agent in [AgentKind.claude, .codex] {
+        let rows = sortCards(board.loose.filter { $0.agent == agent }).map { s in
+            let matched = s.transcript.flatMap { byTranscript[$0] }
+            return LiveRow(id: .live(s.rowID), session: s, worker: nil, teamName: nil,
+                           title: matched.map(historyTitle) ?? basename(s.cwd), folder: basename(s.cwd),
+                           path: abbreviate(s.cwd, home: home),
+                           line: oneLine(s.lastAssistant.isEmpty ? s.lastUser : s.lastAssistant),
+                           badge: badge(displayState(s), at: board.at) ?? .idle(minutes: nil), matched: matched)
+        }
+        let agentHit = hit([LineKind.agent(agent).text])
+        let shown = rows.filter { agentHit || matches($0) }
+        if !shown.isEmpty {
+            agents.append(AgentGroup(agent: agent, summary: sessionSummaryLine(rows), waiting: rows.filter(\.badge.waits).count,
+                                     rows: shown))
         }
     }
 
@@ -145,7 +156,7 @@ func sidebarModel(board: Board, history: [HistorySession], query: String, filter
             && (filter == .all || (filter == .claude) == (h.agent == .claude))
             && hit([h.title, h.workspace, h.branch])
     }
-    return SidebarModel(teams: teams, workspaces: workspaces,
+    return SidebarModel(teams: teams, agents: agents,
                         history: Array(past.prefix(historyLimit)), historyRemaining: max(0, past.count - historyLimit))
 }
 
@@ -170,18 +181,19 @@ struct MenuModel: Equatable {
         var select: RowID?
     }
 
-    /// A session outside teams, its workspace group folded into the line.
-    struct IndividualLine: Equatable {
-        /// `~`-abbreviated workspace.
-        var path: String
-        var row: LiveRow
+    /// A sidebar agent group cut to the sessions open in a terminal.
+    struct AgentLine: Equatable {
+        var agent: AgentKind
+        /// Of the rows listed here.
+        var waiting: Int
+        var rows: [LiveRow]
     }
 
     var teams: [TeamLine]
-    /// The sidebar's individual rows, flattened in its order.
-    var individual: [IndividualLine]
+    /// Never holds a line without rows.
+    var agents: [AgentLine]
 
-    var isEmpty: Bool { teams.isEmpty && individual.isEmpty }
+    var isEmpty: Bool { teams.isEmpty && agents.isEmpty }
 }
 
 func menuModel(_ board: Board, history: [HistorySession], home: String) -> MenuModel {
@@ -191,14 +203,10 @@ func menuModel(_ board: Board, history: [HistorySession], home: String) -> MenuM
         teams: side.teams.filter { attached.contains($0.name) }.map { t in
             MenuModel.TeamLine(name: t.name, waiting: t.waiting, select: (t.rows.first { $0.session.myTurn } ?? t.rows.first)?.id)
         },
-        individual: side.workspaces.flatMap { ws in
-            ws.rows.filter(\.session.inTerminal).map { MenuModel.IndividualLine(path: ws.path, row: $0) }
+        agents: side.agents.compactMap { g in
+            let rows = g.rows.filter(\.session.inTerminal)
+            return rows.isEmpty ? nil : MenuModel.AgentLine(agent: g.agent, waiting: rows.filter(\.badge.waits).count, rows: rows)
         })
-}
-
-func waitingCount(_ team: Team) -> Int {
-    let by = stateCounts(team).byKind
-    return by[.waitingForUser, default: 0] + by[.idle, default: 0]
 }
 
 /// `N 대기`; nil at 0.
@@ -206,13 +214,20 @@ func waitingText(_ n: Int) -> String? { n > 0 ? "\(n) 대기" : nil }
 
 func teamSummaryLine(_ team: Team) -> String {
     let (total, by) = stateCounts(team)
-    let waiting = waitingCount(team)
+    let waiting = by[.waitingForUser, default: 0] + by[.idle, default: 0]
     var parts = ["워커 \(total)"]
     if let n = by[.working], n > 0 { parts.append("작업 중 \(n)") }
     if waiting > 0 { parts.append("대기 \(waiting)") }
     if let n = by[.done], n > 0 { parts.append("완료 \(n)") }
     if let n = by[.stopped], n > 0 { parts.append("멈춤 \(n) 숨김") }
     return parts.joined(separator: " · ")
+}
+
+/// `세션 N · 작업 중 N · 대기 N`, zero segments left out.
+func sessionSummaryLine(_ rows: [LiveRow]) -> String {
+    let working = rows.filter { $0.badge == .working }.count, waiting = rows.filter(\.badge.waits).count
+    return (["세션 \(rows.count)"] + (working > 0 ? ["작업 중 \(working)"] : []) + (waiting > 0 ? ["대기 \(waiting)"] : []))
+        .joined(separator: " · ")
 }
 
 func badgeLabel(_ b: RowBadge) -> String {

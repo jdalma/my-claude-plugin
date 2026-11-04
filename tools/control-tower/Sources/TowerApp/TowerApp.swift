@@ -58,18 +58,26 @@ struct MenuContent: View {
                     Text("열린 터미널 없음").foregroundStyle(.secondary).padding(.vertical, 4)
                 }
                 ForEach(menu.teams, id: \.name) { t in
-                    MenuLine(kind: .team, title: t.name, badge: nil, trailing: waitingText(t.waiting) ?? "",
+                    MenuLine(leading: .kind(.team), title: t.name, trailing: waitingText(t.waiting) ?? "",
                              hint: "보드를 열고 이 팀을 선택") {
                         tower.boardSelectRequest = t.select
                         openBoard()
                     }
                 }
-                ForEach(menu.individual, id: \.row.id) { line in
-                    MenuLine(kind: .agent(line.row.session.agent), title: line.row.title, badge: line.row.badge,
-                             trailing: line.row.badge.elapsed, hint: "이 세션의 터미널로 이동") {
-                        tower.focus(line.row.session.handle)
+                ForEach(menu.agents, id: \.agent) { g in
+                    HStack(spacing: 6) {
+                        KindTag(kind: .agent(g.agent))
+                        Spacer(minLength: 8)
+                        Text(waitingText(g.waiting) ?? "").font(.caption).foregroundStyle(.secondary)
                     }
-                    .help(badgeLabel(line.row.badge) + "\n" + line.path)
+                    .padding(.top, 6).padding(.bottom, 2)
+                    ForEach(g.rows, id: \.id) { row in
+                        MenuLine(leading: .status(row.badge), title: row.title, trailing: row.badge.elapsed,
+                                 hint: "이 세션의 터미널로 이동") {
+                            tower.focus(row.session.handle)
+                        }
+                        .help(badgeLabel(row.badge) + "\n" + row.path)
+                    }
                 }
                 Divider().padding(.vertical, 4)
             }
@@ -93,12 +101,15 @@ struct MenuContent: View {
 }
 
 /// One dropdown line. A team: kind label, name, waiting count; it opens the board on the team.
-/// A session: status icon, title, kind label, elapsed time; it focuses the session's terminal.
+/// A session: status icon, title, elapsed time; it focuses the session's terminal.
 private struct MenuLine: View {
-    let kind: LineKind
+    enum Leading {
+        case kind(LineKind)
+        case status(RowBadge)
+    }
+
+    let leading: Leading
     let title: String
-    /// nil for a team line.
-    let badge: RowBadge?
     let trailing: String
     let hint: String
     let action: () -> Void
@@ -106,14 +117,11 @@ private struct MenuLine: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 6) {
-                if let badge {
-                    StatusIconView(badge: badge)
-                    Text(title).font(.headline).foregroundStyle(.primary).lineLimit(1)
-                    KindTag(kind: kind)
-                } else {
-                    KindTag(kind: kind)
-                    Text(title).font(.headline).foregroundStyle(.primary).lineLimit(1)
+                switch leading {
+                case .kind(let kind): KindTag(kind: kind)
+                case .status(let badge): StatusIconView(badge: badge)
                 }
+                Text(title).font(.headline).foregroundStyle(.primary).lineLimit(1)
                 Spacer(minLength: 8)
                 Text(trailing).font(.caption).foregroundStyle(.secondary)
             }
