@@ -53,6 +53,8 @@ private let declKeywords: Set = ["class", "interface", "object", "typealias", "e
 private let notNames: Set = ["class", "interface", "object", "fun", "enum"]
 /// A header continued on the next line: `class A\n    : B {`, Java's `extends` on its own line.
 private let continuations: Set = ["extends", "implements", "where", "permits"]
+/// Kotlin parameter modifiers before a parameter's name.
+private let paramModifiers: Set = ["vararg", "noinline", "crossinline"]
 /// Java words that look like a type or a name in a class body but are neither.
 private let javaNotNames: Set = ["if", "for", "while", "switch", "catch", "synchronized", "return", "new", "throw", "else",
                                  "try", "do", "case", "default", "static", "final", "assert", "super", "this", "throws"]
@@ -92,6 +94,8 @@ public func scanSource(_ text: String, java: Bool) -> SourceFacts {
     var initializer = false
     /// Kotlin: the parenthesis depth of the parameter list of the `fun` just read.
     var params: Int?
+    /// Kotlin: a parameter may start here (after `(` or `,`, through annotations and modifiers).
+    var paramOpen = false
     /// Kotlin: locals whose scope ends when the block at `depth` closes.
     var scopes: [(index: Int, depth: Int)] = []
     /// Kotlin: parameters read, waiting for their function's body; the `fun`'s brace depth.
@@ -282,12 +286,15 @@ public func scanSource(_ text: String, java: Bool) -> SourceFacts {
                 facts.members[s.index].scopeEnd = line
                 scopes.removeLast()
             }
-            if !awaiting.isEmpty { endAwaiting() }
+            // a lambda default value in the parameter list closes inside parentheses: not the body
+            if !awaiting.isEmpty, parens == 0 { endAwaiting() }
             if entries == depth { entries = nil }
             depth = max(0, depth - 1)
             initializer = false
             fieldList = false
-        case UInt8(ascii: "("): parens += 1
+        case UInt8(ascii: "("):
+            parens += 1
+            if params == parens { paramOpen = true }
         case UInt8(ascii: ")"):
             parens = max(0, parens - 1)
             if let p = params, parens < p { params = nil }
@@ -301,6 +308,7 @@ public func scanSource(_ text: String, java: Bool) -> SourceFacts {
             fieldList = false
         case UInt8(ascii: ","):
             if fieldList, parens == 0 { initializer = false }
+            if params == parens { paramOpen = true }
         case UInt8(ascii: "="):
             if parens == 0, byte(i + 1) != UInt8(ascii: "="), !"=!<>".utf8.contains(last) { initializer = true }
         default: break
@@ -358,12 +366,16 @@ public func scanSource(_ text: String, java: Bool) -> SourceFacts {
             continue
         }
         let next = nextSignificant(end)
-        if !java, let p = params, parens == p, last == UInt8(ascii: "(") || last == UInt8(ascii: ","),
-           byte(next) == UInt8(ascii: ":"), byte(next + 1) != UInt8(ascii: ":") {
-            let t = skipSpaces(next + 1)
-            awaiting.append(facts.members.count)
-            facts.members.append(MemberDecl(name: w, line: line, column: column(i), owner: nil, receiver: nil,
-                                            type: isIdentStart(byte(t)) ? word(t..<identEnd(t)) : nil, local: true, snippet: snippet()))
+        // `@Ann`, `@a.b.Ann`, `@field:Ann` and `vararg`/`noinline`/`crossinline` keep a parameter open
+        let annotation = last == UInt8(ascii: "@") || last == UInt8(ascii: ".") || last == UInt8(ascii: ":")
+        if !java, paramOpen, let p = params, parens == p, !annotation, !paramModifiers.contains(w) {
+            paramOpen = false
+            if byte(next) == UInt8(ascii: ":"), byte(next + 1) != UInt8(ascii: ":") {
+                let t = skipSpaces(next + 1)
+                awaiting.append(facts.members.count)
+                facts.members.append(MemberDecl(name: w, line: line, column: column(i), owner: nil, receiver: nil,
+                                                type: isIdentStart(byte(t)) ? word(t..<identEnd(t)) : nil, local: true, snippet: snippet()))
+            }
         }
         if java, pending == nil, let top = stack.last, top.depth == depth, parens == 0, !initializer,
            isIdent(last) || last == UInt8(ascii: ">") || last == UInt8(ascii: "]") || (fieldList && last == UInt8(ascii: ",")),

@@ -231,3 +231,28 @@ private func paths(_ t: CodeTarget) -> [String] {
     #expect(k == ["v com.example.Mode - Int member", "ON com.example.Mode - - member", "OFF com.example.Mode - - member",
                   "x - - - local", "flip com.example.Mode - - member"])  // an entry's own body: local, like Java's
 }
+
+/// A parameter's scope survives a lambda default value in its parameter list; annotated, `vararg`,
+/// `noinline` and `crossinline` parameters are parameters too.
+@Test func parametersWithDefaultsAnnotationsAndModifiers() {
+    let kt = """
+        package com.example
+        class A(val a: Int) {
+            val req = 0
+            fun d(a: Int, cb: () -> Unit = { }) {
+                println(a)
+            }
+            fun ann(@RequestBody req: Req, @field:Size(min = 1, max = 2) name: String, vararg more: Int,
+                    noinline f: () -> Unit, @a.b.Ann crossinline g: () -> Unit) {
+                println(req)
+            }
+        }
+        """
+    let f = scanSource(kt, java: false)
+    let params = f.members.filter(\.local).map { "\($0.name)@\($0.line)→\($0.scopeEnd ?? -1)" }
+    #expect(params == ["a@4→6", "cb@4→6", "req@7→10", "name@7→10", "more@7→10", "f@8→10", "g@8→10"])
+    let idx = DeclIndex(files: ["A.kt": f])
+    #expect(idx.navigate(["a"], in: "A.kt", line: 5) == .found(CodeLocation(path: "A.kt", line: 4)))    // the parameter, not property a
+    #expect(idx.navigate(["req"], in: "A.kt", line: 9) == .found(CodeLocation(path: "A.kt", line: 7)))  // not property req
+    #expect(idx.navigate(["more"], in: "A.kt", line: 9) == .found(CodeLocation(path: "A.kt", line: 7)))
+}
