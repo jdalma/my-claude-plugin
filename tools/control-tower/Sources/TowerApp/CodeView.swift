@@ -169,3 +169,66 @@ struct FileCodeView: View {
         withAnimation(.easeOut(duration: 0.5)) { flash = nil }
     }
 }
+
+/// The declarations a Command-click could mean: file name, dimmer directory, line, the declaring line.
+/// Up and down arrows move, Return opens, a click opens; the popover closes on Esc.
+struct CandidateListView: View {
+    let items: [Candidate]
+    let choose: (Candidate) -> Void
+    @State private var selected = 0
+    @FocusState private var focused: Bool
+
+    static let limit = 50
+
+    /// The rows shown and how many are left out.
+    static func page(_ items: [Candidate]) -> (shown: [Candidate], more: Int) {
+        (Array(items.prefix(limit)), max(0, items.count - limit))
+    }
+
+    var body: some View {
+        let (shown, more) = Self.page(items)
+        VStack(alignment: .leading, spacing: 0) {
+            Text("후보 \(items.count)개 · ↑↓ Enter").scaledFont(.caption1).foregroundStyle(.secondary).padding(8)
+            Divider()
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(Array(shown.enumerated()), id: \.offset) { i, c in
+                            row(c, selected: i == selected).id(i)
+                        }
+                        if more > 0 {
+                            Text("\(more)개 더").scaledFont(.caption1).foregroundStyle(.secondary).padding(8)
+                        }
+                    }
+                }
+                .onChange(of: selected) { _, i in proxy.scrollTo(i) }
+            }
+        }
+        .frame(width: 520)
+        .frame(maxHeight: 420)
+        .focusable()
+        .focusEffectDisabled()
+        .focused($focused)
+        .onAppear { focused = true }
+        .onKeyPress(.upArrow) { selected = max(0, selected - 1); return .handled }
+        .onKeyPress(.downArrow) { selected = min(shown.count - 1, selected + 1); return .handled }
+        .onKeyPress(.return) { choose(shown[selected]); return .handled }
+    }
+
+    private func row(_ c: Candidate, selected: Bool) -> some View {
+        let (dir, name) = splitPath(c.location.path)
+        return Button { choose(c) } label: {
+            VStack(alignment: .leading, spacing: 2) {
+                (Text(name).fontWeight(.semibold) + Text(":\(c.location.line)") + Text("  " + dir).foregroundStyle(.secondary))
+                    .lineLimit(1).truncationMode(.head)
+                Text(c.snippet).scaledFont(.caption1, design: .monospaced).foregroundStyle(.secondary).lineLimit(1)
+            }
+            .scaledFont(.callout)
+            .padding(.horizontal, 10).padding(.vertical, 5)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(selected ? Color.accentColor.opacity(0.2) : .clear)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}

@@ -40,8 +40,18 @@ final class ChangesState {
     /// The file view's locations; the diff when none is current. Emptied when the workspace changes.
     var history = CodeHistory()
 
-    /// A short message over the detail: "후보 n개", "정의를 찾지 못함".
+    /// A short message over the detail: "정의를 찾지 못함".
     private(set) var notice: String?
+    /// Declarations a Command-click could mean, shown beside the line that `owner` identifies.
+    var candidates: CandidateList?
+
+    struct CandidateList: Equatable {
+        var owner: UUID
+        var items: [Candidate]
+        /// The clicked line, recorded as the jump's start when it was in the file view.
+        var from: CodeLocation
+        var inFile: Bool
+    }
     private var noticeTask: Task<Void, Never>?
 
     /// Shows `location` in the file view, after the current one.
@@ -52,21 +62,29 @@ final class ChangesState {
     }
 
     /// A Command-click on `line` (in the diff, or in the file view when one is shown), on `name` if it hit
-    /// an identifier. A type opens its declaration; else the diff opens the line and the file view says so.
-    func commandClick(_ line: CodeLocation, name: [String]?) {
+    /// an identifier. One declaration opens; several are listed beside the line `owner` identifies;
+    /// none: the diff opens the line, the file view says so.
+    func commandClick(_ line: CodeLocation, name: [String]?, owner: UUID = UUID()) {
         let inFile = history.current != nil
         CommandClick.target = nil
         guard let name, let top = toplevel else { return notFound(line, inFile) }
         Task {
-            let result = await Task.detached { declIndexCache.index(toplevel: top).resolve(name, in: line.path) }.value
+            let result = await Task.detached { declIndexCache.index(toplevel: top).navigate(name, in: line.path, line: line.line) }.value
             // the workspace changed during a cold lookup: its paths mean nothing here
             guard toplevel == top else { return }
             switch result {
             case .found(let location): history.open(location, from: inFile ? line : nil)
-            case .many(let candidates): show("후보 \(candidates.count)개")
+            case .many(let items): candidates = CandidateList(owner: owner, items: items, from: line, inFile: inFile)
             case .none: notFound(line, inFile)
             }
         }
+    }
+
+    /// Opens a listed declaration.
+    func choose(_ c: Candidate) {
+        guard let list = candidates else { return }
+        candidates = nil
+        history.open(c.location, from: list.inFile ? list.from : nil)
     }
 
     private func notFound(_ line: CodeLocation, _ inFile: Bool) {
@@ -523,6 +541,9 @@ struct LineView: View {
     /// The identifier under the pointer while Command is held: underlined, a pointing hand.
     @State private var hoverWord: Range<Int>?
     @State private var hoverID = UUID()
+    @State private var lineSize = CGSize.zero
+    /// Where the candidate list points: the click, in the line's unit square.
+    @State private var listAnchor = UnitPoint.center
 
     var body: some View {
         // GitHub's three cells, each painted once on the canvas: numbers, the +/− marker, the code.
@@ -552,7 +573,11 @@ struct LineView: View {
         .textSelection(.enabled)
         .frame(maxWidth: .infinity, alignment: .leading)
         .coordinateSpace(name: diffLineSpace)
+        .onGeometryChange(for: CGSize.self) { $0.size } action: { lineSize = $0 }
         .onContinuousHover(coordinateSpace: .named(diffLineSpace)) { hovered($0) }
+        .popover(isPresented: listShown, attachmentAnchor: .point(listAnchor), arrowEdge: .bottom) {
+            if let list = changes?.candidates { CandidateListView(items: list.items) { changes?.choose($0) } }
+        }
         // a line scrolled out of a lazy stack or folded away may never see its hover end
         .onDisappear {
             CommandClick.leave(hoverID)
@@ -560,11 +585,23 @@ struct LineView: View {
         }
     }
 
+    /// This line's candidate list; closing it (Esc, a click outside) drops the list.
+    private var listShown: Binding<Bool> {
+        Binding {
+            changes?.candidates?.owner == hoverID
+        } set: { shown in
+            if !shown, changes?.candidates?.owner == hoverID { changes?.candidates = nil }
+        }
+    }
+
     private func hovered(_ phase: HoverPhase) {
         guard let target, let changes else { return }
         switch phase {
         case .active(let p):
-            let open = { changes.commandClick(target, name: nameUnder(p)) }
+            let open = {
+                listAnchor = UnitPoint(x: lineSize.width > 0 ? p.x / lineSize.width : 0.5, y: lineSize.height > 0 ? p.y / lineSize.height : 1)
+                changes.commandClick(target, name: nameUnder(p), owner: hoverID)
+            }
             CommandClick.hover(CommandClick.Target(id: hoverID, open: open, refresh: { showWord(at: p) }))
             showWord(at: p)
         case .ended:

@@ -1,7 +1,7 @@
 import Foundation
 
-// Java/Kotlin type declarations of a workspace, for Command-click to a type's definition. A byte scan,
-// not a parser: package, imports and type declarations, with comments and strings skipped.
+// Java/Kotlin declarations of a workspace, for Command-click to a definition. A byte scan, not a parser:
+// package, imports, type and member declarations, with comments and strings skipped.
 
 public struct TypeDecl: Hashable, Sendable {
     public var name: String
@@ -10,6 +10,25 @@ public struct TypeDecl: Hashable, Sendable {
     public var line: Int
     /// Character offset of the name in its line.
     public var column: Int
+    /// The declaring line, trimmed: what a candidate list shows.
+    public var snippet: String
+}
+
+/// A function, property or field; in Kotlin also a local `val`/`var`/`fun` or a function parameter.
+public struct MemberDecl: Hashable, Sendable {
+    public var name: String
+    public var line: Int
+    public var column: Int
+    /// The qualified name of the type whose body declares it; nil at the top level or for a local.
+    public var owner: String?
+    /// A Kotlin extension's receiver type, its last simple name: `Foo` for `fun a.Foo<T>.bar()`.
+    public var receiver: String?
+    /// A property's declared type, its first simple name, when the declaration states it
+    /// (`val a: Foo`, `val a = Foo(…)`, Java `Foo a;`).
+    public var type: String?
+    /// Inside a function or initializer body, or a parameter: seen only from its own file.
+    public var local: Bool
+    public var snippet: String
 }
 
 public struct ImportDecl: Hashable, Sendable {
@@ -23,6 +42,7 @@ public struct SourceFacts: Hashable, Sendable {
     public var package = ""
     public var imports: [ImportDecl] = []
     public var types: [TypeDecl] = []
+    public var members: [MemberDecl] = []
 }
 
 private let declKeywords: Set = ["class", "interface", "object", "typealias", "enum"]
@@ -30,6 +50,9 @@ private let declKeywords: Set = ["class", "interface", "object", "typealias", "e
 private let notNames: Set = ["class", "interface", "object", "fun", "enum"]
 /// A header continued on the next line: `class A\n    : B {`, Java's `extends` on its own line.
 private let continuations: Set = ["extends", "implements", "where", "permits"]
+/// Java words that look like a type or a name in a class body but are neither.
+private let javaNotNames: Set = ["if", "for", "while", "switch", "catch", "synchronized", "return", "new", "throw", "else",
+                                 "try", "do", "case", "default", "static", "final", "assert", "super", "this", "throws"]
 
 private func isIdent(_ c: UInt8) -> Bool {
     c >= 0x80 || c == UInt8(ascii: "_") || c == UInt8(ascii: "$") || (48...57).contains(c) || (97...122).contains(c | 0x20)
@@ -41,6 +64,12 @@ private func isIdentStart(_ c: UInt8) -> Bool { isIdent(c) && !(48...57).contain
 /// strings are ignored. A type's body is the first `{` outside parentheses after its name; a header that
 /// ends a line without one has no body unless the next line continues it (`{`, `:`, `,`, `extends` …).
 /// Kotlin block comments nest, Java's do not. Java alone has `record`.
+///
+/// Members. Kotlin: every `fun`, `val` and `var` (an extension's receiver kept), and function parameters;
+/// one directly in a type body (or a primary constructor's `val`) is that type's member, one at the top
+/// level has no owner, any other is local. Java: only directly in a type body, outside parentheses and
+/// initializers, a word after a type (a word, `>` or `]`) and before `(` is a method, before `=`, `;` or
+/// `,` a field. Calls, Java locals and parameters, and lambda parameters are not declarations.
 public func scanSource(_ text: String, java: Bool) -> SourceFacts {
     let b = Array(text.utf8), n = b.count
     var facts = SourceFacts()
@@ -52,6 +81,12 @@ public func scanSource(_ text: String, java: Bool) -> SourceFacts {
     var pending: String?
     var checkPending = false, lineHasToken = false
     var last: UInt8 = 0
+    /// The last word read, for a Java field's type.
+    var lastWord = ""
+    /// Java: the current class-body statement has had an `=`, so its words are an initializer.
+    var initializer = false
+    /// Kotlin: the parenthesis depth of the parameter list of the `fun` just read.
+    var params: Int?
     let keywords = java ? declKeywords.union(["record"]) : declKeywords
 
     func byte(_ k: Int) -> UInt8 { k < n ? b[k] : 0 }
@@ -65,6 +100,82 @@ public func scanSource(_ text: String, java: Bool) -> SourceFacts {
         line += 1
         lineStart = k + 1
         lineHasToken = false
+    }
+    func skipSpaces(_ k: Int) -> Int {
+        var e = k
+        while e < n, b[e] == UInt8(ascii: " ") || b[e] == UInt8(ascii: "\t") { e += 1 }
+        return e
+    }
+    /// Past a balanced `<…>` starting at `k` on the same line; `k` when there is none.
+    func skipAngles(_ k: Int) -> Int {
+        guard byte(k) == UInt8(ascii: "<") else { return k }
+        var d = 0, j = k
+        while j < n {
+            switch b[j] {
+            case UInt8(ascii: "<"): d += 1
+            case UInt8(ascii: ">"): d -= 1; if d == 0 { return j + 1 }
+            case UInt8(ascii: "\n"), UInt8(ascii: "{"), UInt8(ascii: ";"): return k
+            default: break
+            }
+            j += 1
+        }
+        return k
+    }
+    func nextSignificant(_ k: Int) -> Int {
+        var e = k
+        while e < n, b[e] == UInt8(ascii: " ") || b[e] == UInt8(ascii: "\t") || b[e] == UInt8(ascii: "\n") || b[e] == UInt8(ascii: "\r") { e += 1 }
+        return e
+    }
+    func snippet() -> String {
+        var e = lineStart
+        while e < n, b[e] != UInt8(ascii: "\n") { e += 1 }
+        return String(word(lineStart..<e).trimmingCharacters(in: .whitespaces).prefix(160))
+    }
+    func column(_ k: Int) -> Int { String(decoding: b[lineStart..<k], as: UTF8.self).count }
+    func prefix() -> [String] { [facts.package] + stack.map(\.name) }
+    func qualify(_ names: [String]) -> String { names.filter { !$0.isEmpty }.joined(separator: ".") }
+    /// Kotlin: where a member read now belongs.
+    func placement(constructor: Bool) -> (owner: String?, local: Bool) {
+        if constructor, let p = pending, parens > 0 { return (qualify(prefix() + [p]), false) }
+        if depth == 0 { return (nil, false) }
+        if let top = stack.last, top.depth == depth { return (qualify(prefix()), false) }
+        return (nil, true)
+    }
+    /// `fun <T> a.Foo<T>.name`, `val name: Type`, `var name = Type(…)` after the keyword ending at `k`.
+    func kotlinMember(_ kw: String, after k0: Int) -> (MemberDecl, Int)? {
+        var k = skipSpaces(skipAngles(skipSpaces(k0)))
+        var receiver: String?, name: String?, nameStart = k
+        while k < n, isIdentStart(b[k]) {
+            let e = identEnd(k), id = word(k..<e)
+            var j = skipAngles(e)
+            if byte(j) == UInt8(ascii: "?") { j += 1 }
+            if byte(j) == UInt8(ascii: "."), isIdentStart(byte(j + 1)) {
+                receiver = id
+                k = j + 1
+                continue
+            }
+            name = id
+            nameStart = k
+            k = e
+            break
+        }
+        // `fun interface X`: a type, read by the type branch
+        guard let name, !notNames.contains(name) else { return nil }
+        var type: String?
+        if kw != "fun" {
+            var t = skipSpaces(k)
+            if byte(t) == UInt8(ascii: ":"), byte(t + 1) != UInt8(ascii: ":") {
+                t = skipSpaces(t + 1)
+                if isIdentStart(byte(t)) { type = word(t..<identEnd(t)) }
+            } else if byte(t) == UInt8(ascii: "="), byte(t + 1) != UInt8(ascii: "=") {
+                t = skipSpaces(t + 1)
+                let e = identEnd(t)
+                if e > t, byte(skipAngles(e)) == UInt8(ascii: "("), word(t..<e).first?.isUppercase == true { type = word(t..<e) }
+            }
+        }
+        let place = placement(constructor: kw != "fun")
+        return (MemberDecl(name: name, line: line, column: column(nameStart), owner: place.owner, receiver: receiver,
+                           type: type, local: place.local, snippet: snippet()), k)
     }
     func lineRest(from k: Int) -> (String, Int) {
         var e = k
@@ -133,13 +244,22 @@ public func scanSource(_ text: String, java: Bool) -> SourceFacts {
         case UInt8(ascii: "{"):
             if let p = pending, parens == 0 { stack.append((p, depth + 1)) }
             pending = nil
+            params = nil
+            initializer = false
             depth += 1
         case UInt8(ascii: "}"):
             if stack.last?.depth == depth { stack.removeLast() }
             depth = max(0, depth - 1)
+            initializer = false
         case UInt8(ascii: "("): parens += 1
-        case UInt8(ascii: ")"): parens = max(0, parens - 1)
-        case UInt8(ascii: ";"): if parens == 0 { pending = nil }
+        case UInt8(ascii: ")"):
+            parens = max(0, parens - 1)
+            if let p = params, parens < p { params = nil }
+        case UInt8(ascii: ";"):
+            if parens == 0 { pending = nil }
+            initializer = false
+        case UInt8(ascii: "="):
+            if parens == 0, byte(i + 1) != UInt8(ascii: "="), !"=!<>".utf8.contains(last) { initializer = true }
         default: break
         }
         guard isIdentStart(c) else {
@@ -166,15 +286,44 @@ public func scanSource(_ text: String, java: Bool) -> SourceFacts {
             if k < n, isIdentStart(b[k]), !notNames.contains(word(k..<nameEnd)) {
                 let name = word(k..<nameEnd)
                 let qualified = ([facts.package] + stack.map(\.name) + [name]).filter { !$0.isEmpty }.joined(separator: ".")
-                facts.types.append(TypeDecl(name: name, qualified: qualified, line: line,
-                                            column: String(decoding: b[lineStart..<k], as: UTF8.self).count))
+                facts.types.append(TypeDecl(name: name, qualified: qualified, line: line, column: column(k), snippet: snippet()))
                 pending = w == "typealias" ? nil : name
                 last = b[nameEnd - 1]
+                lastWord = name
                 i = nameEnd
                 continue
             }
+            // an unnamed `companion object` or object expression: its body holds members, not locals
+            if w == "object", !java { pending = "Companion" }
+        }
+        if !java, w == "fun" || w == "val" || w == "var", last != UInt8(ascii: "."), let (m, e) = kotlinMember(w, after: end) {
+            facts.members.append(m)
+            if w == "fun" { params = parens + 1 }
+            last = b[e - 1]
+            lastWord = m.name
+            i = e
+            continue
+        }
+        let next = nextSignificant(end)
+        if !java, let p = params, parens == p, last == UInt8(ascii: "(") || last == UInt8(ascii: ","),
+           byte(next) == UInt8(ascii: ":"), byte(next + 1) != UInt8(ascii: ":") {
+            facts.members.append(MemberDecl(name: w, line: line, column: column(i), owner: nil, receiver: nil,
+                                            type: { let t = skipSpaces(next + 1); return isIdentStart(byte(t)) ? word(t..<identEnd(t)) : nil }(),
+                                            local: true, snippet: snippet()))
+        }
+        if java, pending == nil, let top = stack.last, top.depth == depth, parens == 0, !initializer,
+           isIdent(last) || last == UInt8(ascii: ">") || last == UInt8(ascii: "]"),
+           !javaNotNames.contains(w), !javaNotNames.contains(lastWord) || !isIdent(last) {
+            let after = byte(next)
+            let method = after == UInt8(ascii: "(")
+            let field = after == UInt8(ascii: ";") || after == UInt8(ascii: ",") || (after == UInt8(ascii: "=") && byte(next + 1) != UInt8(ascii: "="))
+            if method || field {
+                facts.members.append(MemberDecl(name: w, line: line, column: column(i), owner: qualify(prefix()), receiver: nil,
+                                                type: field && isIdent(last) ? lastWord : nil, local: false, snippet: snippet()))
+            }
         }
         last = b[end - 1]
+        lastWord = w
         i = end
     }
     return facts
@@ -199,15 +348,36 @@ public enum TypeTarget: Hashable, Sendable {
     case none
 }
 
-/// Every scanned file of a workspace, looked up by simple and by qualified type name.
+/// A declaration offered in the candidate list.
+public struct Candidate: Hashable, Sendable {
+    public var location: CodeLocation
+    public var snippet: String
+}
+
+/// Where a Command-click on any name leads.
+public enum CodeTarget: Hashable, Sendable {
+    case found(CodeLocation)
+    /// Best first.
+    case many([Candidate])
+    case none
+}
+
+/// Every scanned file of a workspace, looked up by simple and by qualified type name and by member name.
 public struct DeclIndex: Sendable {
     public let files: [String: SourceFacts]
     private let byName: [String: [Ref]]
     private let byQualified: [String: [Ref]]
+    /// Members that are not local.
+    private let byMember: [String: [MemberRef]]
 
     private struct Ref: Hashable, Sendable {
         var path: String
         var decl: TypeDecl
+    }
+
+    private struct MemberRef: Hashable, Sendable {
+        var path: String
+        var decl: MemberDecl
     }
 
     public init(files: [String: SourceFacts]) {
@@ -215,6 +385,68 @@ public struct DeclIndex: Sendable {
         let refs = files.flatMap { path, f in f.types.map { Ref(path: path, decl: $0) } }
         byName = Dictionary(grouping: refs, by: \.decl.name)
         byQualified = Dictionary(grouping: refs, by: \.decl.qualified)
+        byMember = Dictionary(grouping: files.flatMap { path, f in f.members.filter { !$0.local }.map { MemberRef(path: path, decl: $0) } },
+                              by: \.decl.name)
+    }
+
+    /// A Command-click on `name` (dotted segments) on `line` of `path`. A type, as `resolve` finds it,
+    /// comes first. Else members of that name:
+    /// - a bare name declared in this file at or above `line` (the nearest, locals and parameters too)
+    ///   is the answer;
+    /// - otherwise every non-local member, and this file's locals, ranked: declared in the receiver's
+    ///   type (`X.name` with `X` a type, or a property of this file whose declared type is one), or an
+    ///   extension on it; this file; files of explicit imports (a type's file, or a top-level member
+    ///   imported by name); this package and wildcard-imported packages; the rest. Then by path and line.
+    public func navigate(_ name: [String], in path: String, line: Int) -> CodeTarget {
+        guard let last = name.last else { return .none }
+        let types = typeRefs(name, path)
+        if !types.isEmpty {
+            return candidates(types.sorted { ($0.path, $0.decl.line) < ($1.path, $1.decl.line) }
+                .map { Candidate(location: CodeLocation(path: $0.path, line: $0.decl.line), snippet: $0.decl.snippet) })
+        }
+        let facts = files[path] ?? SourceFacts()
+        func nearest(_ n: String) -> MemberDecl? {
+            facts.members.filter { $0.name == n && $0.line <= line }.max { $0.line < $1.line }
+        }
+        if name.count == 1, let near = nearest(last) { return .found(CodeLocation(path: path, line: near.line)) }
+
+        var owners: Set<String> = [], receivers: Set<String> = []
+        if name.count > 1 {
+            let x = Array(name.dropLast())
+            var t = typeRefs(x, path)
+            if t.isEmpty, x.count == 1, let v = nearest(x[0]) ?? facts.members.first(where: { $0.name == x[0] }), let vt = v.type {
+                t = typeRefs([vt], path)
+            }
+            owners = Set(t.flatMap { [$0.decl.qualified, $0.decl.qualified + ".Companion"] })
+            receivers = Set(t.map(\.decl.name))
+        }
+        let explicit = facts.imports.filter { !$0.wildcard }
+        let importedFiles = Set(explicit.flatMap { byQualified[$0.path] ?? [] }.map(\.path))
+        let importedNames = Set(explicit.map(\.path))
+        let packages = Set([facts.package] + facts.imports.filter(\.wildcard).map(\.path))
+        func rank(_ r: MemberRef) -> Int {
+            if let o = r.decl.owner, owners.contains(o) { return 0 }
+            if let rc = r.decl.receiver, receivers.contains(rc) { return 0 }
+            if r.path == path { return 1 }
+            let package = files[r.path]?.package ?? ""
+            if importedFiles.contains(r.path) || (r.decl.owner == nil && importedNames.contains(package + "." + r.decl.name)) { return 2 }
+            if packages.contains(package) { return 3 }
+            return 4
+        }
+        let refs = (byMember[last] ?? []).filter { $0.path != path } + facts.members.filter { $0.name == last }.map { MemberRef(path: path, decl: $0) }
+        let ranked = refs.map { (rank($0), $0) }.sorted { ($0.0, $0.1.path, $0.1.decl.line) < ($1.0, $1.1.path, $1.1.decl.line) }
+        return candidates(ranked.map { Candidate(location: CodeLocation(path: $0.1.path, line: $0.1.decl.line), snippet: $0.1.decl.snippet) })
+    }
+
+    /// One location found, several listed (each location once, in order), or none.
+    private func candidates(_ list: [Candidate]) -> CodeTarget {
+        var seen = Set<CodeLocation>()
+        let unique = list.filter { seen.insert($0.location).inserted }
+        switch unique.count {
+        case 0: return .none
+        case 1: return .found(unique[0].location)
+        default: return .many(unique)
+        }
     }
 
     /// `name`'s segments (`["a", "b", "C"]` for `a.b.C`) as written in `path`. A dotted name is first
@@ -225,13 +457,17 @@ public struct DeclIndex: Sendable {
     /// `package` or one not scanned. In a file with a package a name (a)–(d) miss comes from a default
     /// import (`kotlin.*`, `java.lang.*` …) or a wildcard outside the workspace, never another package.
     public func resolve(_ name: [String], in path: String) -> TypeTarget {
-        guard let head = name.first else { return .none }
+        target(typeRefs(name, path))
+    }
+
+    private func typeRefs(_ name: [String], _ path: String) -> [Ref] {
+        guard let head = name.first else { return [] }
         let facts = files[path] ?? SourceFacts()
-        if name.count == 1 { return target(simple(head, facts, path)) }
-        if let q = byQualified[name.joined(separator: ".")] { return target(q) }
+        if name.count == 1 { return simple(head, facts, path) }
+        if let q = byQualified[name.joined(separator: ".")] { return q }
         let rest = name.dropFirst().joined(separator: ".")
         let nested = simple(head, facts, path).flatMap { byQualified[$0.decl.qualified + "." + rest] ?? [] }
-        return target(nested.isEmpty ? simple(name[name.count - 1], facts, path) : nested)
+        return nested.isEmpty ? simple(name[name.count - 1], facts, path) : nested
     }
 
     private func simple(_ n: String, _ facts: SourceFacts, _ path: String) -> [Ref] {

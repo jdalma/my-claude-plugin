@@ -157,12 +157,27 @@ import Testing
     await settle { s.notice != nil }
     #expect(s.notice == "정의를 찾지 못함" && s.history.current == line3)
 
-    s.commandClick(CodeLocation(path: "gone.kts", line: 2), name: ["Dup"])  // no package context: (e) counts both
-    await settle { s.notice == "후보 2개" }
-    #expect(s.notice == "후보 2개" && s.history.current == line3)
+    let owner = UUID()
+    s.commandClick(CodeLocation(path: "gone.kts", line: 2), name: ["Dup"], owner: owner)  // no package context: (e) counts both
+    await settle { s.candidates != nil }
+    #expect(s.candidates?.owner == owner && s.candidates?.items.map(\.location.path) == ["a/Dup.kt", "b/Dup.kt"])
+    #expect(s.history.current == line3)  // listed, not opened
+    s.choose(try #require(s.candidates?.items[1]))
+    #expect(s.candidates == nil && s.history.current == CodeLocation(path: "b/Dup.kt", line: 2))
+    s.history.back()
+    #expect(s.history.current == CodeLocation(path: "gone.kts", line: 2))  // chosen from the file view: back to the click
+    s.history.open(line3)
 
     s.commandClick(CodeLocation(path: "Main.kt", line: 3), name: ["User"])  // from the file view: back returns to line 3
     await settle { s.history.current?.path == "User.kt" }
     s.history.back()
     #expect(s.history.current == line3)
+}
+
+/// The list shows 50 and counts the rest.
+@MainActor @Test func theCandidateListShowsFifty() {
+    let items = (1...73).map { Candidate(location: CodeLocation(path: "F\($0).kt", line: $0), snippet: "fun f()") }
+    let page = CandidateListView.page(items)
+    #expect(page.shown.count == 50 && page.shown.last?.location.line == 50 && page.more == 23)
+    #expect(CandidateListView.page(Array(items.prefix(3))).more == 0)
 }
