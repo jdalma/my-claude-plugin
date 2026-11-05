@@ -123,6 +123,9 @@ private func lines(_ body: String) -> [DiffLine] {
     #expect(readWorkingFile(toplevel: top, path: "src", around: 1) == .missing)
     #expect(readWorkingFile(toplevel: top, path: "bin", around: 1) == .binary)
     #expect(readWorkingFile(toplevel: top, path: "latin", around: 1) == .binary)
+    try "a\r\nb\r\nc\r\n".write(to: dir.appending(path: "crlf.kt"), atomically: true, encoding: .utf8)
+    guard case .text(let crlf, let n) = readWorkingFile(toplevel: top, path: "crlf.kt", around: 1) else { Issue.record(); return }
+    #expect(n == 3 && crlf.map(\.text) == ["a\r", "b\r", "c\r"])  // as the diff parser keeps them
 }
 
 @Test func fileLinesAreHighlightedLikeDiffLines() async {

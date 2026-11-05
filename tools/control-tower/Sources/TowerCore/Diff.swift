@@ -209,6 +209,7 @@ let parseMemo = ParseMemo()
 let newFileLimit = 200
 let newFileByteLimit = 1 << 20
 
+/// Sendable because every read and write of `byTop` holds `lock`, as in `ParseMemo`.
 /// The last diff of each untracked file by toplevel, kept while its size and modification date hold,
 /// so a 5 s refresh only stats them.
 final class NewFileMemo: @unchecked Sendable {
@@ -244,11 +245,12 @@ func newFileDiff(_ path: String, _ data: Data, _ limit: Int) -> FileDiff {
     guard !data.prefix(8000).contains(0), let text = String(data: data, encoding: .utf8) else {
         return FileDiff(path: path, added: 0, removed: 0, binary: true, lines: [])
     }
-    var all = text.split(separator: "\n", omittingEmptySubsequences: false)
+    // "\r\n" is one Character, so a Character split would leave a CRLF file one line; the tracked parser keeps "a\r"
+    var all = text.components(separatedBy: "\n")
     if all.last?.isEmpty == true { all.removeLast() }
     guard !all.isEmpty else { return FileDiff(path: path, added: 0, removed: 0, binary: false, lines: []) }
     let hunk = DiffLine(kind: .hunk, old: nil, new: nil, text: "@@ -0,0 +1\(all.count == 1 ? "" : ",\(all.count)") @@")
-    let lines = all.enumerated().map { DiffLine(kind: .added, old: nil, new: $0.offset + 1, text: String($0.element)) }
+    let lines = all.enumerated().map { DiffLine(kind: .added, old: nil, new: $0.offset + 1, text: $0.element) }
     return cap([FileDiff(path: path, added: all.count, removed: 0, binary: false, lines: [hunk] + lines)], limit)[0]
 }
 

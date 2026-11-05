@@ -91,8 +91,9 @@ public func readWorkingFile(toplevel: String, path: String, around line: Int, li
     guard (try? url.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true,
           let data = try? Data(contentsOf: url) else { return .missing }
     guard !data.prefix(8000).contains(0), let text = String(data: data, encoding: .utf8) else { return .binary }
-    var all = text.split(separator: "\n", omittingEmptySubsequences: false)
-    if text.hasSuffix("\n") { all.removeLast() }
+    // "\r\n" is one Character: split by Character, a CRLF file would be one line
+    var all = text.components(separatedBy: "\n")
+    if text.utf8.last == UInt8(ascii: "\n") { all.removeLast() }
     let total = all.count
     let first = max(1, min(line - lineLimit / 2, total - lineLimit + 1))
     let shown = all.dropFirst(first - 1).prefix(lineLimit)

@@ -343,3 +343,22 @@ private func mtime(_ path: String) throws -> Date {
     // only the first paths are looked at: the oversized one takes a slot and stays a path
     #expect(d.uncommitted.newFiles.map(\.path) == d.uncommitted.untracked.prefix(newFileLimit).filter { $0 != "big.txt" })
 }
+
+@Test func crlfUntrackedFilesSplitLikeTrackedOnes() throws {
+    let dir = try fixture()
+    try write(dir, "crlf.txt", "a\r\nb\r\nc\r\n")
+    try write(dir, "tail.txt", "a\r\nb")
+    let d = try result(dir)
+    let byPath = Dictionary(uniqueKeysWithValues: d.uncommitted.newFiles.map { ($0.path, $0) })
+    #expect(byPath["crlf.txt"]?.added == 3)
+    #expect(byPath["crlf.txt"]?.lines.dropFirst().map(\.text) == ["a\r", "b\r", "c\r"])  // as the tracked parser keeps them
+    #expect(byPath["tail.txt"]?.lines.dropFirst().map(\.text) == ["a\r", "b"])
+}
+
+@Test func aRewrittenUntrackedFileIsReadAgain() throws {
+    let dir = try fixture()
+    try write(dir, "n.txt", "one\n")
+    #expect(try result(dir).uncommitted.newFiles.first?.lines.last?.text == "one")
+    try write(dir, "n.txt", "one\ntwo\n")
+    #expect(try result(dir).uncommitted.newFiles.first?.lines.last?.text == "two")
+}
