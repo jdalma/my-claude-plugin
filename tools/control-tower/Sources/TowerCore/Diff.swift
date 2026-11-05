@@ -264,7 +264,7 @@ private func headerPath(_ header: String) -> String {
 }
 
 /// `@@ -12,3 +14,4 @@ …` → (12, 14).
-private func hunkStarts(_ header: String) -> (Int, Int) {
+func hunkStarts(_ header: String) -> (Int, Int) {
     let parts = header.split(separator: " ")
     func start(_ s: Substring) -> Int { Int(s.dropFirst().split(separator: ",").first ?? "") ?? 0 }
     return parts.count >= 3 ? (start(parts[1]), start(parts[2])) : (0, 0)

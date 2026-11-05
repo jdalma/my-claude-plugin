@@ -37,6 +37,15 @@ final class ChangesState {
     private var workspace: String?
     /// The file a tree click asked to scroll to; the detail's scroll view consumes it.
     var scrollTarget: DiffFileKey?
+    /// The file view's locations; the diff when none is current. Emptied when the workspace changes.
+    var history = CodeHistory()
+
+    /// Shows `location` in the file view, after the current one.
+    func open(_ location: CodeLocation) {
+        history.open(location)
+        // the line that was hovered is now covered by the file view
+        CommandClick.target = nil
+    }
 
     /// A refresh's result: shown at once in one color when it differs from the last one.
     func accept(_ next: Loaded) {
@@ -65,6 +74,7 @@ final class ChangesState {
         case .uncommitted: showUncommitted = true
         }
         expanded.insert(key)
+        history.toDiff()
         scrollTarget = key
     }
 
@@ -80,7 +90,10 @@ final class ChangesState {
 
     /// Another workspace is another repo: its files start folded.
     func select(workspace: String) {
-        if workspace != self.workspace { expanded = [] }
+        if workspace != self.workspace {
+            expanded = []
+            history = CodeHistory()
+        }
         self.workspace = workspace
     }
 }
@@ -320,10 +333,13 @@ private struct FileView: View {
             if !folded {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     if DiffLayout(rawValue: layout) == .split {
-                        ForEach(Array(file.split.enumerated()), id: \.offset) { _, row in SplitRowView(row: row, lines: file.lines, ratio: $splitRatio) }
+                        ForEach(Array(file.split.enumerated()), id: \.offset) { _, row in
+                            SplitRowView(row: row, lines: file.lines, ratio: $splitRatio, path: file.path)
+                        }
                     } else {
-                        ForEach(Array(file.lines.enumerated()), id: \.offset) { _, line in
-                            LineView(line: line).fixedSize(horizontal: false, vertical: true)
+                        ForEach(Array(file.lines.enumerated()), id: \.offset) { i, line in
+                            LineView(line: line, target: CodeLocation(path: file.path, line: fileLine(at: i, in: file.lines)))
+                                .fixedSize(horizontal: false, vertical: true)
                         }
                     }
                 }
@@ -374,11 +390,13 @@ struct SplitRowView: View {
     let row: SplitRow
     let lines: [DiffLine]
     @Binding var ratio: Double
+    /// The file's path; nil: the lines do not navigate.
+    var path: String?
 
     var body: some View {
         switch row {
         case .hunk(let i):
-            LineView(line: lines[i]).fixedSize(horizontal: false, vertical: true)
+            LineView(line: lines[i], target: target(i)).fixedSize(horizontal: false, vertical: true)
         case .pair(let old, let new):
             SplitColumns(ratio: ratio) {
                 side(old, .old)
@@ -392,9 +410,13 @@ struct SplitRowView: View {
 
     private func side(_ i: Int?, _ s: LineView.Side) -> some View {
         Group {
-            if let i { LineView(line: lines[i], side: s) } else { DiffColors.emptyCell }
+            if let i { LineView(line: lines[i], side: s, target: target(i)) } else { DiffColors.emptyCell }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private func target(_ i: Int) -> CodeLocation? {
+        path.map { CodeLocation(path: $0, line: fileLine(at: i, in: lines)) }
     }
 }
 
@@ -447,12 +469,21 @@ private struct SplitHandle: View {
     private static let space = "splitRow"
 }
 
-private struct LineView: View {
+struct LineView: View {
     enum Side { case old, new }
 
     let line: DiffLine
     /// nil: the unified view, both numbers in one cell.
     var side: Side?
+    /// Where a Command-click on the line goes; nil: the line does not navigate.
+    var target: CodeLocation?
+    @Environment(ChangesState.self) private var changes: ChangesState?
+    @Environment(\.boardFontScale) private var scale
+    /// The code text's frame in the line, to find the character under the pointer.
+    @State private var textFrame = CGRect.zero
+    /// The identifier under the pointer while Command is held: underlined, a pointing hand.
+    @State private var hoverWord: Range<Int>?
+    @State private var hoverID = UUID()
 
     var body: some View {
         // GitHub's three cells, each painted once on the canvas: numbers, the +/− marker, the code.
@@ -469,6 +500,7 @@ private struct LineView: View {
                 } else {
                     Text(marker).padding(.horizontal, 4)
                     Text(content)
+                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(diffLineSpace)) } action: { textFrame = $0 }
                 }
                 Spacer(minLength: 0)
             }
@@ -480,6 +512,39 @@ private struct LineView: View {
         .scaledFont(.callout, design: .monospaced)
         .textSelection(.enabled)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .coordinateSpace(name: diffLineSpace)
+        .onContinuousHover(coordinateSpace: .named(diffLineSpace)) { hovered($0) }
+    }
+
+    private func hovered(_ phase: HoverPhase) {
+        guard let target, let changes else { return }
+        switch phase {
+        case .active(let p):
+            let open = { changes.open(target) }
+            CommandClick.hover(CommandClick.Target(id: hoverID, open: open, refresh: { showWord(at: p) }))
+            showWord(at: p)
+        case .ended:
+            CommandClick.leave(hoverID)
+            showWord(at: nil)
+        }
+    }
+
+    /// Underlines the identifier at `p` while Command alone is held; T34 navigates by it.
+    private func showWord(at p: CGPoint?) {
+        let range = p.flatMap { CommandClick.isCommandOnly(NSEvent.modifierFlags) ? wordUnder($0) : nil }?.range
+        guard range != hoverWord else { return }
+        if (range == nil) != (hoverWord == nil) {
+            if range == nil { NSCursor.pop() } else { NSCursor.pointingHand.push() }
+        }
+        hoverWord = range
+    }
+
+    private func wordUnder(_ p: CGPoint) -> CodeWord? {
+        guard line.kind != .hunk, textFrame.contains(p) else { return nil }
+        let shown = String(lineContent(line).characters)
+        let at = CGPoint(x: p.x - textFrame.minX, y: p.y - textFrame.minY)
+        return characterIndex(at: at, in: shown, font: codeFont(scale: scale), width: textFrame.width)
+            .flatMap { identifier(in: shown, at: $0) }
     }
 
     private var numbers: String {
@@ -503,7 +568,14 @@ private struct LineView: View {
         }
     }
 
-    private var content: AttributedString { lineContent(line) }
+    private var content: AttributedString {
+        var a = lineContent(line)
+        if let r = hoverWord {
+            let lo = a.characters.index(a.startIndex, offsetBy: r.lowerBound), hi = a.characters.index(lo, offsetBy: r.count)
+            a[lo..<hi].underlineStyle = .single
+        }
+        return a
+    }
 
     private var tint: Color {
         switch line.kind {
@@ -523,6 +595,8 @@ private struct LineView: View {
         }
     }
 }
+
+private let diffLineSpace = "diffLine"
 
 /// The changed files beside the detail, one tree per section; a click reveals the file in the diff.
 struct ChangeTreeColumn: View {

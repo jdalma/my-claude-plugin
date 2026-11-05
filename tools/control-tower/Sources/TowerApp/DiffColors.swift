@@ -24,6 +24,8 @@ enum DiffColors {
     static let removedWord = pair(0xffcecbff, 0xf8514966)
     static let hunkLine = pair(0xddf4ffff, 0x388bfd1a)
     static let hunkNumber = pair(0xb6e3ffff, 0x0c2d6bff)
+    /// `--bgColor-attention-muted`, GitHub's highlighted line in a file view.
+    static let targetLine = pair(0xfff8c5ff, 0xbb800926)
     /// `--diffBlob-emptyLine-bgColor` and `-emptyNum-bgColor` (both `--bgColor-muted`): the missing side of a split row.
     static let emptyCell = pair(0xf6f8faff, 0x151b23ff)
 

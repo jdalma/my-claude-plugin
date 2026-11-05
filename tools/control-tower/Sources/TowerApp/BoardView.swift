@@ -9,6 +9,9 @@ struct BoardView: View {
     @State private var filter = AgentFilter.all
     @State private var historyLimit = historyPageSize
     @State private var selection: RowID?
+    /// The detail's diff state; here so Esc and ⌘[ ⌘] reach the file view.
+    @State private var changes = ChangesState()
+    @State private var clickMonitor: Any?
     @FocusState private var searchFocused: Bool
     @AppStorage(FontScale.storageKey) private var storedScale = FontScale.standard.value
     @AppStorage(AppearanceChoice.storageKey) private var storedAppearance = AppearanceChoice.system.rawValue
@@ -67,7 +70,13 @@ struct BoardView: View {
         .background {
             Group {
                 Button("검색") { searchFocused = true }.keyboardShortcut("k")
-                Button("내 차례 목록") { selection = nil }.keyboardShortcut(.escape, modifiers: [])
+                Button("내 차례 목록") {
+                    // the file view first: Esc returns to the diff
+                    if selection != nil, changes.history.current != nil { changes.history.toDiff() } else { selection = nil }
+                }
+                .keyboardShortcut(.escape, modifiers: [])
+                Button("뒤로") { if selection != nil { changes.history.back() } }.keyboardShortcut("[")
+                Button("앞으로") { if selection != nil { changes.history.forward() } }.keyboardShortcut("]")
                 Button("글자 크게") { storedScale = scale.bigger().value }.keyboardShortcut("+")
                 Button("글자 크게") { storedScale = scale.bigger().value }.keyboardShortcut("=")
                 Button("글자 작게") { storedScale = scale.smaller().value }.keyboardShortcut("-")
@@ -78,6 +87,11 @@ struct BoardView: View {
             .accessibilityHidden(true)
         }
         .environment(\.boardFontScale, scale.value)
+        .onAppear { clickMonitor = CommandClick.install() }
+        .onDisappear {
+            if let clickMonitor { NSEvent.removeMonitor(clickMonitor) }
+            clickMonitor = nil
+        }
     }
 
     private var scale: FontScale { FontScale(stored: storedScale) }
@@ -143,7 +157,7 @@ struct BoardView: View {
             .safeAreaInset(edge: .top, spacing: 0) { sidebarHeader(model) }
             .navigationSplitViewColumnWidth(min: 300, ideal: 360, max: 520)
         } detail: {
-            DetailView(board: board, model: model, history: tower.history, selection: selection, home: home,
+            DetailView(board: board, model: model, history: tower.history, selection: selection, home: home, changes: changes,
                        select: { id in
                            query = ""  // a search could hide the row
                            selection = id
@@ -243,11 +257,11 @@ private struct DetailView: View {
     let history: [HistorySession]
     let selection: RowID?
     let home: String
+    let changes: ChangesState
     let select: (RowID) -> Void
     let deselect: () -> Void
     /// The sidebar's double click on a live row: `Tower.focus`.
     let focus: (LiveRow) -> Void
-    @State private var changes = ChangesState()
     @AppStorage(diffTreeVisibleKey) private var treeVisible = true
     @AppStorage(diffTreeWidthKey) private var treeWidth = 240.0
     /// The width while the divider is dragged; stored once the drag ends.
@@ -329,6 +343,14 @@ private struct DetailView: View {
         return HStack(spacing: 0) {
             ScrollViewReader { proxy in
                 scrollingBody(title: title, badges: badges, facts: facts, workspace: workspace, conversation: conversation)
+                    .accessibilityHidden(changes.history.current != nil)
+                    .overlay {
+                        // over the diff, which keeps its scroll position underneath
+                        if let location = changes.history.current, let top = changes.diff(for: workspace)?.toplevel {
+                            FileCodeView(toplevel: top, location: location, state: changes)
+                        }
+                    }
+                    .environment(changes)
                     .onChange(of: changes.scrollTarget) { _, target in
                         guard let target else { return }
                         changes.scrollTarget = nil

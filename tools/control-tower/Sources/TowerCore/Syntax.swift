@@ -89,14 +89,7 @@ public func highlighted(_ d: WorkspaceDiff, with h: SyntaxHighlighter? = nil) as
     func section(_ s: DiffSection) async -> DiffSection {
         var s = s
         for i in s.files.indices where !Task.isCancelled {
-            guard let lang = syntaxLanguage(forPath: s.files[i].path) else { continue }
-            let at = s.files[i].lines.indices.filter { j in
-                let l = s.files[i].lines[j]
-                // utf8 count is O(1) and never below the Character count
-                return l.kind != .hunk && (l.text.utf8.count <= syntaxLineLimit || l.text.count <= syntaxLineLimit)
-            }
-            guard let spans = await h.spans(at.map { s.files[i].lines[$0].text }, language: lang) else { continue }
-            for (j, sp) in zip(at, spans) { s.files[i].lines[j].syntax = sp }
+            s.files[i].lines = await highlightedLines(s.files[i].lines, path: s.files[i].path, with: h)
         }
         return s
     }
@@ -104,6 +97,20 @@ public func highlighted(_ d: WorkspaceDiff, with h: SyntaxHighlighter? = nil) as
     if let c = d.committed { d.committed = await section(c) }
     d.uncommitted = await section(d.uncommitted)
     return d
+}
+
+/// One file's lines with `syntax` filled when the path's language is known; unchanged when it is not
+/// or the script fails.
+public func highlightedLines(_ lines: [DiffLine], path: String, with h: SyntaxHighlighter? = nil) async -> [DiffLine] {
+    guard let lang = syntaxLanguage(forPath: path) else { return lines }
+    let at = lines.indices.filter { j in
+        // utf8 count is O(1) and never below the Character count
+        lines[j].kind != .hunk && (lines[j].text.utf8.count <= syntaxLineLimit || lines[j].text.count <= syntaxLineLimit)
+    }
+    guard let spans = await (h ?? .shared).spans(at.map { lines[$0].text }, language: lang) else { return lines }
+    var lines = lines
+    for (j, sp) in zip(at, spans) { lines[j].syntax = sp }
+    return lines
 }
 
 /// `nil` entries are scopes github.css paints in the default color; scopes it does not name inherit.
