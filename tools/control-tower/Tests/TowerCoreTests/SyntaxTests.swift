@@ -82,3 +82,22 @@ private func diff(_ path: String, _ text: String) -> WorkspaceDiff {
     let wide = "let s = \"" + String(repeating: "한", count: 1500) + "\""  // 1510 characters, 4510 bytes
     #expect(await !highlighted(diff("a.swift", wide)).uncommitted.files[0].lines[1].syntax.isEmpty)
 }
+
+@Test func kotlinAndJavaLinesGetKeywordStringAndComment() async throws {
+    let kt = #"val s: String = "hi" // note"#
+    let java = #"private final String s = "hi"; // c"#
+    let template = #"val m = "$name ${a.b}""#
+    let kotlin = try #require(syntaxLanguage(forPath: "src/com/example/A.kt"))
+    let javaLanguage = try #require(syntaxLanguage(forPath: "src/com/example/B.java"))
+    let k = try #require(await SyntaxHighlighter.shared.spans([kt, template], language: kotlin))
+    let j = try #require(await SyntaxHighlighter.shared.spans([java], language: javaLanguage))
+    let a = kinds(kt, k[0]), b = kinds(java, j[0])
+    #expect(a["val"] == .keyword)
+    #expect(a["\"hi\""] == .string)
+    #expect(a["// note"] == .comment)
+    #expect(b["private"] == .keyword)
+    #expect(b["\"hi\""] == .string)
+    #expect(b["// c"] == .comment)
+    #expect(kinds(template, k[1])["val"] == .keyword)  // the template's spans spell the line back
+    #expect(syntaxLanguage(forPath: "build.gradle.kts") == "kotlin")
+}

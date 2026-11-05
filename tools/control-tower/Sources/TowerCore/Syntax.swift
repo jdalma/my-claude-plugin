@@ -22,7 +22,7 @@ private let languages = [
     "swift": "swift", "ts": "typescript", "tsx": "typescript", "mts": "typescript", "cts": "typescript",
     "js": "javascript", "jsx": "javascript", "mjs": "javascript", "cjs": "javascript", "py": "python",
     "sh": "bash", "bash": "bash", "zsh": "bash", "json": "json", "md": "markdown", "markdown": "markdown",
-    "yml": "yaml", "yaml": "yaml",
+    "yml": "yaml", "yaml": "yaml", "kt": "kotlin", "kts": "kotlin", "java": "java",
 ]
 
 /// The highlight.js language for a path, by extension; nil leaves the file one color.
