@@ -157,7 +157,7 @@ import Testing
     await settle { s.notice != nil }
     #expect(s.notice == "정의를 찾지 못함" && s.history.current == line3)
 
-    s.commandClick(CodeLocation(path: "Main.kt", line: 2), name: ["Dup"])
+    s.commandClick(CodeLocation(path: "gone.kts", line: 2), name: ["Dup"])  // no package context: (e) counts both
     await settle { s.notice == "후보 2개" }
     #expect(s.notice == "후보 2개" && s.history.current == line3)
 

@@ -90,6 +90,9 @@ private func at(_ path: String, _ line: Int) -> TypeTarget { .found(CodeLocation
     // Java comments do not nest: the first `*/` ends it
     let j = scanSource("/* /* */ class AfterComment {}", java: true)
     #expect(j.types.map(\.name) == ["AfterComment"])
+    // a UTF-8 BOM before `package`
+    let bom = scanSource("\u{FEFF}package com.example.bom\n\nclass B\n", java: false)
+    #expect(bom.package == "com.example.bom" && bom.types.first?.qualified == "com.example.bom.B" && bom.types.first?.column == 6)
 }
 
 private let files = [
@@ -113,7 +116,8 @@ private let files = [
     "src/a/Dup.kt": "package com.example.a\n\nclass Dup\n",
     "src/b/Dup.kt": "package com.example.b\n\nclass Dup\n",
     "src/b/Outside.kt": "package com.example.b\n\nclass Outside\n",
-    "build.gradle.kts": "class Script\n",
+    "build.gradle.kts": "class Script\nval d: Dup? = null\n",
+    "src/other/String.kt": "package com.example.other\n\nclass String\n",
 ]
 
 @Test func resolutionOrder() {
@@ -124,14 +128,20 @@ private let files = [
     #expect(ix.resolve(["LibThing"], in: main) == at("src/lib/Thing.kt", 3))          // (b) alias
     #expect(ix.resolve(["Sibling"], in: main) == at("src/app/Sibling.kt", 3))         // (c) same package
     #expect(ix.resolve(["Wide"], in: main) == at("src/wild/Wide.kt", 3))              // (d) wildcard
-    #expect(ix.resolve(["Only"], in: main) == at("src/one/Only.java", 3))             // (e) unique in the workspace
-    #expect(ix.resolve(["Script"], in: main) == at("build.gradle.kts", 1))            // .kts scanned
-    #expect(ix.resolve(["Dup"], in: main) == .many([CodeLocation(path: "src/a/Dup.kt", line: 3),
-                                                    CodeLocation(path: "src/b/Dup.kt", line: 3)]))  // (e) two: many
+    // a file with a package: a name (a)–(d) miss is a default import or from outside, never another package
+    #expect(ix.resolve(["Only"], in: main) == .none)
+    #expect(ix.resolve(["String"], in: main) == .none)                                // kotlin.String, not other.String
+    #expect(ix.resolve(["Dup"], in: main) == .none)
+    // (e) only without a package: a script, or a file not scanned
+    let script = "build.gradle.kts"
+    #expect(ix.resolve(["Only"], in: script) == at("src/one/Only.java", 3))           // (e) unique in the workspace
+    #expect(ix.resolve(["Script"], in: script) == at(script, 1))                      // .kts scanned, (a)
+    #expect(ix.resolve(["Dup"], in: script) == .many([CodeLocation(path: "src/a/Dup.kt", line: 3),
+                                                      CodeLocation(path: "src/b/Dup.kt", line: 3)]))  // (e) two: many
     #expect(ix.resolve(["count"], in: main) == .none)                                 // (f)
     // an explicit import outside the workspace is final: never another type of that name
     #expect(ix.resolve(["Outside"], in: main) == .none)
-    // a file the index does not know: only (e)
+    // a file the index does not know (deleted, unreadable): only (e)
     #expect(ix.resolve(["Only"], in: "deleted/Gone.kt") == at("src/one/Only.java", 3))
 }
 

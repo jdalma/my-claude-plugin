@@ -59,6 +59,8 @@ final class ChangesState {
         guard let name, let top = toplevel else { return notFound(line, inFile) }
         Task {
             let result = await Task.detached { declIndexCache.index(toplevel: top).resolve(name, in: line.path) }.value
+            // the workspace changed during a cold lookup: its paths mean nothing here
+            guard toplevel == top else { return }
             switch result {
             case .found(let location): history.open(location, from: inFile ? line : nil)
             case .many(let candidates): show("후보 \(candidates.count)개")

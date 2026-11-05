@@ -44,7 +44,9 @@ private func isIdentStart(_ c: UInt8) -> Bool { isIdent(c) && !(48...57).contain
 public func scanSource(_ text: String, java: Bool) -> SourceFacts {
     let b = Array(text.utf8), n = b.count
     var facts = SourceFacts()
-    var i = 0, line = 1, lineStart = 0
+    // a UTF-8 BOM would otherwise read as the start of a word and hide `package`
+    let bom = b.starts(with: [0xEF, 0xBB, 0xBF]) ? 3 : 0
+    var i = bom, line = 1, lineStart = bom
     var depth = 0, parens = 0
     var stack: [(name: String, depth: Int)] = []
     var pending: String?
@@ -219,7 +221,9 @@ public struct DeclIndex: Sendable {
     /// a qualified name; else its first segment resolves as a simple name and the rest are nested types
     /// in it; else the last segment alone. A simple name: (a) this file, (b) an explicit import or its
     /// alias, which is final even when the type is outside the workspace, (c) this file's package,
-    /// (d) wildcard imports, (e) the one type of that name in the workspace.
+    /// (d) wildcard imports, (e) the one type of that name in the workspace, only for a file with no
+    /// `package` or one not scanned. In a file with a package a name (a)–(d) miss comes from a default
+    /// import (`kotlin.*`, `java.lang.*` …) or a wildcard outside the workspace, never another package.
     public func resolve(_ name: [String], in path: String) -> TypeTarget {
         guard let head = name.first else { return .none }
         let facts = files[path] ?? SourceFacts()
@@ -238,7 +242,7 @@ public struct DeclIndex: Sendable {
         if let same = byQualified[facts.package.isEmpty ? n : facts.package + "." + n] { return same }
         let wild = facts.imports.filter(\.wildcard).flatMap { byQualified[$0.path + "." + n] ?? [] }
         if !wild.isEmpty { return wild }
-        return byName[n] ?? []
+        return facts.package.isEmpty ? byName[n] ?? [] : []
     }
 
     private func target(_ refs: [Ref]) -> TypeTarget {
@@ -269,6 +273,8 @@ private let sourceExtensions: Set = ["kt", "kts", "java"]
 
 /// Each workspace's index, kept between clicks. A lookup lists the files (`git ls-files -co
 /// --exclude-standard`) and rescans only those whose size or modification time changed.
+/// `@unchecked Sendable`: `repos` and `scans` change only inside `lock`; `scans` is read without it by
+/// tests alone, after the calls they count have returned.
 public final class DeclIndexCache: @unchecked Sendable {
     private struct Stamp: Equatable {
         var size: Int64
