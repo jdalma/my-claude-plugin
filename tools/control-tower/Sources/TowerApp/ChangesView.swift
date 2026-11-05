@@ -765,7 +765,10 @@ private func countColor(_ label: String) -> Color { label.hasPrefix("+") ? DiffC
 /// word color, keeping a syntax color only where it reads there. Offsets are into `line.text`, so tabs
 /// expand per piece.
 func lineContent(_ line: DiffLine) -> AttributedString {
-    let chars = Array(line.text)
+    var chars = Array(line.text)
+    // A CRLF file's lines keep their "\r", which lays out as a second line; dropped only from what is drawn,
+    // so changes and syntax, cut at `chars.count` below, still index `line.text`.
+    if chars.last == "\r" { chars.removeLast() }
     var cuts = Set([0, chars.count])
     for r in line.changes { cuts.formUnion([r.lowerBound, r.upperBound]) }
     for s in line.syntax { cuts.formUnion([s.range.lowerBound, s.range.upperBound]) }
