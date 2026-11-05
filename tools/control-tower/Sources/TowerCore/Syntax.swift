@@ -79,7 +79,7 @@ private final class BundleToken {}
 
 /// Lines past this many characters stay one color: a minified line holds tens of thousands of spans,
 /// costly to compute and to lay out.
-let syntaxLineLimit = 2000
+public let syntaxLineLimit = 2000
 
 /// Fills `syntax` for every file whose language is known. Files the script cannot handle stay one color.
 /// Stops between files once cancelled; the caller drops a cancelled result.

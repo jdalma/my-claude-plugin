@@ -48,17 +48,23 @@ func codeFont(scale: Double) -> NSFont {
 }
 
 /// The Character offset of `text` drawn under `point` (from the text's top left), the text wrapped at
-/// `width`; nil past a line's end. SwiftUI `Text` reports no glyph positions, so TextKit lays out the same
-/// string in the same font: a monospaced line puts each character at the same x either way.
-func characterIndex(at point: CGPoint, in text: String, font: NSFont, width: CGFloat) -> Int? {
-    let storage = NSTextStorage(string: text, attributes: [.font: font])
+/// `width` and drawn `height` tall; nil past a line's end. SwiftUI `Text` reports no glyph positions, so
+/// TextKit lays out the same string in the same font, breaking lines as `Text` does (`.standard`: Hangul
+/// by word). At fractional scales `Text` lines are up to 1 pt taller than TextKit's, so `y` is scaled by
+/// the two heights.
+func characterIndex(at point: CGPoint, in text: String, font: NSFont, width: CGFloat, height: CGFloat) -> Int? {
+    let paragraph = NSMutableParagraphStyle()
+    paragraph.lineBreakStrategy = .standard
+    let storage = NSTextStorage(string: text, attributes: [.font: font, .paragraphStyle: paragraph])
     let layout = NSLayoutManager()
     storage.addLayoutManager(layout)
     // one point of slack: a line SwiftUI fit exactly must not wrap here
     let container = NSTextContainer(size: CGSize(width: width + 1, height: .greatestFiniteMagnitude))
     container.lineFragmentPadding = 0
     layout.addTextContainer(container)
-    guard layout.numberOfGlyphs > 0 else { return nil }
+    guard layout.numberOfGlyphs > 0, height > 0 else { return nil }
+    layout.ensureLayout(for: container)
+    let point = CGPoint(x: point.x, y: point.y * layout.usedRect(for: container).height / height)
     let glyph = layout.glyphIndex(for: point, in: container)
     let rect = layout.boundingRect(forGlyphRange: NSRange(location: glyph, length: 1), in: container)
     guard point.x >= rect.minX, point.x < rect.maxX else { return nil }

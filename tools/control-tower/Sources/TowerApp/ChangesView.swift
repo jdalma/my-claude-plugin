@@ -551,6 +551,11 @@ struct LineView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .coordinateSpace(name: diffLineSpace)
         .onContinuousHover(coordinateSpace: .named(diffLineSpace)) { hovered($0) }
+        // a line scrolled out of a lazy stack or folded away may never see its hover end
+        .onDisappear {
+            CommandClick.leave(hoverID)
+            showWord(at: nil)
+        }
     }
 
     private func hovered(_ phase: HoverPhase) {
@@ -584,12 +589,15 @@ struct LineView: View {
         characterUnder(p).flatMap { dottedName(in: $0.shown, at: $0.at) }
     }
 
-    /// The code as shown and the Character offset under `p`; nil off the code text and on a hunk header.
+    /// The code as shown and the Character offset under `p`; nil off the code text, on a hunk header, and
+    /// on a line past `syntaxLineLimit`, whose layout would cost a frame per pointer move.
     private func characterUnder(_ p: CGPoint) -> (shown: String, at: Int)? {
-        guard line.kind != .hunk, textFrame.contains(p) else { return nil }
+        guard line.kind != .hunk, textFrame.contains(p), line.text.utf8.count <= syntaxLineLimit || line.text.count <= syntaxLineLimit
+        else { return nil }
         let shown = String(lineContent(line).characters)
         let at = CGPoint(x: p.x - textFrame.minX, y: p.y - textFrame.minY)
-        return characterIndex(at: at, in: shown, font: codeFont(scale: scale), width: textFrame.width).map { (shown, $0) }
+        return characterIndex(at: at, in: shown, font: codeFont(scale: scale), width: textFrame.width, height: textFrame.height)
+            .map { (shown, $0) }
     }
 
     private var numbers: String {
