@@ -65,7 +65,7 @@ struct BoardView: View {
                     }
                     .pickerStyle(.inline)
                     Divider()
-                    Button("전체 화면") { NSApp.keyWindow?.toggleFullScreen(nil) }.keyboardShortcut("f", modifiers: [.control, .command])
+                    Button("전체 화면") { FullScreenCapable.toggle() }.keyboardShortcut("f", modifiers: [.control, .command])
                 }
             }
         }
@@ -85,7 +85,7 @@ struct BoardView: View {
                 Button("글자 작게") { storedScale = scale.smaller().value }.keyboardShortcut("-")
                 Button("기본 크기") { storedScale = FontScale.standard.value }.keyboardShortcut("0")
                 // no menu bar in a menu bar app, so the main menu's ⌃⌘F is out of reach
-                Button("전체 화면") { NSApp.keyWindow?.toggleFullScreen(nil) }.keyboardShortcut("f", modifiers: [.control, .command])
+                Button("전체 화면") { FullScreenCapable.toggle() }.keyboardShortcut("f", modifiers: [.control, .command])
             }
             .opacity(0)
             .frame(width: 0, height: 0)
@@ -521,14 +521,29 @@ private let monoFacts: Set = ["워크스페이스", "branch", "tmux"]
 /// Lets the board window take its own Space in full screen (green button, ⌃⌘F). Left to AppKit's own
 /// choice, the board window of this menu bar app (LSUIElement) did not go full screen.
 struct FullScreenCapable: NSViewRepresentable {
+    /// The board window, for ⌃⌘F: the key window may be a candidate list's popover.
+    static weak var board: NSWindow?
+
     func makeNSView(context: Context) -> NSView { makeProbe() }
-    func updateNSView(_ nsView: NSView, context: Context) {}
+    /// Again on every update, in case the window's behavior was reset after the probe moved in.
+    func updateNSView(_ nsView: NSView, context: Context) { update(nsView) }
 
     func makeProbe() -> NSView { Probe() }
+    func update(_ nsView: NSView) { Self.allow(nsView.window) }
+
+    static func toggle() { board?.toggleFullScreen(nil) }
+
+    private static func allow(_ window: NSWindow?) {
+        guard let window else { return }
+        board = window
+        // at most one of primary, auxiliary and none may be set
+        var behavior = window.collectionBehavior
+        behavior.subtract([.fullScreenNone, .fullScreenAuxiliary])
+        behavior.insert(.fullScreenPrimary)
+        if behavior != window.collectionBehavior { window.collectionBehavior = behavior }
+    }
 
     private final class Probe: NSView {
-        override func viewDidMoveToWindow() {
-            window?.collectionBehavior.insert(.fullScreenPrimary)
-        }
+        override func viewDidMoveToWindow() { FullScreenCapable.allow(window) }
     }
 }
