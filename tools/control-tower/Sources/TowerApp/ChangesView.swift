@@ -291,6 +291,7 @@ private struct FileView: View {
     let folded: Bool
     let toggle: () -> Void
     @AppStorage(DiffLayout.storageKey) private var layout = DiffLayout.unified.rawValue
+    @AppStorage(SplitRatio.storageKey) private var splitRatio = SplitRatio.standard
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -319,7 +320,7 @@ private struct FileView: View {
             if !folded {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     if DiffLayout(rawValue: layout) == .split {
-                        ForEach(Array(file.split.enumerated()), id: \.offset) { _, row in SplitRowView(row: row, lines: file.lines) }
+                        ForEach(Array(file.split.enumerated()), id: \.offset) { _, row in SplitRowView(row: row, lines: file.lines, ratio: $splitRatio) }
                     } else {
                         ForEach(Array(file.lines.enumerated()), id: \.offset) { _, line in
                             LineView(line: line).fixedSize(horizontal: false, vertical: true)
@@ -340,23 +341,52 @@ private struct FileView: View {
     }
 }
 
+/// Where the split view's center line sits: the left side's share of a row, one value for every row of
+/// every file, stored under `storageKey`.
+enum SplitRatio {
+    static let storageKey = "diffSplitRatio"
+    static let standard = 0.5
+    static let bounds = 0.2...0.8
+    /// The center line's own width.
+    static let line: CGFloat = 1
+
+    /// A stored or dragged value inside `bounds`; anything unreadable is the middle.
+    static func clamp(_ v: Double) -> Double {
+        v.isFinite ? min(max(v, bounds.lowerBound), bounds.upperBound) : standard
+    }
+
+    /// The two sides' widths of a row `total` wide, the line between them.
+    static func widths(total: CGFloat, ratio: Double) -> (old: CGFloat, new: CGFloat) {
+        let room = max(0, total - line)
+        let old = (room * clamp(ratio)).rounded()
+        return (old, room - old)
+    }
+
+    /// The ratio that puts the line under a pointer at `x` in a row `total` wide.
+    static func ratio(atX x: CGFloat, total: CGFloat) -> Double {
+        clamp(total > line ? Double((x - line / 2) / (total - line)) : standard)
+    }
+}
+
 /// One side-by-side row: a hunk header across both sides, or the old line beside the new one, an empty
-/// cell standing in for a missing side. Both sides share the row's width and its taller height.
+/// cell standing in for a missing side. The sides split the row at `ratio` and share its taller height.
 struct SplitRowView: View {
     let row: SplitRow
     let lines: [DiffLine]
+    @Binding var ratio: Double
 
     var body: some View {
         switch row {
         case .hunk(let i):
             LineView(line: lines[i]).fixedSize(horizontal: false, vertical: true)
         case .pair(let old, let new):
-            HStack(alignment: .top, spacing: 0) {
+            SplitColumns(ratio: ratio) {
                 side(old, .old)
-                Rectangle().fill(DiffColors.border).frame(width: 1)
+                Rectangle().fill(DiffColors.border)
                 side(new, .new)
             }
             .fixedSize(horizontal: false, vertical: true)
+            .overlay { SplitHandle(ratio: $ratio) }
         }
     }
 
@@ -366,6 +396,55 @@ struct SplitRowView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
+}
+
+/// Old side, center line, new side: widths from `SplitRatio.widths`, all three as tall as the taller side.
+private struct SplitColumns: Layout {
+    var ratio: Double
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let total = proposal.width ?? 600
+        let w = SplitRatio.widths(total: total, ratio: ratio)
+        let h = max(subviews[0].sizeThatFits(ProposedViewSize(width: w.old, height: nil)).height,
+                    subviews[2].sizeThatFits(ProposedViewSize(width: w.new, height: nil)).height)
+        return CGSize(width: total, height: h)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let w = SplitRatio.widths(total: bounds.width, ratio: ratio)
+        let xs = [bounds.minX, bounds.minX + w.old, bounds.minX + w.old + SplitRatio.line]
+        for (view, (x, width)) in zip(subviews, zip(xs, [w.old, SplitRatio.line, w.new])) {
+            view.place(at: CGPoint(x: x, y: bounds.minY), proposal: ProposedViewSize(width: width, height: bounds.height))
+        }
+    }
+}
+
+/// The grab area over the center line: wider than the 1 pt line, a resize cursor on hover, drag to move
+/// every row's line, double click for the middle.
+private struct SplitHandle: View {
+    @Binding var ratio: Double
+    private static let grab: CGFloat = 7
+
+    var body: some View {
+        GeometryReader { geo in
+            let total = geo.size.width
+            // hover, drag and double click attach to the narrow strip, before it is positioned
+            Color.clear
+                .frame(width: Self.grab, height: geo.size.height)
+                .contentShape(Rectangle())
+                .onHover { inside in if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() } }
+                .gesture(
+                    DragGesture(minimumDistance: 1, coordinateSpace: .named(SplitHandle.space))
+                        .onChanged { ratio = SplitRatio.ratio(atX: $0.location.x, total: total) }
+                )
+                .onTapGesture(count: 2) { ratio = SplitRatio.standard }
+                .help("끌어서 좌우 너비 조절 · 더블 클릭하면 가운데로")
+                .position(x: SplitRatio.widths(total: total, ratio: ratio).old + SplitRatio.line / 2, y: geo.size.height / 2)
+        }
+        .coordinateSpace(name: SplitHandle.space)
+    }
+
+    private static let space = "splitRow"
 }
 
 private struct LineView: View {
