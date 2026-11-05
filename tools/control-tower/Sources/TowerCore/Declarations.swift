@@ -29,6 +29,9 @@ public struct MemberDecl: Hashable, Sendable {
     /// Inside a function or initializer body, or a parameter: seen only from its own file.
     public var local: Bool
     public var snippet: String
+    /// A local's last line: its block's closing line; a parameter's, its function body's (an expression
+    /// body's last line). nil for a member.
+    public var scopeEnd: Int? = nil
 }
 
 public struct ImportDecl: Hashable, Sendable {
@@ -67,9 +70,11 @@ private func isIdentStart(_ c: UInt8) -> Bool { isIdent(c) && !(48...57).contain
 ///
 /// Members. Kotlin: every `fun`, `val` and `var` (an extension's receiver kept), and function parameters;
 /// one directly in a type body (or a primary constructor's `val`) is that type's member, one at the top
-/// level has no owner, any other is local. Java: only directly in a type body, outside parentheses and
-/// initializers, a word after a type (a word, `>` or `]`) and before `(` is a method, before `=`, `;` or
-/// `,` a field. Calls, Java locals and parameters, and lambda parameters are not declarations.
+/// level has no owner, any other is local, with the line its scope ends on. Java: only directly in a type
+/// body, outside parentheses and initializers, a word after a type (a word, `>` or `]`) and before `(` is
+/// a method, before `=`, `;` or `,` a field, and so is a word after `,` in a field list (`int a, b;`).
+/// Enum entries (`A`, `B(1)`, `C { … }` before the body's first `;`) are members of their enum.
+/// Calls, Java locals and parameters, and lambda parameters are not declarations.
 public func scanSource(_ text: String, java: Bool) -> SourceFacts {
     let b = Array(text.utf8), n = b.count
     var facts = SourceFacts()
@@ -87,6 +92,15 @@ public func scanSource(_ text: String, java: Bool) -> SourceFacts {
     var initializer = false
     /// Kotlin: the parenthesis depth of the parameter list of the `fun` just read.
     var params: Int?
+    /// Kotlin: locals whose scope ends when the block at `depth` closes.
+    var scopes: [(index: Int, depth: Int)] = []
+    /// Kotlin: parameters read, waiting for their function's body; the `fun`'s brace depth.
+    var awaiting: [Int] = [], funDepth = 0
+    /// The type `pending` names is an enum; `entries` is its body's depth while entries are read.
+    var pendingEnum = false
+    var entries: Int?
+    /// Java: the class-body statement declares fields, so `, b` declares another.
+    var fieldList = false
     let keywords = java ? declKeywords.union(["record"]) : declKeywords
 
     func byte(_ k: Int) -> UInt8 { k < n ? b[k] : 0 }
@@ -177,6 +191,10 @@ public func scanSource(_ text: String, java: Bool) -> SourceFacts {
         return (MemberDecl(name: name, line: line, column: column(nameStart), owner: place.owner, receiver: receiver,
                            type: type, local: place.local, snippet: snippet()), k)
     }
+    func endAwaiting() {
+        for k in awaiting { facts.members[k].scopeEnd = line }
+        awaiting = []
+    }
     func lineRest(from k: Int) -> (String, Int) {
         var e = k
         while e < n, b[e] != UInt8(ascii: "\n") { e += 1 }
@@ -187,6 +205,8 @@ public func scanSource(_ text: String, java: Bool) -> SourceFacts {
         let c = b[i]
         if c == UInt8(ascii: "\n") {
             if pending != nil, parens == 0, last != UInt8(ascii: ":"), last != UInt8(ascii: ",") { checkPending = true }
+            // an expression body or a body-less function ends with its line
+            if !awaiting.isEmpty, parens == 0, !"=:,(".utf8.contains(last) { endAwaiting() }
             newline(at: i)
             i += 1
             continue
@@ -242,22 +262,45 @@ public func scanSource(_ text: String, java: Bool) -> SourceFacts {
         }
         switch c {
         case UInt8(ascii: "{"):
-            if let p = pending, parens == 0 { stack.append((p, depth + 1)) }
+            if let p = pending, parens == 0 {
+                stack.append((p, depth + 1))
+                if pendingEnum { entries = depth + 1 }
+            }
+            if !awaiting.isEmpty, parens == 0, depth == funDepth {
+                scopes += awaiting.map { ($0, depth + 1) }
+                awaiting = []
+            }
             pending = nil
+            pendingEnum = false
             params = nil
             initializer = false
+            fieldList = false
             depth += 1
         case UInt8(ascii: "}"):
             if stack.last?.depth == depth { stack.removeLast() }
+            while let s = scopes.last, s.depth == depth {
+                facts.members[s.index].scopeEnd = line
+                scopes.removeLast()
+            }
+            if !awaiting.isEmpty { endAwaiting() }
+            if entries == depth { entries = nil }
             depth = max(0, depth - 1)
             initializer = false
+            fieldList = false
         case UInt8(ascii: "("): parens += 1
         case UInt8(ascii: ")"):
             parens = max(0, parens - 1)
             if let p = params, parens < p { params = nil }
         case UInt8(ascii: ";"):
-            if parens == 0 { pending = nil }
+            if parens == 0 {
+                pending = nil
+                if !awaiting.isEmpty { endAwaiting() }
+                if entries == depth { entries = nil }
+            }
             initializer = false
+            fieldList = false
+        case UInt8(ascii: ","):
+            if fieldList, parens == 0 { initializer = false }
         case UInt8(ascii: "="):
             if parens == 0, byte(i + 1) != UInt8(ascii: "="), !"=!<>".utf8.contains(last) { initializer = true }
         default: break
@@ -288,6 +331,7 @@ public func scanSource(_ text: String, java: Bool) -> SourceFacts {
                 let qualified = ([facts.package] + stack.map(\.name) + [name]).filter { !$0.isEmpty }.joined(separator: ".")
                 facts.types.append(TypeDecl(name: name, qualified: qualified, line: line, column: column(k), snippet: snippet()))
                 pending = w == "typealias" ? nil : name
+                pendingEnum = w == "enum" || lastWord == "enum"
                 last = b[nameEnd - 1]
                 lastWord = name
                 i = nameEnd
@@ -296,9 +340,18 @@ public func scanSource(_ text: String, java: Bool) -> SourceFacts {
             // an unnamed `companion object` or object expression: its body holds members, not locals
             if w == "object", !java { pending = "Companion" }
         }
+        if let e = entries, depth == e, parens == 0, last == UInt8(ascii: "{") || last == UInt8(ascii: ",") {
+            facts.members.append(MemberDecl(name: w, line: line, column: column(i), owner: qualify(prefix()), receiver: nil,
+                                            type: nil, local: false, snippet: snippet()))
+        }
         if !java, w == "fun" || w == "val" || w == "var", last != UInt8(ascii: "."), let (m, e) = kotlinMember(w, after: end) {
+            if m.local { scopes.append((facts.members.count, depth)) }
             facts.members.append(m)
-            if w == "fun" { params = parens + 1 }
+            if w == "fun" {
+                params = parens + 1
+                if !awaiting.isEmpty { endAwaiting() }
+                funDepth = depth
+            }
             last = b[e - 1]
             lastWord = m.name
             i = e
@@ -307,16 +360,18 @@ public func scanSource(_ text: String, java: Bool) -> SourceFacts {
         let next = nextSignificant(end)
         if !java, let p = params, parens == p, last == UInt8(ascii: "(") || last == UInt8(ascii: ","),
            byte(next) == UInt8(ascii: ":"), byte(next + 1) != UInt8(ascii: ":") {
+            let t = skipSpaces(next + 1)
+            awaiting.append(facts.members.count)
             facts.members.append(MemberDecl(name: w, line: line, column: column(i), owner: nil, receiver: nil,
-                                            type: { let t = skipSpaces(next + 1); return isIdentStart(byte(t)) ? word(t..<identEnd(t)) : nil }(),
-                                            local: true, snippet: snippet()))
+                                            type: isIdentStart(byte(t)) ? word(t..<identEnd(t)) : nil, local: true, snippet: snippet()))
         }
         if java, pending == nil, let top = stack.last, top.depth == depth, parens == 0, !initializer,
-           isIdent(last) || last == UInt8(ascii: ">") || last == UInt8(ascii: "]"),
+           isIdent(last) || last == UInt8(ascii: ">") || last == UInt8(ascii: "]") || (fieldList && last == UInt8(ascii: ",")),
            !javaNotNames.contains(w), !javaNotNames.contains(lastWord) || !isIdent(last) {
             let after = byte(next)
             let method = after == UInt8(ascii: "(")
             let field = after == UInt8(ascii: ";") || after == UInt8(ascii: ",") || (after == UInt8(ascii: "=") && byte(next + 1) != UInt8(ascii: "="))
+            if field { fieldList = true }
             if method || field {
                 facts.members.append(MemberDecl(name: w, line: line, column: column(i), owner: qualify(prefix()), receiver: nil,
                                                 type: field && isIdent(last) ? lastWord : nil, local: false, snippet: snippet()))
@@ -326,6 +381,8 @@ public func scanSource(_ text: String, java: Bool) -> SourceFacts {
         lastWord = w
         i = end
     }
+    for s in scopes { facts.members[s.index].scopeEnd = line }
+    for k in awaiting { facts.members[k].scopeEnd = line }
     return facts
 }
 
@@ -391,12 +448,14 @@ public struct DeclIndex: Sendable {
 
     /// A Command-click on `name` (dotted segments) on `line` of `path`. A type, as `resolve` finds it,
     /// comes first. Else members of that name:
-    /// - a bare name declared in this file at or above `line` (the nearest, locals and parameters too)
-    ///   is the answer;
-    /// - otherwise every non-local member, and this file's locals, ranked: declared in the receiver's
+    /// - a bare name that is a local or parameter of this file whose scope holds `line` (the nearest
+    ///   above) is the answer;
+    /// - otherwise every non-local member, ranked: declared in the receiver's
     ///   type (`X.name` with `X` a type, or a property of this file whose declared type is one), or an
     ///   extension on it; this file; files of explicit imports (a type's file, or a top-level member
     ///   imported by name); this package and wildcard-imported packages; the rest. Then by path and line.
+    ///   A single candidate opens, unless it ranks last (no relation to this file): then it is listed, for
+    ///   the user to judge.
     public func navigate(_ name: [String], in path: String, line: Int) -> CodeTarget {
         guard let last = name.last else { return .none }
         let types = typeRefs(name, path)
@@ -405,16 +464,17 @@ public struct DeclIndex: Sendable {
                 .map { Candidate(location: CodeLocation(path: $0.path, line: $0.decl.line), snippet: $0.decl.snippet) })
         }
         let facts = files[path] ?? SourceFacts()
-        func nearest(_ n: String) -> MemberDecl? {
-            facts.members.filter { $0.name == n && $0.line <= line }.max { $0.line < $1.line }
+        /// The local or parameter `n` in scope at `line`.
+        func inScope(_ n: String) -> MemberDecl? {
+            facts.members.filter { $0.name == n && $0.local && $0.line <= line && line <= ($0.scopeEnd ?? 0) }.max { $0.line < $1.line }
         }
-        if name.count == 1, let near = nearest(last) { return .found(CodeLocation(path: path, line: near.line)) }
+        if name.count == 1, let near = inScope(last) { return .found(CodeLocation(path: path, line: near.line)) }
 
         var owners: Set<String> = [], receivers: Set<String> = []
         if name.count > 1 {
             let x = Array(name.dropLast())
             var t = typeRefs(x, path)
-            if t.isEmpty, x.count == 1, let v = nearest(x[0]) ?? facts.members.first(where: { $0.name == x[0] }), let vt = v.type {
+            if t.isEmpty, x.count == 1, let v = inScope(x[0]) ?? facts.members.first(where: { $0.name == x[0] && !$0.local }), let vt = v.type {
                 t = typeRefs([vt], path)
             }
             owners = Set(t.flatMap { [$0.decl.qualified, $0.decl.qualified + ".Companion"] })
@@ -433,9 +493,13 @@ public struct DeclIndex: Sendable {
             if packages.contains(package) { return 3 }
             return 4
         }
-        let refs = (byMember[last] ?? []).filter { $0.path != path } + facts.members.filter { $0.name == last }.map { MemberRef(path: path, decl: $0) }
-        let ranked = refs.map { (rank($0), $0) }.sorted { ($0.0, $0.1.path, $0.1.decl.line) < ($1.0, $1.1.path, $1.1.decl.line) }
-        return candidates(ranked.map { Candidate(location: CodeLocation(path: $0.1.path, line: $0.1.decl.line), snippet: $0.1.decl.snippet) })
+        let ranked = (byMember[last] ?? []).map { (rank($0), $0) }
+            .sorted { ($0.0, $0.1.path, $0.1.decl.line) < ($1.0, $1.1.path, $1.1.decl.line) }
+        let result = candidates(ranked.map { Candidate(location: CodeLocation(path: $0.1.path, line: $0.1.decl.line), snippet: $0.1.decl.snippet) })
+        if case .found(let only) = result, ranked.first?.0 == 4 {
+            return .many([Candidate(location: only, snippet: ranked[0].1.decl.snippet)])
+        }
+        return result
     }
 
     /// One location found, several listed (each location once, in order), or none.

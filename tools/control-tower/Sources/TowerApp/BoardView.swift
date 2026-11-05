@@ -71,8 +71,9 @@ struct BoardView: View {
             Group {
                 Button("검색") { searchFocused = true }.keyboardShortcut("k")
                 Button("내 차례 목록") {
-                    // the file view first: Esc returns to the diff
-                    if selection != nil, changes.history.current != nil { changes.history.toDiff() } else { selection = nil }
+                    // an open candidate list first, then the file view: Esc returns to the diff
+                    if changes.candidates != nil { changes.candidates = nil }
+                    else if selection != nil, changes.history.current != nil { changes.history.toDiff() } else { selection = nil }
                 }
                 .keyboardShortcut(.escape, modifiers: [])
                 Button("뒤로") { if selection != nil { changes.history.back() } }.keyboardShortcut("[")

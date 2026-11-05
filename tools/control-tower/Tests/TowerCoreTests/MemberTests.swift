@@ -63,13 +63,14 @@ private func members(_ text: String, java: Bool = false) -> [String] {
         """, java: true)
     #expect(m == [
         "store com.example.Repo - Store member",
-        "count com.example.Repo - int member",
+        "count com.example.Repo - int member", "total com.example.Repo - - member",
         "names com.example.Repo - - member",
         "grid com.example.Repo - - member",
         "Repo com.example.Repo - - member",
         "find com.example.Repo - - member",
         "find com.example.Repo - - member",
         "toString com.example.Repo - - member",
+        "ON com.example.Repo.Mode - - member", "OFF com.example.Repo.Mode - - member",
         "flip com.example.Repo.Mode - - member",
     ])
 }
@@ -156,4 +157,77 @@ private func paths(_ t: CodeTarget) -> [String] {
         Candidate(location: CodeLocation(path: "a/Dup.kt", line: 2), snippet: "class Dup"),
         Candidate(location: CodeLocation(path: "b/Dup.kt", line: 2), snippet: "class Dup(val x: Int)"),
     ]))
+}
+
+/// The nearest declaration above counts only while its scope holds the click; members are ranked, so
+/// overloads are all offered.
+@Test func onlyLocalsInScopeOpenDirectly() {
+    let kt = """
+        package com.example
+        enum class Status { ACTIVE, DONE }
+        class A {
+            val name = ""
+            fun f() {
+                val name = 1
+                println(name)
+            }
+            fun g(id: Long) {
+                println(name)
+            }
+            fun h() {
+                println(id)
+                load()
+            }
+            fun load() {}
+            fun load(x: Int) {}
+            fun k() {
+                load()
+                val s = Status.ACTIVE
+            }
+            fun e(v: Int) = v + 1
+            fun after() = v
+        }
+        """
+    let other = "package com.example.o\nclass B { val id = 0; fun load(y: String) {} }\n"
+    let ix = DeclIndex(files: ["A.kt": scanSource(kt, java: false), "o/B.kt": scanSource(other, java: false)])
+    let a = ix.files["A.kt"]!.members
+    #expect(a.first { $0.name == "name" && $0.local }?.scopeEnd == 8)   // f's block
+    #expect(a.first { $0.name == "id" }?.scopeEnd == 11)                  // g's body
+    #expect(a.first { $0.name == "v" }?.scopeEnd == 22)                  // an expression body: its line
+    #expect(ix.navigate(["name"], in: "A.kt", line: 7) == .found(CodeLocation(path: "A.kt", line: 6)))   // f's local
+    #expect(ix.navigate(["name"], in: "A.kt", line: 10) == .found(CodeLocation(path: "A.kt", line: 4)))  // in g: the property
+    // in h, g's parameter is out of scope: only B.id, unrelated, so listed rather than opened
+    #expect(ix.navigate(["id"], in: "A.kt", line: 13) == .many([Candidate(location: CodeLocation(path: "o/B.kt", line: 2),
+                                                                          snippet: "class B { val id = 0; fun load(y: String) {} }")]))
+    // overloads above or below the click: the same list
+    let loads = [CodeLocation(path: "A.kt", line: 16), CodeLocation(path: "A.kt", line: 17), CodeLocation(path: "o/B.kt", line: 2)]
+    for at in [14, 19] {
+        guard case .many(let c) = ix.navigate(["load"], in: "A.kt", line: at) else { Issue.record("load at \(at)"); continue }
+        #expect(c.map(\.location) == loads)
+    }
+    #expect(ix.navigate(["v"], in: "A.kt", line: 23) == .none)            // after an expression body
+    // enum entries are members of their enum
+    #expect(ix.navigate(["Status", "ACTIVE"], in: "A.kt", line: 20) == .found(CodeLocation(path: "A.kt", line: 2)))
+}
+
+@Test func enumEntriesAndFieldLists() {
+    let j = members("""
+        package com.example;
+        public class J {
+            enum Kind { RED { void paint() {} }, BLUE("b"), GREEN; void common() {} }
+            int a, b;
+            int c = 1, d = f(1, 2);
+            Map<String, Integer> m;
+        }
+        """, java: true)
+    #expect(j == [
+        "RED com.example.J.Kind - - member", "BLUE com.example.J.Kind - - member", "GREEN com.example.J.Kind - - member",
+        "common com.example.J.Kind - - member",
+        "a com.example.J - int member", "b com.example.J - - member",
+        "c com.example.J - int member", "d com.example.J - - member",
+        "m com.example.J - - member",
+    ])
+    let k = members("package com.example\nenum class Mode(val v: Int) { ON(1), OFF(0) { override fun x() = 1 };\n    fun flip() = 0 }\n")
+    #expect(k == ["v com.example.Mode - Int member", "ON com.example.Mode - - member", "OFF com.example.Mode - - member",
+                  "x - - - local", "flip com.example.Mode - - member"])  // an entry's own body: local, like Java's
 }
