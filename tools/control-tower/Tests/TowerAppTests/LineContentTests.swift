@@ -55,5 +55,6 @@ private func hex(_ c: Color?) -> [String] {
     line.syntax = stride(from: 0, to: 80_000, by: 2).map { SyntaxSpan(range: $0..<$0 + 1, kind: .keyword) }
     line.changes = [10..<20, 50_000..<50_010]
     let t = ContinuousClock().measure { #expect(String(lineContent(line).characters).count == 80_000) }
-    #expect(t < .seconds(3))  // the quadratic version took minutes at this size
+    // 0.5 s alone in debug, 3.6 s seen under a parallel run at load 10; the quadratic version took minutes
+    #expect(t < .seconds(20))
 }
