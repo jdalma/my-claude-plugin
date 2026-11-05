@@ -21,7 +21,7 @@ func git(_ cmd: GitRead, _ args: [String], in dir: String) throws -> CommandResu
 }
 
 /// Stdout of a successful run; nil when git is missing or exits non-zero.
-private func out(_ cmd: GitRead, _ args: [String], in dir: String) -> String? {
+func out(_ cmd: GitRead, _ args: [String], in dir: String) -> String? {
     guard let r = try? git(cmd, args, in: dir), r.status == 0 else { return nil }
     return r.stdout
 }

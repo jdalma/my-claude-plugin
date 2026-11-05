@@ -40,11 +40,48 @@ final class ChangesState {
     /// The file view's locations; the diff when none is current. Emptied when the workspace changes.
     var history = CodeHistory()
 
+    /// A short message over the detail: "후보 n개", "정의를 찾지 못함".
+    private(set) var notice: String?
+    private var noticeTask: Task<Void, Never>?
+
     /// Shows `location` in the file view, after the current one.
     func open(_ location: CodeLocation) {
         history.open(location)
         // the line that was hovered is now covered by the file view
         CommandClick.target = nil
+    }
+
+    /// A Command-click on `line` (in the diff, or in the file view when one is shown), on `name` if it hit
+    /// an identifier. A type opens its declaration; else the diff opens the line and the file view says so.
+    func commandClick(_ line: CodeLocation, name: [String]?) {
+        let inFile = history.current != nil
+        CommandClick.target = nil
+        guard let name, let top = toplevel else { return notFound(line, inFile) }
+        Task {
+            let result = await Task.detached { declIndexCache.index(toplevel: top).resolve(name, in: line.path) }.value
+            switch result {
+            case .found(let location): history.open(location, from: inFile ? line : nil)
+            case .many(let candidates): show("후보 \(candidates.count)개")
+            case .none: notFound(line, inFile)
+            }
+        }
+    }
+
+    private func notFound(_ line: CodeLocation, _ inFile: Bool) {
+        if inFile { show("정의를 찾지 못함") } else { open(line) }
+    }
+
+    private func show(_ text: String) {
+        notice = text
+        noticeTask?.cancel()
+        noticeTask = Task {
+            try? await Task.sleep(for: .seconds(1.5))
+            if !Task.isCancelled { notice = nil }
+        }
+    }
+
+    private var toplevel: String? {
+        if case .diff(let d) = loaded?.result { d.toplevel } else { nil }
     }
 
     /// A refresh's result: shown at once in one color when it differs from the last one.
@@ -520,7 +557,7 @@ struct LineView: View {
         guard let target, let changes else { return }
         switch phase {
         case .active(let p):
-            let open = { changes.open(target) }
+            let open = { changes.commandClick(target, name: nameUnder(p)) }
             CommandClick.hover(CommandClick.Target(id: hoverID, open: open, refresh: { showWord(at: p) }))
             showWord(at: p)
         case .ended:
@@ -529,7 +566,7 @@ struct LineView: View {
         }
     }
 
-    /// Underlines the identifier at `p` while Command alone is held; T34 navigates by it.
+    /// Underlines the identifier at `p` while Command alone is held.
     private func showWord(at p: CGPoint?) {
         let range = p.flatMap { CommandClick.isCommandOnly(NSEvent.modifierFlags) ? wordUnder($0) : nil }?.range
         guard range != hoverWord else { return }
@@ -540,11 +577,19 @@ struct LineView: View {
     }
 
     private func wordUnder(_ p: CGPoint) -> CodeWord? {
+        characterUnder(p).flatMap { identifier(in: $0.shown, at: $0.at) }
+    }
+
+    private func nameUnder(_ p: CGPoint) -> [String]? {
+        characterUnder(p).flatMap { dottedName(in: $0.shown, at: $0.at) }
+    }
+
+    /// The code as shown and the Character offset under `p`; nil off the code text and on a hunk header.
+    private func characterUnder(_ p: CGPoint) -> (shown: String, at: Int)? {
         guard line.kind != .hunk, textFrame.contains(p) else { return nil }
         let shown = String(lineContent(line).characters)
         let at = CGPoint(x: p.x - textFrame.minX, y: p.y - textFrame.minY)
-        return characterIndex(at: at, in: shown, font: codeFont(scale: scale), width: textFrame.width)
-            .flatMap { identifier(in: shown, at: $0) }
+        return characterIndex(at: at, in: shown, font: codeFont(scale: scale), width: textFrame.width).map { (shown, $0) }
     }
 
     private var numbers: String {

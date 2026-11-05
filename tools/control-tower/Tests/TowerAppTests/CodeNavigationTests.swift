@@ -88,3 +88,50 @@ import Testing
         #expect(hit == i, "\(text): ink at \(inkStart)")
     }
 }
+
+/// A Command-click: a type opens its declaration, recording the file-view line it left; otherwise the
+/// diff opens the line and the file view says it found nothing; several candidates are only counted.
+@MainActor @Test func aCommandClickFollowsTypes() async throws {
+    let url = FileManager.default.temporaryDirectory.appending(path: "click-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: url) }
+    let dir = String(cString: realpath(url.path, nil))
+    _ = try runCommand(["git", "-C", dir, "init", "-q"], timeout: 30, env: ["GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1"])
+    let sources = ["Main.kt": "package com.example\n\nval u = User()\n", "User.kt": "package com.example\n\nclass User\n",
+                   "a/Dup.kt": "package com.example.a\nclass Dup\n", "b/Dup.kt": "package com.example.b\nclass Dup\n"]
+    for (p, text) in sources {
+        try FileManager.default.createDirectory(atPath: (dir + "/" + p as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
+        try text.write(toFile: dir + "/" + p, atomically: true, encoding: .utf8)
+    }
+    let s = ChangesState()
+    s.select(workspace: dir)
+    s.accept(Loaded(workspace: dir, result: .diff(WorkspaceDiff(toplevel: dir, base: .none, committed: nil,
+                                                                 uncommitted: DiffSection(files: [], untracked: []))), candidates: []))
+    func settle(_ done: () -> Bool) async {
+        for _ in 0..<200 where !done() { try? await Task.sleep(for: .milliseconds(10)) }
+    }
+    let line3 = CodeLocation(path: "Main.kt", line: 3)
+    s.commandClick(line3, name: ["User"])  // from the diff
+    await settle { s.history.current != nil }
+    #expect(s.history.current == CodeLocation(path: "User.kt", line: 3))
+    s.history.back()
+    #expect(s.history.current == nil)  // back to the diff
+
+    s.commandClick(line3, name: ["value"])  // not a type, in the diff: the line itself
+    #expect(s.history.current == nil)
+    await settle { s.history.current != nil }
+    #expect(s.history.current == line3)
+
+    s.commandClick(CodeLocation(path: "Main.kt", line: 1), name: ["value"])  // in the file view: a notice, no move
+    await settle { s.notice != nil }
+    #expect(s.notice == "정의를 찾지 못함" && s.history.current == line3)
+
+    s.commandClick(CodeLocation(path: "Main.kt", line: 2), name: ["Dup"])
+    await settle { s.notice == "후보 2개" }
+    #expect(s.notice == "후보 2개" && s.history.current == line3)
+
+    s.commandClick(CodeLocation(path: "Main.kt", line: 3), name: ["User"])  // from the file view: back returns to line 3
+    await settle { s.history.current?.path == "User.kt" }
+    s.history.back()
+    #expect(s.history.current == line3)
+}

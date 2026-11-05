@@ -130,7 +130,7 @@ struct FileCodeView: View {
                 let first = lines.first?.new ?? 1
                 if first > 1 { note("앞 \(first - 1)줄 생략") }
                 ForEach(lines, id: \.new) { line in
-                    LineView(line: line, side: .new)
+                    LineView(line: line, side: .new, target: line.new.map { CodeLocation(path: location.path, line: $0) })
                         .fixedSize(horizontal: false, vertical: true)
                         .background(flash == line.new ? DiffColors.targetLine : .clear)
                         .id(line.new)

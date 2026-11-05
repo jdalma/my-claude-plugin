@@ -350,6 +350,16 @@ private struct DetailView: View {
                             FileCodeView(toplevel: top, location: location, state: changes)
                         }
                     }
+                    .overlay(alignment: .top) {
+                        if let notice = changes.notice {
+                            Text(notice).scaledFont(.callout)
+                                .padding(.horizontal, 12).padding(.vertical, 6)
+                                .background(DiffColors.header, in: .capsule)
+                                .overlay(Capsule().strokeBorder(DiffColors.border))
+                                .padding(.top, 48)
+                                .allowsHitTesting(false)
+                        }
+                    }
                     .environment(changes)
                     .onChange(of: changes.scrollTarget) { _, target in
                         guard let target else { return }
