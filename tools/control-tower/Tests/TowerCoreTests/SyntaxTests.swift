@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import TowerCore
 
@@ -100,4 +101,11 @@ private func diff(_ path: String, _ text: String) -> WorkspaceDiff {
     #expect(b["// c"] == .comment)
     #expect(kinds(template, k[1])["val"] == .keyword)  // the template's spans spell the line back
     #expect(syntaxLanguage(forPath: "build.gradle.kts") == "kotlin")
+}
+
+@Test func untrackedFilesAreHighlightedToo() async {
+    var d = diff("a.txt", "x")
+    d.uncommitted.newFiles = [newFileDiff("src/com/example/N.kt", Data("val n = 1\n".utf8), 2000)]
+    let h = await highlighted(d)
+    #expect(h.uncommitted.newFiles[0].lines[1].syntax.isEmpty == false)
 }

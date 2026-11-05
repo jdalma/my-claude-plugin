@@ -69,7 +69,7 @@ private func baseRef(_ d: WorkspaceDiff) -> String? {
     #expect(committed.files.map(\.path) == ["a.txt", "c.txt"])
     #expect(committed.added == 2 && committed.removed == 1)
     #expect(d.uncommitted.files.map(\.path) == ["b.txt"])
-    #expect(d.uncommitted.added == 1 && d.uncommitted.removed == 0)
+    #expect(d.uncommitted.added == 2 && d.uncommitted.removed == 0)  // b.txt's line and untracked n.txt's
     #expect(d.uncommitted.untracked == ["n.txt"])
     #expect(((d.committed?.files ?? []) + d.uncommitted.files).allSatisfy { $0.hiddenLines == 0 })
 }
@@ -294,4 +294,52 @@ private func mtime(_ path: String) throws -> Date {
     let committed = Dictionary(uniqueKeysWithValues: (d.committed?.files ?? []).map { ($0.path, $0) })
     #expect(committed["small.txt"]?.lines.map(\.text) == ["@@ -0,0 +1 @@", "s"])
     #expect(d.uncommitted.files.first?.lines.contains { $0.kind == .added && $0.text == "THREE" } == true)
+}
+
+// MARK: - Untracked files (T37)
+
+@Test func untrackedFilesAreReadAsAllAddedDiffs() throws {
+    let dir = try fixture()
+    try FileManager.default.createDirectory(atPath: "\(dir)/src/com/example", withIntermediateDirectories: true)
+    try write(dir, "src/com/example/A.kt", "package com.example\n\nclass A\n")
+    try write(dir, "tail.txt", "x\ny")
+    try write(dir, "empty.txt", "")
+    try write(dir, "long.txt", "1\n2\n3\n4\n5\n")
+    try Data([0x50, 0x4e, 0x47, 0x00, 0x01]).write(to: URL(fileURLWithPath: "\(dir)/img.bin"))
+    try FileManager.default.createSymbolicLink(atPath: "\(dir)/link.txt", withDestinationPath: "tail.txt")
+    let status = try sh(dir, ["status", "--porcelain"])  // porcelain status may refresh the index, so first
+    let index = "\(dir)/.git/index"
+    let stamp = try FileManager.default.attributesOfItem(atPath: index)[.modificationDate] as? Date
+
+    let d = try result(dir, limit: 4)
+    let byPath = Dictionary(uniqueKeysWithValues: d.uncommitted.newFiles.map { ($0.path, $0) })
+    #expect(d.uncommitted.untracked.sorted() == ["empty.txt", "img.bin", "link.txt", "long.txt", "src/com/example/A.kt", "tail.txt"])
+    #expect(byPath["link.txt"] == nil)  // a symlink stays a path
+    let a = try #require(byPath["src/com/example/A.kt"])
+    #expect(a.lines.map(\.kind) == [.hunk, .added, .added, .added])
+    #expect(a.lines.first?.text == "@@ -0,0 +1,3 @@")
+    #expect(a.lines.dropFirst().map(\.new) == [1, 2, 3])
+    #expect(a.lines.dropFirst().map(\.text) == ["package com.example", "", "class A"])
+    #expect(a.added == 3 && a.removed == 0 && !a.binary && a.hiddenLines == 0)
+    #expect(a.split.count == 4)
+    #expect(byPath["tail.txt"]?.lines.dropFirst().map(\.text) == ["x", "y"])
+    #expect(byPath["empty.txt"] == FileDiff(path: "empty.txt", added: 0, removed: 0, binary: false, lines: []))
+    #expect(byPath["img.bin"]?.binary == true && byPath["img.bin"]?.lines == [])
+    let long = try #require(byPath["long.txt"])
+    #expect(long.added == 5 && long.lines.count == 4 && long.hiddenLines == 2)
+    #expect(d.uncommitted.added == 3 + 2 + 5)
+    #expect(d.uncommitted.files.isEmpty)  // tower-cli's uncommitted_files stays tracked files only
+
+    #expect(try FileManager.default.attributesOfItem(atPath: index)[.modificationDate] as? Date == stamp)
+    #expect(try sh(dir, ["status", "--porcelain"]) == status)
+}
+
+@Test func onlyTheFirstUntrackedFilesAreRead() throws {
+    let dir = try fixture()
+    for i in 0..<(newFileLimit + 5) { try write(dir, String(format: "n%04d.txt", i), "\(i)\n") }
+    try write(dir, "big.txt", String(repeating: "a", count: newFileByteLimit + 1))
+    let d = try result(dir)
+    #expect(d.uncommitted.untracked.count == newFileLimit + 6)
+    // only the first paths are looked at: the oversized one takes a slot and stays a path
+    #expect(d.uncommitted.newFiles.map(\.path) == d.uncommitted.untracked.prefix(newFileLimit).filter { $0 != "big.txt" })
 }

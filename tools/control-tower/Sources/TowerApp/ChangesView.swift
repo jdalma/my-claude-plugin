@@ -298,12 +298,12 @@ struct ChangesView: View {
                 if !detail.isEmpty { Text(detail).scaledFont(.caption1, design: .monospaced).foregroundStyle(.secondary) }
                 Spacer()
                 if let section {
-                    if !section.files.isEmpty {
-                        let keys = Set(section.files.map { DiffFileKey(part: part, path: $0.path) })
+                    if !section.files.isEmpty || !section.newFiles.isEmpty {
+                        let keys = Set((section.files + section.newFiles).map { DiffFileKey(part: part, path: $0.path) })
                         Button("모두 접기") { state.setExpanded(keys, false) }.buttonStyle(.link)
                         Button("모두 펼치기") { state.setExpanded(keys, true) }.buttonStyle(.link)
                     }
-                    Text("파일 \(section.files.count)").foregroundStyle(.secondary)
+                    Text("파일 \(section.files.count + section.untracked.count)").foregroundStyle(.secondary)
                     Counts(added: section.added, removed: section.removed, onCanvas: true)
                 }
             }
@@ -337,12 +337,13 @@ private struct SectionBody: View {
             if section.files.isEmpty && section.untracked.isEmpty {
                 Text("변경 없음").foregroundStyle(.secondary)
             }
-            ForEach(section.files, id: \.path) { file in
+            ForEach(section.files + section.newFiles, id: \.path) { file in
                 let key = DiffFileKey(part: part, path: file.path)
                 FileView(file: file, folded: !state.isExpanded(key)) { state.toggle(key) }
                 .id(key)
             }
-            ForEach(section.untracked, id: \.self) { path in
+            let read = Set(section.newFiles.map(\.path))
+            ForEach(section.untracked.filter { !read.contains($0) }, id: \.self) { path in
                 HStack(spacing: 8) {
                     Image(systemName: "doc.badge.plus").foregroundStyle(.secondary)
                     Text(path).scaledFont(.body, design: .monospaced).lineLimit(1).truncationMode(.middle)

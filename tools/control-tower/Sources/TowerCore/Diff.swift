@@ -1,7 +1,7 @@
 import Foundation
 
 // A workspace's changes against its base branch: committed (`<base>...HEAD`) and uncommitted
-// (`git diff HEAD` plus untracked paths). Read-only: git runs only through `git(_:_:in:)`.
+// (`git diff HEAD` plus untracked files, read as all-added diffs). Read-only: git runs only through `git(_:_:in:)`.
 
 /// The only git subcommands TowerCore may run. Read-only by construction.
 enum GitRead: String, CaseIterable {
@@ -54,7 +54,11 @@ public struct FileDiff: Hashable, Sendable {
 public struct DiffSection: Hashable, Sendable {
     public var files: [FileDiff]
     public var untracked: [String]
-    public var added: Int { files.reduce(0) { $0 + $1.added } }
+    /// Untracked files read as all-added diffs, in `untracked` order. A path without one here (a symlink,
+    /// an unreadable or oversized file, or one past `newFileLimit`) shows as a path only.
+    public var newFiles: [FileDiff] = []
+    /// Counts untracked lines too, as `git diff` does after `git add -N`.
+    public var added: Int { (files + newFiles).reduce(0) { $0 + $1.added } }
     public var removed: Int { files.reduce(0) { $0 + $1.removed } }
 }
 
@@ -97,7 +101,8 @@ public func workspaceDiff(at path: String, pinnedBase: String?, lineLimit: Int =
     let untracked = (out(.lsFiles, ["--others", "--exclude-standard", "-z"], in: top) ?? "")
         .split(separator: "\0").map(String.init)
     return .diff(WorkspaceDiff(toplevel: top, base: base, committed: committed,
-                               uncommitted: DiffSection(files: files, untracked: untracked)))
+                               uncommitted: DiffSection(files: files, untracked: untracked,
+                                                        newFiles: newFileMemo.files(top: top, paths: untracked, limit: lineLimit))))
 }
 
 /// Local heads and remote-tracking branches, for the base picker. Never `origin/HEAD`.
@@ -196,6 +201,56 @@ final class ParseMemo: @unchecked Sendable {
 }
 
 let parseMemo = ParseMemo()
+
+// MARK: - Untracked files
+
+/// Untracked paths looked at per refresh, and the largest file read; the rest show as paths, so a tree of
+/// unignored build output costs a bounded read.
+let newFileLimit = 200
+let newFileByteLimit = 1 << 20
+
+/// The last diff of each untracked file by toplevel, kept while its size and modification date hold,
+/// so a 5 s refresh only stats them.
+final class NewFileMemo: @unchecked Sendable {
+    private struct Entry { var size: Int, date: Date, limit: Int, file: FileDiff? }
+    private let lock = NSLock()
+    private var byTop: [String: [String: Entry]] = [:]
+
+    func files(top: String, paths: [String], limit: Int) -> [FileDiff] {
+        lock.withLock {
+            let old = byTop[top] ?? [:]
+            var kept: [String: Entry] = [:]
+            for path in paths.prefix(newFileLimit) {
+                let full = URL(fileURLWithPath: top).appending(path: path).path
+                // attributes of the path itself: a symlink is not followed
+                guard let a = try? FileManager.default.attributesOfItem(atPath: full), a[.type] as? FileAttributeType == .typeRegular,
+                      let size = a[.size] as? Int, let date = a[.modificationDate] as? Date else { continue }
+                if let e = old[path], e.size == size, e.date == date, e.limit == limit { kept[path] = e; continue }
+                let data = size <= newFileByteLimit ? try? Data(contentsOf: URL(fileURLWithPath: full)) : nil
+                kept[path] = Entry(size: size, date: date, limit: limit,
+                                   file: data.flatMap { $0.count <= newFileByteLimit ? newFileDiff(path, $0, limit) : nil })
+            }
+            byTop[top] = kept
+            return paths.prefix(newFileLimit).compactMap { kept[$0]?.file }
+        }
+    }
+}
+
+let newFileMemo = NewFileMemo()
+
+/// A new file as `git diff` shows it: one `@@ -0,0 +1,n @@` hunk of added lines, none when empty.
+/// Binary as git decides it: a NUL in the first 8000 bytes; text that is not UTF-8 counts too.
+func newFileDiff(_ path: String, _ data: Data, _ limit: Int) -> FileDiff {
+    guard !data.prefix(8000).contains(0), let text = String(data: data, encoding: .utf8) else {
+        return FileDiff(path: path, added: 0, removed: 0, binary: true, lines: [])
+    }
+    var all = text.split(separator: "\n", omittingEmptySubsequences: false)
+    if all.last?.isEmpty == true { all.removeLast() }
+    guard !all.isEmpty else { return FileDiff(path: path, added: 0, removed: 0, binary: false, lines: []) }
+    let hunk = DiffLine(kind: .hunk, old: nil, new: nil, text: "@@ -0,0 +1\(all.count == 1 ? "" : ",\(all.count)") @@")
+    let lines = all.enumerated().map { DiffLine(kind: .added, old: nil, new: $0.offset + 1, text: String($0.element)) }
+    return cap([FileDiff(path: path, added: all.count, removed: 0, binary: false, lines: [hunk] + lines)], limit)[0]
+}
 
 // MARK: - Parser
 

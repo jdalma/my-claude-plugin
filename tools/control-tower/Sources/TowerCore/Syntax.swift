@@ -91,6 +91,9 @@ public func highlighted(_ d: WorkspaceDiff, with h: SyntaxHighlighter? = nil) as
         for i in s.files.indices where !Task.isCancelled {
             s.files[i].lines = await highlightedLines(s.files[i].lines, path: s.files[i].path, with: h)
         }
+        for i in s.newFiles.indices where !Task.isCancelled {
+            s.newFiles[i].lines = await highlightedLines(s.newFiles[i].lines, path: s.newFiles[i].path, with: h)
+        }
         return s
     }
     var d = d
