@@ -254,11 +254,11 @@ public struct DeclIndex: Sendable {
 
 /// The dotted name ending at the identifier under `offset`: `["a", "b", "C"]` for a click on `C` of
 /// `a.b.C`, `["a", "b"]` for one on `b`.
-public func dottedName(in line: String, at offset: Int) -> [String]? {
-    guard let w = identifier(in: line, at: offset) else { return nil }
+public func dottedName(in line: String, at offset: Int, dollar: Bool = true) -> [String]? {
+    guard let w = identifier(in: line, at: offset, dollar: dollar) else { return nil }
     let chars = Array(line)
     var parts = [w.name], lo = w.range.lowerBound
-    while lo >= 2, chars[lo - 1] == ".", let prev = identifier(in: line, at: lo - 2) {
+    while lo >= 2, chars[lo - 1] == ".", let prev = identifier(in: line, at: lo - 2, dollar: dollar) {
         parts.insert(prev.name, at: 0)
         lo = prev.range.lowerBound
     }

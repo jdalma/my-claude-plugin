@@ -52,6 +52,12 @@ private func lines(_ body: String) -> [DiffLine] {
     #expect(identifier(in: "_id + $ref", at: 7)?.name == "$ref")
     #expect(identifier(in: "이름.length", at: 1) == CodeWord(name: "이름", range: 0..<2))
     #expect(identifier(in: "`is open`", at: 2)?.name == "is")          // backticks: not one name
+    // Kotlin: `$` starts a template, never part of a name; Java keeps it
+    #expect(identifier(in: "\"Hello $user\"", at: 8, dollar: false) == CodeWord(name: "user", range: 8..<12))
+    #expect(identifier(in: "\"Hello $user\"", at: 7, dollar: false) == nil)
+    #expect(identifier(in: "\"${foo}\"", at: 3, dollar: false)?.name == "foo")
+    #expect(identifier(in: "\"Hello $user\"", at: 8)?.name == "$user")
+    #expect(dottedName(in: "\"$a.b\"", at: 4, dollar: false) == ["a", "b"])
 }
 
 @Test func historyGoesBackAndForwardAndDropsTheForwardBranch() {

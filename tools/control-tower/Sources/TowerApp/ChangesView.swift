@@ -582,11 +582,16 @@ struct LineView: View {
     }
 
     private func wordUnder(_ p: CGPoint) -> CodeWord? {
-        characterUnder(p).flatMap { identifier(in: $0.shown, at: $0.at) }
+        characterUnder(p).flatMap { identifier(in: $0.shown, at: $0.at, dollar: dollar) }
     }
 
     private func nameUnder(_ p: CGPoint) -> [String]? {
-        characterUnder(p).flatMap { dottedName(in: $0.shown, at: $0.at) }
+        characterUnder(p).flatMap { dottedName(in: $0.shown, at: $0.at, dollar: dollar) }
+    }
+
+    /// `$` is part of a Java name; in Kotlin it starts a string template.
+    private var dollar: Bool {
+        !["kt", "kts"].contains(((target?.path ?? "") as NSString).pathExtension)
     }
 
     /// The code as shown and the Character offset under `p`; nil off the code text, on a hunk header, and

@@ -60,12 +60,12 @@ public struct CodeWord: Hashable, Sendable {
     public var range: Range<Int>
 }
 
-/// The Java/Kotlin identifier holding Character `offset` of `line`: letters, digits, `_` and `$`, not
-/// starting with a digit. Purely lexical: a word inside a string or a comment counts too. Backticked
-/// Kotlin names are not recognized as one name.
-public func identifier(in line: String, at offset: Int) -> CodeWord? {
+/// The Java/Kotlin identifier holding Character `offset` of `line`: letters, digits, `_` and, for Java,
+/// `$`, not starting with a digit. Kotlin names never hold `$`, so `"Hello $user"` gives `user`. Purely
+/// lexical: a word inside a string or a comment counts too. Backticked Kotlin names are not one name.
+public func identifier(in line: String, at offset: Int, dollar: Bool = true) -> CodeWord? {
     let chars = Array(line)
-    func part(_ c: Character) -> Bool { c.isLetter || c.isNumber || c == "_" || c == "$" }
+    func part(_ c: Character) -> Bool { c.isLetter || c.isNumber || c == "_" || (dollar && c == "$") }
     guard chars.indices.contains(offset), part(chars[offset]) else { return nil }
     var lo = offset, hi = offset + 1
     while lo > 0, part(chars[lo - 1]) { lo -= 1 }
