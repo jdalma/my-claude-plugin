@@ -14,12 +14,13 @@ enum LineKind: Equatable {
         }
     }
 
-    /// my-team: Primer's accent blue (`--fgColor-accent`), the palette of DiffColors. claude: terracotta,
-    /// 12° of hue from the waiting icon's system orange and darker, so a tag never reads as a state.
+    /// my-team: Primer's accent blue (light `--fgColor-accent` one step darker, for 4.5:1 on its tint), the palette
+    /// of DiffColors. claude: terracotta, 12° of hue from the waiting icon's system orange and darker, so a tag never
+    /// reads as a state.
     var color: Color {
         switch self {
-        case .team: pair(0x0969daff, 0x58a6ffff)
-        case .agent(.claude): pair(0xc15f3cff, 0xe8906fff)
+        case .team: pair(0x0550aeff, 0x58a6ffff)
+        case .agent(.claude): pair(0x9a3f1fff, 0xe8906fff)
         case .agent(.codex): .teal
         }
     }
@@ -30,6 +31,9 @@ enum LineKind: Equatable {
 
     /// The tag's text: the kind color lifted toward white in dark mode, where it reads better on its own 0.2 tint
     /// (my-team 4.65 → 6.65:1, claude 4.78 → 6.74:1 on the window background, T41 report).
+    /// White on a selected row: the accent blue under the tint leaves no kind color readable there.
+    func textColor(selected: Bool) -> Color { selected ? .white : textColor }
+
     var textColor: Color {
         let base = NSColor(color)
         return Color(nsColor: NSColor(name: nil) { appearance in
@@ -43,12 +47,13 @@ enum LineKind: Equatable {
 struct KindTag: View {
     let kind: LineKind
     var style: NSFont.TextStyle?
+    @Environment(\.backgroundProminence) private var prominence
 
     var body: some View {
         sized(Text(kind.text))
             .padding(.horizontal, 5).padding(.vertical, 1)
             .background(kind.color.opacity(0.2), in: .capsule)
-            .foregroundStyle(kind.textColor)
+            .foregroundStyle(kind.textColor(selected: prominence == .increased))
     }
 
     @ViewBuilder

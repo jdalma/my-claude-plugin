@@ -28,7 +28,7 @@ import Testing
     #expect(dark.text.redComponent > dark.base.redComponent && dark.text.greenComponent > dark.base.greenComponent)
 }
 
-/// T41: my-team in Primer's accent blue, claude in terracotta, each with its own light and dark value.
+/// T41, T41a: my-team in Primer's accent blue, claude in terracotta, each with its own light and dark value.
 @Test func teamAndClaudeTagsTakeTheirChosenColors() {
     func hex(_ c: Color, _ name: NSAppearance.Name) -> String {
         var out = ""
@@ -39,8 +39,13 @@ import Testing
         }
         return out
     }
-    #expect([hex(LineKind.team.color, .aqua), hex(LineKind.team.color, .darkAqua)] == ["0969da", "58a6ff"])
-    #expect([hex(LineKind.agent(.claude).color, .aqua), hex(LineKind.agent(.claude).color, .darkAqua)] == ["c15f3c", "e8906f"])
-    #expect(hex(LineKind.agent(.claude).textColor, .aqua) == "c15f3c")
+    #expect([hex(LineKind.team.color, .aqua), hex(LineKind.team.color, .darkAqua)] == ["0550ae", "58a6ff"])
+    #expect([hex(LineKind.agent(.claude).color, .aqua), hex(LineKind.agent(.claude).color, .darkAqua)] == ["9a3f1f", "e8906f"])
+    #expect(hex(LineKind.agent(.claude).textColor, .aqua) == "9a3f1f")
+    // on a selected row's accent blue the tag text turns white (5.2:1 or more on its tint, T41a report)
+    for kind in [LineKind.team, .agent(.claude), .agent(.codex)] {
+        #expect([hex(kind.textColor(selected: true), .aqua), hex(kind.textColor(selected: true), .darkAqua)] == ["ffffff", "ffffff"])
+        #expect(hex(kind.textColor(selected: false), .darkAqua) == hex(kind.textColor, .darkAqua))
+    }
     #expect(hex(LineKind.agent(.codex).color, .aqua) == hex(.teal, .aqua))
 }
