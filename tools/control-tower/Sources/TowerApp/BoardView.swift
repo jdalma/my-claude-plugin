@@ -138,7 +138,7 @@ struct BoardView: View {
     private func liveList(_ model: SidebarModel) -> some View {
         List(selection: paneSelection(.live)) {
             if model.teams.isEmpty && model.agents.isEmpty {
-                Text(query.isEmpty ? "실행 중인 세션 없음" : "검색과 맞는 실행 중 세션 없음").foregroundStyle(.secondary)
+                Text(query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "실행 중인 세션 없음" : "검색과 맞는 실행 중 세션 없음").foregroundStyle(.secondary)
             }
             ForEach(model.teams, id: \.name) { team in
                 Section(isExpanded: teamExpanded(team.name)) {

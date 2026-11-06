@@ -518,6 +518,9 @@ private func isoOf(_ d: Date) -> String { d.formatted(.iso8601) }
     #expect(small.top + small.bottom == 200 && small.top == 100)
     // the line follows the drag from where it was, so a drag starting off-center does not jump
     #expect(SidebarSplit.ratio(top: 300, total: 501) == 0.6)
+    // dragged past either end the share stops at that end, not back at the standard 0.6
+    #expect(SidebarSplit.ratio(top: -80, total: 501) == 0 && SidebarSplit.ratio(top: 900, total: 501) == 1)
+    #expect(SidebarSplit.heights(total: 501, ratio: SidebarSplit.ratio(top: 900, total: 501)).bottom == SidebarSplit.minHeight)
     #expect(SidebarSplit.heights(total: 501, ratio: SidebarSplit.ratio(top: 300 + 7, total: 501)).top == 307)
     // a window resize keeps the share
     #expect(SidebarSplit.heights(total: 1001, ratio: 0.6).top == 600)
