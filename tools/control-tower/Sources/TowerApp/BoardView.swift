@@ -17,6 +17,7 @@ struct BoardView: View {
     @AppStorage(FontScale.storageKey) private var storedScale = FontScale.standard.value
     @AppStorage(AppearanceChoice.storageKey) private var storedAppearance = AppearanceChoice.system.rawValue
     @AppStorage(DiffLayout.storageKey) private var diffLayout = DiffLayout.unified.rawValue
+    @AppStorage(CollapsedTeams.storageKey) private var storedCollapsed = ""
 
     private let home = NSHomeDirectory()
 
@@ -37,6 +38,7 @@ struct BoardView: View {
         .onChange(of: tower.boardSelectRequest, initial: true) { _, request in
             guard let request else { return }
             query = ""  // a search could hide the requested row
+            reveal(request)
             selection = request
             tower.boardSelectRequest = nil
         }
@@ -107,7 +109,7 @@ struct BoardView: View {
         NavigationSplitView {
             List(selection: $selection) {
                 ForEach(model.teams, id: \.name) { team in
-                    Section {
+                    Section(isExpanded: teamExpanded(team.name)) {
                         ForEach(team.rows, id: \.id) { LiveRowView(row: $0).tag($0.id) }
                     } header: {
                         GroupHeader(tag: .team, title: team.name, count: waitingText(team.waiting), tooltip: team.summary)
@@ -167,11 +169,32 @@ struct BoardView: View {
             DetailView(board: board, model: model, history: tower.history, selection: selection, home: home, changes: changes,
                        select: { id in
                            query = ""  // a search could hide the row
+                           reveal(id)
                            selection = id
                        },
                        deselect: { selection = nil },
                        focus: { tower.focus($0.session.handle) })
         }
+    }
+
+    private var collapsed: CollapsedTeams { CollapsedTeams(stored: storedCollapsed) }
+
+    private func teamExpanded(_ team: String) -> Binding<Bool> {
+        Binding {
+            collapsed.isExpanded(team, query: query)
+        } set: { open in
+            var c = collapsed
+            c.set(team, expanded: open, query: query)
+            storedCollapsed = c.stored
+        }
+    }
+
+    /// A row picked outside the sidebar opens its folded team, so the selection shows.
+    private func reveal(_ id: RowID) {
+        guard let board = tower.board else { return }
+        var c = collapsed
+        c.reveal(id, in: board)
+        if c != collapsed { storedCollapsed = c.stored }
     }
 
     private func sidebarHeader(_ model: SidebarModel) -> some View {

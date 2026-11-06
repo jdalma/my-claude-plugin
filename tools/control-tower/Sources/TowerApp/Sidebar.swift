@@ -106,6 +106,38 @@ struct SidebarModel: Equatable {
     var liveRows: [LiveRow] { teams.flatMap(\.rows) + agents.flatMap(\.rows) }
 }
 
+/// Team sections folded in the sidebar, by team name; every team is open by default.
+/// Stored as a JSON array, so any name round-trips; a team that stops running keeps its name here, matched by nothing.
+struct CollapsedTeams: Equatable {
+    static let storageKey = "collapsedTeams"
+
+    private(set) var names: Set<String>
+
+    init(stored: String) {
+        names = Set((try? JSONDecoder().decode([String].self, from: Data(stored.utf8))) ?? [])
+    }
+
+    var stored: String { String(decoding: (try? JSONEncoder().encode(names.sorted())) ?? Data(), as: UTF8.self) }
+
+    /// A search shows every team's matches, folded or not; the folds return once it is cleared.
+    func isExpanded(_ team: String, query: String) -> Bool { isSearching(query) || !names.contains(team) }
+
+    /// A disclosure click during a search changes nothing: the section stays open for the search.
+    mutating func set(_ team: String, expanded: Bool, query: String) {
+        guard !isSearching(query) else { return }
+        if expanded { names.remove(team) } else { names.insert(team) }
+    }
+
+    /// Opens the team holding a row selected from outside the sidebar (menu bar, queue card).
+    mutating func reveal(_ id: RowID, in board: Board) {
+        guard case .live(let rowID) = id,
+              let team = board.teams.first(where: { $0.workers.contains { $0.session.rowID == rowID } }) else { return }
+        names.remove(team.name)
+    }
+
+    private func isSearching(_ query: String) -> Bool { !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+}
+
 enum AgentFilter: Hashable {
     case all, claude, codex
 }

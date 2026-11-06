@@ -468,3 +468,40 @@ private func isoOf(_ d: Date) -> String { d.formatted(.iso8601) }
     ])
     #expect(model(board).queue.map(\.title) == ["early", "mid", "late", "none"])
 }
+
+@Test func collapsedTeamsSurviveAStoreRoundTripAndIgnoreJunk() {
+    var c = CollapsedTeams(stored: "")
+    #expect(c.names.isEmpty)  // the default: every team open
+    c.set("b", expanded: false, query: "")
+    c.set("a \"x\"\n", expanded: false, query: "")
+    #expect(CollapsedTeams(stored: c.stored) == c)
+    #expect(CollapsedTeams(stored: "not json").names.isEmpty)
+    c.set("b", expanded: true, query: "")
+    #expect(CollapsedTeams(stored: c.stored).names == ["a \"x\"\n"])
+}
+
+@Test func aSearchOpensFoldedTeamsUntilItIsCleared() {
+    var c = CollapsedTeams(stored: "")
+    c.set("t", expanded: false, query: "")
+    #expect(!c.isExpanded("t", query: ""))
+    #expect(!c.isExpanded("t", query: "  "))  // blank is no search, as in the sidebar's filter
+    #expect(c.isExpanded("t", query: "a"))
+    #expect(c.isExpanded("other", query: ""))
+    c.set("t", expanded: true, query: "a")  // the disclosure during a search leaves the stored fold alone
+    c.set("u", expanded: false, query: "a")
+    #expect(c.names == ["t"])
+}
+
+@Test func selectingARowFromElsewhereOpensOnlyItsTeam() {
+    let board = Board(at: at, teams: [
+        team("a", [worker("w", session: session("pane:a:%1"))]),
+        team("b", [worker("v", session: session("pane:b:%2"))]),
+    ], loose: [session("pane:x:%3")])
+    var c = CollapsedTeams(stored: "")
+    for t in ["a", "b", "gone"] { c.set(t, expanded: false, query: "") }
+    c.reveal(.live(session("pane:x:%3").rowID), in: board)
+    c.reveal(.history("/t/a.jsonl"), in: board)
+    #expect(c.names == ["a", "b", "gone"])
+    c.reveal(.live(session("pane:a:%1").rowID), in: board)
+    #expect(c.names == ["b", "gone"])  // a stored team that no longer runs changes nothing
+}
