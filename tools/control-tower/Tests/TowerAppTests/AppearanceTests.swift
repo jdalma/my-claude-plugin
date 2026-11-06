@@ -42,10 +42,5 @@ import Testing
     #expect([hex(LineKind.team.color, .aqua), hex(LineKind.team.color, .darkAqua)] == ["0550ae", "58a6ff"])
     #expect([hex(LineKind.agent(.claude).color, .aqua), hex(LineKind.agent(.claude).color, .darkAqua)] == ["9a3f1f", "e8906f"])
     #expect(hex(LineKind.agent(.claude).textColor, .aqua) == "9a3f1f")
-    // on a selected row's accent blue the tag text turns white (5.2:1 or more on its tint, T41a report)
-    for kind in [LineKind.team, .agent(.claude), .agent(.codex)] {
-        #expect([hex(kind.textColor(selected: true), .aqua), hex(kind.textColor(selected: true), .darkAqua)] == ["ffffff", "ffffff"])
-        #expect(hex(kind.textColor(selected: false), .darkAqua) == hex(kind.textColor, .darkAqua))
-    }
     #expect(hex(LineKind.agent(.codex).color, .aqua) == hex(.teal, .aqua))
 }

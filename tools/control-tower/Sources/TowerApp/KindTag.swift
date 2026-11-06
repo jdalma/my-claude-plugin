@@ -31,9 +31,6 @@ enum LineKind: Equatable {
 
     /// The tag's text: the kind color lifted toward white in dark mode, where it reads better on its own 0.2 tint
     /// (my-team 4.65 → 6.65:1, claude 4.78 → 6.74:1 on the window background, T41 report).
-    /// White on a selected row: the accent blue under the tint leaves no kind color readable there.
-    func textColor(selected: Bool) -> Color { selected ? .white : textColor }
-
     var textColor: Color {
         let base = NSColor(color)
         return Color(nsColor: NSColor(name: nil) { appearance in
@@ -47,13 +44,12 @@ enum LineKind: Equatable {
 struct KindTag: View {
     let kind: LineKind
     var style: NSFont.TextStyle?
-    @Environment(\.backgroundProminence) private var prominence
 
     var body: some View {
         sized(Text(kind.text))
             .padding(.horizontal, 5).padding(.vertical, 1)
             .background(kind.color.opacity(0.2), in: .capsule)
-            .foregroundStyle(kind.textColor(selected: prominence == .increased))
+            .foregroundStyle(kind.textColor)
     }
 
     @ViewBuilder
