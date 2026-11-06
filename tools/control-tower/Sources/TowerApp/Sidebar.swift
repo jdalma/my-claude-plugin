@@ -368,3 +368,51 @@ private func minutes(from: String?, to: String) -> Int? {
     guard let a = parseISO(from), let b = parseISO(to) else { return nil }
     return max(0, Int(((b - a) / 60000).rounded(.down)))
 }
+
+/// The sidebar's two lists, running sessions above history, and the line between them.
+enum SidebarSplit {
+    /// The running list's share of the height, kept across launches.
+    static let storageKey = "sidebarSplitRatio"
+    static let standard = 0.6
+    /// Each list's least height: the top one holds the "실행 중" bar, a group header and about two rows at the
+    /// standard font size; the history one its filter header and about two rows.
+    static let minHeight: CGFloat = 140
+    static let line: CGFloat = 1
+
+    /// The two lists' heights in a sidebar `total` tall. A stored value outside 0...1 is the standard share;
+    /// a sidebar too short for two minimums shares by the ratio alone.
+    static func heights(total: CGFloat, ratio: Double) -> (top: CGFloat, bottom: CGFloat) {
+        let room = max(0, total - line)
+        let share = ratio.isFinite && (0...1).contains(ratio) ? ratio : standard
+        var top = (room * share).rounded()
+        if room >= 2 * minHeight { top = min(max(top, minHeight), room - minHeight) }
+        return (top, room - top)
+    }
+
+    /// The share that gives the top list `top` points, for a drag measured from where the line was.
+    static func ratio(top: CGFloat, total: CGFloat) -> Double {
+        let room = total - line
+        return room > 0 ? Double(min(max(top, 0), room) / room) : standard
+    }
+}
+
+/// Which of the two lists a row belongs to; the board keeps one selection across both.
+enum SidebarPane {
+    case live, history
+
+    /// The board's selection as this list shows it: nil when the selected row is in the other list.
+    func shown(_ selection: RowID?) -> RowID? { selection.flatMap { holds($0) ? $0 : nil } }
+
+    /// The board's selection after this list sets `new`: a pick replaces any selection, and a list clearing
+    /// its own selection does not clear the other list's.
+    func select(_ new: RowID?, current: RowID?) -> RowID? {
+        new ?? (shown(current) == nil ? current : nil)
+    }
+
+    private func holds(_ id: RowID) -> Bool {
+        switch id {
+        case .live: self == .live
+        case .history: self == .history
+        }
+    }
+}

@@ -48,3 +48,9 @@ private let fullScreenBits: NSWindow.CollectionBehavior = [.fullScreenPrimary, .
     #expect(w.collectionBehavior.intersection(roles) == .primary)
     #expect(w.collectionBehavior.intersection(fullScreenBits) == .fullScreenPrimary)
 }
+
+/// The divider's cursor area sits under the drag strip: clicks must reach SwiftUI's gesture.
+@MainActor @Test func theResizeCursorAreaLetsClicksThrough() {
+    let area = ResizeUpDownCursor.Area(frame: .init(x: 0, y: 0, width: 100, height: 7))
+    #expect(area.hitTest(NSPoint(x: 50, y: 3)) == nil)
+}

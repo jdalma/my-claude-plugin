@@ -18,6 +18,7 @@ struct BoardView: View {
     @AppStorage(AppearanceChoice.storageKey) private var storedAppearance = AppearanceChoice.system.rawValue
     @AppStorage(DiffLayout.storageKey) private var diffLayout = DiffLayout.unified.rawValue
     @AppStorage(CollapsedTeams.storageKey) private var storedCollapsed = ""
+    @AppStorage(SidebarSplit.storageKey) private var splitRatio = SidebarSplit.standard
 
     private let home = NSHomeDirectory()
 
@@ -107,63 +108,16 @@ struct BoardView: View {
 
     private func content(_ board: Board, _ model: SidebarModel) -> some View {
         NavigationSplitView {
-            List(selection: $selection) {
-                ForEach(model.teams, id: \.name) { team in
-                    Section(isExpanded: teamExpanded(team.name)) {
-                        ForEach(team.rows, id: \.id) { LiveRowView(row: $0).tag($0.id) }
-                    } header: {
-                        GroupHeader(tag: .team, title: team.name, count: waitingText(team.waiting), tooltip: team.summary)
-                    }
-                }
-                ForEach(model.agents, id: \.agent) { g in
-                    Section {
-                        ForEach(g.rows, id: \.id) { LiveRowView(row: $0).tag($0.id) }
-                    } header: {
-                        GroupHeader(tag: .agent(g.agent), title: nil, count: waitingText(g.waiting), tooltip: g.summary)
-                    }
-                }
-                Section {
-                    ForEach(model.history, id: \.transcriptPath) { h in
-                        HistoryRowView(h: h, now: Date(), home: home).tag(RowID.history(h.transcriptPath))
-                    }
-                    if model.historyRemaining > 0 {
-                        Button("더 보기 (남은 \(model.historyRemaining)개)") { historyLimit += historyPageSize }
-                            .buttonStyle(.link)
-                    }
-                } header: {
-                    HStack {
-                        Text("기록 · 최근순")
-                        Spacer()
-                        Picker("에이전트", selection: $filter) {
-                            Text("전체").tag(AgentFilter.all)
-                            Text("Claude").tag(AgentFilter.claude)
-                            Text("Codex").tag(AgentFilter.codex)
-                        }
-                        .pickerStyle(.segmented)
-                        .labelsHidden()
-                        .frame(width: 180)
-                    }
+            GeometryReader { geo in
+                let h = SidebarSplit.heights(total: geo.size.height, ratio: splitRatio)
+                VStack(spacing: 0) {
+                    liveList(model)
+                        .safeAreaInset(edge: .top, spacing: 0) { sidebarHeader(model) }
+                        .frame(height: h.top)
+                    SidebarDivider(top: h.top, total: geo.size.height, ratio: $splitRatio)
+                    historyList(model).frame(height: h.bottom)
                 }
             }
-            .contextMenu(forSelectionType: RowID.self) { ids in
-                let h = ids.first.flatMap { historyEntry($0, model) }
-                Button("resume 명령 복사") {
-                    if let h {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(resumeCopyText(h), forType: .string)
-                    }
-                }
-                .disabled(h == nil)
-            } primaryAction: { ids in
-                guard let id = ids.first else { return }
-                switch id {
-                case .live:
-                    if let row = model.liveRows.first(where: { $0.id == id }) { tower.focus(row.session.handle) }
-                case .history:
-                    if let h = historyEntry(id, model) { tower.open(h) }
-                }
-            }
-            .safeAreaInset(edge: .top, spacing: 0) { sidebarHeader(model) }
             .navigationSplitViewColumnWidth(min: 300, ideal: 360, max: 520)
         } detail: {
             DetailView(board: board, model: model, history: tower.history, selection: selection, home: home, changes: changes,
@@ -174,6 +128,83 @@ struct BoardView: View {
                        },
                        deselect: { selection = nil },
                        focus: { tower.focus($0.session.handle) })
+        }
+    }
+
+    private func paneSelection(_ pane: SidebarPane) -> Binding<RowID?> {
+        Binding { pane.shown(selection) } set: { selection = pane.select($0, current: selection) }
+    }
+
+    private func liveList(_ model: SidebarModel) -> some View {
+        List(selection: paneSelection(.live)) {
+            if model.teams.isEmpty && model.agents.isEmpty {
+                Text(query.isEmpty ? "실행 중인 세션 없음" : "검색과 맞는 실행 중 세션 없음").foregroundStyle(.secondary)
+            }
+            ForEach(model.teams, id: \.name) { team in
+                Section(isExpanded: teamExpanded(team.name)) {
+                    ForEach(team.rows, id: \.id) { LiveRowView(row: $0).tag($0.id) }
+                } header: {
+                    GroupHeader(tag: .team, title: team.name, count: waitingText(team.waiting), tooltip: team.summary)
+                }
+            }
+            ForEach(model.agents, id: \.agent) { g in
+                Section {
+                    ForEach(g.rows, id: \.id) { LiveRowView(row: $0).tag($0.id) }
+                } header: {
+                    GroupHeader(tag: .agent(g.agent), title: nil, count: waitingText(g.waiting), tooltip: g.summary)
+                }
+            }
+        }
+        .contextMenu(forSelectionType: RowID.self) { rowMenu($0, model) } primaryAction: { rowAction($0, model) }
+    }
+
+    private func historyList(_ model: SidebarModel) -> some View {
+        List(selection: paneSelection(.history)) {
+            Section {
+                ForEach(model.history, id: \.transcriptPath) { h in
+                    HistoryRowView(h: h, now: Date(), home: home).tag(RowID.history(h.transcriptPath))
+                }
+                if model.historyRemaining > 0 {
+                    Button("더 보기 (남은 \(model.historyRemaining)개)") { historyLimit += historyPageSize }
+                        .buttonStyle(.link)
+                }
+            } header: {
+                HStack {
+                    Text("기록 · 최근순")
+                    Spacer()
+                    Picker("에이전트", selection: $filter) {
+                        Text("전체").tag(AgentFilter.all)
+                        Text("Claude").tag(AgentFilter.claude)
+                        Text("Codex").tag(AgentFilter.codex)
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .frame(width: 180)
+                }
+            }
+        }
+        .contextMenu(forSelectionType: RowID.self) { rowMenu($0, model) } primaryAction: { rowAction($0, model) }
+    }
+
+    @ViewBuilder
+    private func rowMenu(_ ids: Set<RowID>, _ model: SidebarModel) -> some View {
+        let h = ids.first.flatMap { historyEntry($0, model) }
+        Button("resume 명령 복사") {
+            if let h {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(resumeCopyText(h), forType: .string)
+            }
+        }
+        .disabled(h == nil)
+    }
+
+    private func rowAction(_ ids: Set<RowID>, _ model: SidebarModel) {
+        guard let id = ids.first else { return }
+        switch id {
+        case .live:
+            if let row = model.liveRows.first(where: { $0.id == id }) { tower.focus(row.session.handle) }
+        case .history:
+            if let h = historyEntry(id, model) { tower.open(h) }
         }
     }
 
@@ -212,6 +243,49 @@ struct BoardView: View {
         case .history(let path): model.history.first { $0.transcriptPath == path } ?? tower.history.first { $0.transcriptPath == path }
         case .live: model.liveRows.first { $0.id == id }?.matched
         }
+    }
+}
+
+/// The line between the sidebar's two lists. A drag moves it from where it was when the drag began, so the
+/// first move does not jump; the resize cursor is an AppKit cursor rect, which AppKit sets and clears itself.
+private struct SidebarDivider: View {
+    let top: CGFloat
+    let total: CGFloat
+    @Binding var ratio: Double
+    @State private var dragFrom: CGFloat?
+
+    var body: some View {
+        Rectangle()
+            .fill(Color(nsColor: .separatorColor))
+            .frame(height: SidebarSplit.line)
+            .overlay {
+                Color.clear
+                    .frame(height: 7)
+                    .contentShape(.rect)
+                    .background(ResizeUpDownCursor())
+                    .gesture(
+                        DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                            .onChanged { drag in
+                                let from = dragFrom ?? top
+                                dragFrom = from
+                                ratio = SidebarSplit.ratio(top: from + drag.translation.height, total: total)
+                            }
+                            .onEnded { _ in dragFrom = nil }
+                    )
+                    .help("끌어서 실행 중과 기록의 높이 조절")
+            }
+            .zIndex(1)  // the grab strip reaches 3 points into each list
+    }
+}
+
+/// Shows the up-down resize cursor over its bounds and lets clicks through to the SwiftUI view above it.
+struct ResizeUpDownCursor: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView { Area() }
+    func updateNSView(_ nsView: NSView, context: Context) {}
+
+    final class Area: NSView {
+        override func resetCursorRects() { addCursorRect(bounds, cursor: .resizeUpDown) }
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
     }
 }
 

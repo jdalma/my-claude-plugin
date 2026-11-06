@@ -505,3 +505,33 @@ private func isoOf(_ d: Date) -> String { d.formatted(.iso8601) }
     c.reveal(.live(session("pane:a:%1").rowID), in: board)
     #expect(c.names == ["b", "gone"])  // a stored team that no longer runs changes nothing
 }
+
+@Test func theSidebarSplitKeepsBothPanesAboveTheirMinimum() {
+    #expect(SidebarSplit.heights(total: 501, ratio: 0.6) == (top: 300, bottom: 200))
+    #expect(SidebarSplit.heights(total: 501, ratio: 0.99).bottom == SidebarSplit.minHeight)
+    #expect(SidebarSplit.heights(total: 501, ratio: 0).top == SidebarSplit.minHeight)
+    for junk in [Double.nan, .infinity, -1, 2] {
+        #expect(SidebarSplit.heights(total: 501, ratio: junk) == (top: 300, bottom: 200))  // the standard 0.6
+    }
+    // too short for two minimums: the ratio alone shares what there is
+    let small = SidebarSplit.heights(total: 201, ratio: 0.5)
+    #expect(small.top + small.bottom == 200 && small.top == 100)
+    // the line follows the drag from where it was, so a drag starting off-center does not jump
+    #expect(SidebarSplit.ratio(top: 300, total: 501) == 0.6)
+    #expect(SidebarSplit.heights(total: 501, ratio: SidebarSplit.ratio(top: 300 + 7, total: 501)).top == 307)
+    // a window resize keeps the share
+    #expect(SidebarSplit.heights(total: 1001, ratio: 0.6).top == 600)
+}
+
+@Test func oneSelectionAcrossTheLiveAndHistoryLists() {
+    let live = RowID.live("a"), past = RowID.history("/t/a.jsonl")
+    #expect(SidebarPane.live.shown(live) == live && SidebarPane.live.shown(past) == nil)
+    #expect(SidebarPane.history.shown(past) == past && SidebarPane.history.shown(live) == nil)
+    // picking in one list replaces a selection in the other
+    #expect(SidebarPane.history.select(past, current: live) == past)
+    #expect(SidebarPane.live.select(live, current: past) == live)
+    // a list letting go of nothing it showed leaves the other list's selection alone
+    #expect(SidebarPane.live.select(nil, current: past) == past)
+    #expect(SidebarPane.live.select(nil, current: live) == nil)
+    #expect(SidebarPane.history.select(nil, current: past) == nil)
+}
