@@ -14,17 +14,22 @@ enum LineKind: Equatable {
         }
     }
 
-    /// Kept apart from the status colors (orange, red, green, blue) so a tag never reads as a state.
+    /// my-team: Primer's accent blue (`--fgColor-accent`), the palette of DiffColors. claude: terracotta,
+    /// 12° of hue from the waiting icon's system orange and darker, so a tag never reads as a state.
     var color: Color {
         switch self {
-        case .team: .purple
-        case .agent(.claude): .brown
+        case .team: pair(0x0969daff, 0x58a6ffff)
+        case .agent(.claude): pair(0xc15f3cff, 0xe8906fff)
         case .agent(.codex): .teal
         }
     }
 
-    /// The tag's text: the kind color lifted toward white in dark mode, where the plain color on its own
-    /// 0.2 tint reads under 4.5:1.
+    private func pair(_ light: UInt32, _ dark: UInt32) -> Color {
+        Color(nsColor: NSColor(name: nil) { DiffColors.rgba($0.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? dark : light) })
+    }
+
+    /// The tag's text: the kind color lifted toward white in dark mode, where it reads better on its own 0.2 tint
+    /// (my-team 4.65 → 6.65:1, claude 4.78 → 6.74:1 on the window background, T41 report).
     var textColor: Color {
         let base = NSColor(color)
         return Color(nsColor: NSColor(name: nil) { appearance in

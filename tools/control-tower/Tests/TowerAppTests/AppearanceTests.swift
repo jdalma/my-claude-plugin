@@ -24,5 +24,23 @@ import Testing
     let light = resolved(.aqua), dark = resolved(.darkAqua)
     #expect(light.text == light.base)
     #expect(dark.text != dark.base)
-    #expect(dark.text.brightnessComponent > dark.base.brightnessComponent)
+    // toward white: every channel up (HSB brightness is already 1 for #58a6ff, so it cannot show this)
+    #expect(dark.text.redComponent > dark.base.redComponent && dark.text.greenComponent > dark.base.greenComponent)
+}
+
+/// T41: my-team in Primer's accent blue, claude in terracotta, each with its own light and dark value.
+@Test func teamAndClaudeTagsTakeTheirChosenColors() {
+    func hex(_ c: Color, _ name: NSAppearance.Name) -> String {
+        var out = ""
+        NSAppearance(named: name)!.performAsCurrentDrawingAppearance {
+            let s = NSColor(c).usingColorSpace(.sRGB)!
+            out = String(format: "%02x%02x%02x", Int((s.redComponent * 255).rounded()), Int((s.greenComponent * 255).rounded()),
+                         Int((s.blueComponent * 255).rounded()))
+        }
+        return out
+    }
+    #expect([hex(LineKind.team.color, .aqua), hex(LineKind.team.color, .darkAqua)] == ["0969da", "58a6ff"])
+    #expect([hex(LineKind.agent(.claude).color, .aqua), hex(LineKind.agent(.claude).color, .darkAqua)] == ["c15f3c", "e8906f"])
+    #expect(hex(LineKind.agent(.claude).textColor, .aqua) == "c15f3c")
+    #expect(hex(LineKind.agent(.codex).color, .aqua) == hex(.teal, .aqua))
 }
