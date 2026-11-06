@@ -1,3 +1,4 @@
+import os
 import SwiftUI
 import TowerCore
 
@@ -525,25 +526,37 @@ struct FullScreenCapable: NSViewRepresentable {
     static weak var board: NSWindow?
 
     func makeNSView(context: Context) -> NSView { makeProbe() }
-    /// Again on every update, in case the window's behavior was reset after the probe moved in.
-    func updateNSView(_ nsView: NSView, context: Context) { update(nsView) }
+    func updateNSView(_ nsView: NSView, context: Context) {}
 
     func makeProbe() -> NSView { Probe() }
-    func update(_ nsView: NSView) { Self.allow(nsView.window) }
 
     static func toggle() { board?.toggleFullScreen(nil) }
 
     private static func allow(_ window: NSWindow?) {
         guard let window else { return }
         board = window
-        // at most one of primary, auxiliary and none may be set
+        // at most one of each group may be set; SwiftUI marks the accessory app's board .auxiliary
         var behavior = window.collectionBehavior
-        behavior.subtract([.fullScreenNone, .fullScreenAuxiliary])
-        behavior.insert(.fullScreenPrimary)
+        behavior.subtract([.fullScreenNone, .fullScreenAuxiliary, .auxiliary, .canJoinAllApplications])
+        behavior.insert([.fullScreenPrimary, .primary])
         if behavior != window.collectionBehavior { window.collectionBehavior = behavior }
     }
 
+    /// Each write the probe sees, at debug level: kept off the disk unless `log stream --level debug` asks for it.
+    private static let log = Logger(subsystem: "local.control-tower", category: "fullscreen")
+
     private final class Probe: NSView {
-        override func viewDidMoveToWindow() { FullScreenCapable.allow(window) }
+        /// SwiftUI writes its own behavior back after the board mounts (T38b log), so each write is undone.
+        private var rewrite: NSKeyValueObservation?
+
+        override func viewDidMoveToWindow() {
+            FullScreenCapable.allow(window)
+            rewrite = window?.observe(\.collectionBehavior) { [weak window] _, _ in
+                MainActor.assumeIsolated {
+                    FullScreenCapable.log.debug("behavior written: \(window?.collectionBehavior.rawValue ?? 0, privacy: .public)")
+                    FullScreenCapable.allow(window)
+                }
+            }
+        }
     }
 }

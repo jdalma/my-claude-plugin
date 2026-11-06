@@ -29,11 +29,22 @@ private let fullScreenBits: NSWindow.CollectionBehavior = [.fullScreenPrimary, .
     }
 }
 
-@MainActor @Test func anUpdateRestoresPrimaryAfterItIsCleared() {
+/// T38b log: SwiftUI writes 131584 back when the board becomes key, after the probe moved in.
+@MainActor @Test func aLaterRewriteOfTheBehaviorIsUndone() {
     let w = window()
-    let probe = FullScreenCapable().makeProbe()
-    w.contentView = probe
+    w.contentView = FullScreenCapable().makeProbe()
+    w.collectionBehavior = [.auxiliary, .fullScreenNone]
+    #expect(w.collectionBehavior == [.primary, .fullScreenPrimary])
+    w.contentView = NSView()  // once the probe leaves, the window is left alone
     w.collectionBehavior = [.fullScreenNone]
-    FullScreenCapable().update(probe)
+    #expect(w.collectionBehavior == [.fullScreenNone])
+}
+
+/// What SwiftUI gives the board in the accessory app (T38b log: 131584 = .auxiliary + .fullScreenNone).
+@MainActor @Test func theAuxiliaryMarkSwiftUIGivesTheBoardBecomesPrimary() {
+    let roles: NSWindow.CollectionBehavior = [.primary, .auxiliary, .canJoinAllApplications]
+    let w = window([.auxiliary, .fullScreenNone])
+    w.contentView = FullScreenCapable().makeProbe()
+    #expect(w.collectionBehavior.intersection(roles) == .primary)
     #expect(w.collectionBehavior.intersection(fullScreenBits) == .fullScreenPrimary)
 }
